@@ -42,7 +42,7 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { format} from 'date-fns';
+import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
 import * as XLSX from 'xlsx';
 
@@ -76,6 +76,8 @@ const ExportData: React.FC = () => {
   ]);
   const [openSnackbar, setOpenSnackbar] = useState<boolean>(false);
   const [snackbarMessage, setSnackbarMessage] = useState<string>('');
+  const [documentTypes, setDocumentTypes] = useState<string[]>([]);
+  const [selectedDocumentType, setSelectedDocumentType] = useState<string>('');
   const apiUrl = import.meta.env.VITE_API_URL;
 
   // Updated columns to match AllData.tsx
@@ -114,22 +116,35 @@ const ExportData: React.FC = () => {
     }
   };
 
+  const fetchDocumentTypes = async () => {
+    try {
+      const response = await axios.get(`${apiUrl}/data/document-types`);
+      setDocumentTypes(response.data);
+    } catch (err) {
+      console.error('Error fetching document types:', err);
+      setError('ไม่สามารถดึงข้อมูลประเภทเอกสารได้');
+    }
+  };
+
   useEffect(() => {
     fetchData();
+    fetchDocumentTypes();
   }, []);
 
   useEffect(() => {
     filterData();
-  }, [startDate, endDate, data]);
+  }, [startDate, endDate, selectedDocumentType, data]);
 
   const filterData = () => {
     let filtered = [...data];
 
+    // กรองตามวันที่เอกสาร
     if (startDate) {
       const start = new Date(startDate);
       start.setHours(0, 0, 0, 0);
       filtered = filtered.filter(item => {
-        const itemDate = new Date(item.created_at);
+        if (!item.document_date) return false;
+        const itemDate = new Date(item.document_date);
         return itemDate >= start;
       });
     }
@@ -138,13 +153,25 @@ const ExportData: React.FC = () => {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
       filtered = filtered.filter(item => {
-        const itemDate = new Date(item.created_at);
+        if (!item.document_date) return false;
+        const itemDate = new Date(item.document_date);
         return itemDate <= end;
       });
     }
 
+    // กรองตามประเภทเอกสาร
+    if (selectedDocumentType) {
+      filtered = filtered.filter(item => 
+        item.id.startsWith(selectedDocumentType)
+      );
+    }
+
     setFilteredData(filtered);
     setPage(0); // Reset to first page when filtering
+  };
+
+  const handleDocumentTypeChange = (event: SelectChangeEvent<string>) => {
+    setSelectedDocumentType(event.target.value);
   };
 
   const handleColumnChange = (event: SelectChangeEvent<string[]>) => {
@@ -161,9 +188,7 @@ const ExportData: React.FC = () => {
     });
   };
 
-  // ฟังก์ชันสำหรับตัดข้อความที่ยาวเกินไป
-
-  // Get status color (copied from AllData.tsx)
+  // Get status color
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'อนุมัติ':
@@ -351,320 +376,346 @@ const ExportData: React.FC = () => {
                   const column = columns.find(col => col.id === colId);
                   return (
                     <TableCell key={colId} sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>
-                      {column ? column.label : colId}
-                    </TableCell>
-                  );
-                })}
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {paginatedData.length > 0 ? (
-                paginatedData.map((item) => (
-                  <TableRow 
-                    key={item.id} 
-                    hover
-                    sx={{
-                      transition: 'all 0.2s',
-                      '&:hover': {
-                        backgroundColor: 'rgba(63, 81, 181, 0.08)',
-                        transform: 'translateY(-1px)',
-                        boxShadow: '0 4px 8px rgba(0, 0, 0, 0.05)'
-                      }
-                    }}
-                  >
-                    {selectedColumns.map((colId) => {
-                      if (colId === 'document_date') {
-                        return (
-                          <TableCell key={colId}>
-                                                        {item.document_date ? formatDate(item.document_date) : '-'}
-                          </TableCell>
-                        );
-                      } else if (colId === 'status') {
-                        return (
-                          <TableCell key={colId}>
-                            <Chip 
-                              label={item.status} 
-                              color={getStatusColor(item.status) as "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning"}
-                              size="small"
-                              sx={{ borderRadius: '4px' }}
-                            />
-                          </TableCell>
-                        );
-                      } else {
-                        return (
-                          <TableCell key={colId}>
-                            {item[colId as keyof DataItem] || '-'}
-                          </TableCell>
-                        );
-                      }
-                    })}
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={selectedColumns.length} align="center">
-                    ไม่พบข้อมูลที่ตรงกับเงื่อนไขการค้นหา
+                    {column ? column.label : colId}
                   </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-        
-        <TablePagination
-          rowsPerPageOptions={rowsPerPageOptions}
-          component="div"
-          count={filteredData.length}
-          rowsPerPage={rowsPerPage}
-          page={page}
-          onPageChange={handleChangePage}
-          onRowsPerPageChange={handleChangeRowsPerPage}
-          labelRowsPerPage="แสดง:"
-          labelDisplayedRows={({ from, to, count }) => `${from}-${to} จาก ${count}`}
-          sx={{
-            borderTop: '1px solid rgba(224, 224, 224, 1)',
-            '& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows': {
-              fontWeight: 'medium'
-            }
-          }}
-        />
-      </>
-    );
-  };
-  
-  return (
-    <Fade in={true} timeout={800}>
-      <Box sx={{ p: { xs: 2, sm: 3 } }}>
-        <Card 
-          elevation={3} 
-          sx={{ 
-            borderRadius: '16px',
-            overflow: 'hidden',
-            mb: 4
-          }}
-        >
-          <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
-            <Grid container spacing={2} alignItems="center" justifyContent="space-between">
-              <Grid item xs={12} md={6}>
-                <Typography variant="h4" component="h1" fontWeight="bold" color="primary">
-                  ส่งออกข้อมูลเอกสาร
-                </Typography>
-                <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
-                  กรองและส่งออกข้อมูลเอกสารตามเงื่อนไขที่ต้องการ
-                </Typography>
-              </Grid>
-              
-              <Grid item xs={12} md={6} sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' }, gap: 1, flexWrap: 'wrap' }}>
-                <Button 
-                  variant="contained" 
-                  startIcon={<ExcelIcon />}
-                  onClick={exportToExcel}
-                  color="success"
-                  disabled={filteredData.length === 0}
-                  sx={{ 
-                    borderRadius: '10px',
-                    boxShadow: '0 4px 14px rgba(0, 0, 0, 0.1)',
-                    transition: 'all 0.3s',
-                    '&:hover': {
-                      transform: 'translateY(-2px)',
-                      boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)'
-                    }
-                  }}
-                >
-                  ส่งออก Excel
-                </Button>
-                
-                <Button 
-                  variant="outlined" 
-                  startIcon={<ArrowBackIcon />}
-                  component={Link}
-                  to="/data"
-                  sx={{ 
-                    borderRadius: '10px',
-                    transition: 'all 0.3s',
-                    '&:hover': {
-                      transform: 'translateY(-2px)',
-                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)'
-                    }
-                  }}
-                >
-                  กลับไปหน้าข้อมูล
-                </Button>
-                
-                <Tooltip title="รีเฟรชข้อมูล">
-                  <IconButton 
-                    onClick={fetchData} 
-                    color="primary"
-                    sx={{ 
-                      borderRadius: '10px',
-                      transition: 'all 0.3s',
-                      '&:hover': {
-                        transform: 'rotate(180deg)',
-                        backgroundColor: 'rgba(63, 81, 181, 0.1)'
-                      }
-                    }}
-                  >
-                    <RefreshIcon />
-                  </IconButton>
-                </Tooltip>
-              </Grid>
-            </Grid>
-          </CardContent>
-        </Card>
-  
-        {error && (
-          <Alert 
-            severity="error" 
-            sx={{ 
-              mb: 3, 
-              borderRadius: '12px',
-              boxShadow: '0 4px 12px rgba(211, 47, 47, 0.2)'
-            }}
-            onClose={() => setError(null)}
-          >
-            {error}
-          </Alert>
-        )}
-  
-        <Card 
-          elevation={3} 
-          sx={{ 
-            borderRadius: '16px',
-            overflow: 'hidden',
-            mb: 4
-          }}
-        >
-          <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
-            <Typography variant="h6" gutterBottom fontWeight="medium">
-              ตัวกรองข้อมูล
-            </Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={6} md={4}>
-                <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={th}>
-                  <DatePicker
-                    label="วันที่เริ่มต้น"
-                    value={startDate}
-                    onChange={(newValue: Date | null) => setStartDate(newValue)}
-                    slotProps={{ 
-                      textField: { 
-                        fullWidth: true,
-                        size: isMobile ? "small" : "medium",
-                        sx: {
-                          borderRadius: '12px',
-                          '&.Mui-focused': {
-                            boxShadow: '0 0 0 3px rgba(63, 81, 181, 0.2)'
-                          }
-                        }
-                      } 
-                    }}
-                  />
-                </LocalizationProvider>
-              </Grid>
-              <Grid item xs={12} sm={6} md={4}>
-                <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={th}>
-                  <DatePicker
-                    label="วันที่สิ้นสุด"
-                    value={endDate}
-                    onChange={(newValue: Date | null) => setEndDate(newValue)}
-                    slotProps={{ 
-                      textField: { 
-                        fullWidth: true,
-                        size: isMobile ? "small" : "medium",
-                        sx: {
-                          borderRadius: '12px',
-                          '&.Mui-focused': {
-                            boxShadow: '0 0 0 3px rgba(63, 81, 181, 0.2)'
-                          }
-                        }
-                      } 
-                    }}
-                  />
-                </LocalizationProvider>
-              </Grid>
-              <Grid item xs={12} md={4}>
-                <FormControl 
-                  fullWidth 
-                  size={isMobile ? "small" : "medium"}
+                );
+              })}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {paginatedData.length > 0 ? (
+              paginatedData.map((item) => (
+                <TableRow 
+                  key={item.id} 
+                  hover
                   sx={{
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: '12px',
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      backgroundColor: 'rgba(63, 81, 181, 0.08)',
+                      transform: 'translateY(-1px)',
+                      boxShadow: '0 4px 8px rgba(0, 0, 0, 0.05)'
                     }
                   }}
                 >
-                  <InputLabel id="columns-select-label">คอลัมน์ที่ต้องการส่งออก</InputLabel>
-                  <Select
-                    labelId="columns-select-label"
-                    multiple
-                    value={selectedColumns}
-                    onChange={handleColumnChange}
-                    input={<OutlinedInput label="คอลัมน์ที่ต้องการส่งออก" />}
-                    renderValue={(selected) => {
-                      return selected.map(value => {
-                        const column = columns.find(col => col.id === value);
-                        return column ? column.label : value;
-                      }).join(', ');
-                    }}
-                  >
-                    {columns.map((column) => (
-                      <MenuItem key={column.id} value={column.id}>
-                        <Checkbox checked={selectedColumns.indexOf(column.id) > -1} />
-                        <ListItemText primary={column.label} />
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-            </Grid>
-          </CardContent>
-        </Card>
-  
-        <Box sx={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          mb: 2,
-          px: 1
-        }}>
-          <Typography variant="h6" fontWeight="medium">
-            ผลลัพธ์: {filteredData.length} รายการ
-          </Typography>
-        </Box>
-  
-        {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4, mb: 4 }}>
-            <CircularProgress size={60} thickness={4} />
-          </Box>
-        ) : (
-          <Card 
-            elevation={3} 
-            sx={{ 
-              borderRadius: '16px',
-              overflow: 'hidden'
-            }}
-          >
-            {isMobile ? renderMobileView() : renderTableView()}
-          </Card>
-        )}
-  
-        <Snackbar
-          open={openSnackbar}
-          autoHideDuration={6000}
-          onClose={() => setOpenSnackbar(false)}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        >
-          <Alert 
-            onClose={() => setOpenSnackbar(false)} 
-            severity="success" 
-            variant="filled"
-            sx={{ width: '100%', borderRadius: '8px' }}
-          >
-            {snackbarMessage}
-          </Alert>
-        </Snackbar>
-      </Box>
-    </Fade>
+                  {selectedColumns.map((colId) => {
+                    if (colId === 'document_date') {
+                      return (
+                        <TableCell key={colId}>
+                          {item.document_date ? formatDate(item.document_date) : '-'}
+                        </TableCell>
+                      );
+                    } else if (colId === 'status') {
+                      return (
+                        <TableCell key={colId}>
+                          <Chip 
+                            label={item.status} 
+                            color={getStatusColor(item.status) as "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning"}
+                            size="small"
+                            sx={{ borderRadius: '4px' }}
+                          />
+                        </TableCell>
+                      );
+                    } else {
+                      return (
+                        <TableCell key={colId}>
+                          {item[colId as keyof DataItem] || '-'}
+                        </TableCell>
+                      );
+                    }
+                  })}
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={selectedColumns.length} align="center">
+                  ไม่พบข้อมูลที่ตรงกับเงื่อนไขการค้นหา
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
+      
+      <TablePagination
+        rowsPerPageOptions={rowsPerPageOptions}
+        component="div"
+        count={filteredData.length}
+        rowsPerPage={rowsPerPage}
+        page={page}
+        onPageChange={handleChangePage}
+        onRowsPerPageChange={handleChangeRowsPerPage}
+        labelRowsPerPage="แสดง:"
+        labelDisplayedRows={({ from, to, count }) => `${from}-${to} จาก ${count}`}
+        sx={{
+          borderTop: '1px solid rgba(224, 224, 224, 1)',
+          '& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows': {
+            fontWeight: 'medium'
+          }
+        }}
+      />
+    </>
   );
 };
-  
+
+return (
+  <Fade in={true} timeout={800}>
+    <Box sx={{ p: { xs: 2, sm: 3 } }}>
+      <Card 
+        elevation={3} 
+        sx={{ 
+          borderRadius: '16px',
+          overflow: 'hidden',
+          mb: 4
+        }}
+      >
+        <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+          <Grid container spacing={2} alignItems="center" justifyContent="space-between">
+            <Grid item xs={12} md={6}>
+              <Typography variant="h4" component="h1" fontWeight="bold" color="primary">
+                ส่งออกข้อมูลเอกสาร
+              </Typography>
+              <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
+                กรองและส่งออกข้อมูลเอกสารตามเงื่อนไขที่ต้องการ
+              </Typography>
+            </Grid>
+            
+            <Grid item xs={12} md={6} sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' }, gap: 1, flexWrap: 'wrap' }}>
+              <Button 
+                variant="contained" 
+                startIcon={<ExcelIcon />}
+                onClick={exportToExcel}
+                color="success"
+                disabled={filteredData.length === 0}
+                sx={{ 
+                  borderRadius: '10px',
+                  boxShadow: '0 4px 14px rgba(0, 0, 0, 0.1)',
+                  transition: 'all 0.3s',
+                  '&:hover': {
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)'
+                  }
+                }}
+              >
+                ส่งออก Excel
+              </Button>
+              
+              <Button 
+                variant="outlined" 
+                startIcon={<ArrowBackIcon />}
+                component={Link}
+                to="/data"
+                sx={{ 
+                  borderRadius: '10px',
+                  transition: 'all 0.3s',
+                  '&:hover': {
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)'
+                  }
+                }}
+              >
+                กลับไปหน้าข้อมูล
+              </Button>
+              
+              <Tooltip title="รีเฟรชข้อมูล">
+                <IconButton 
+                  onClick={fetchData} 
+                  color="primary"
+                  sx={{ 
+                    borderRadius: '10px',
+                    transition: 'all 0.3s',
+                    '&:hover': {
+                      transform: 'rotate(180deg)',
+                      backgroundColor: 'rgba(63, 81, 181, 0.1)'
+                    }
+                  }}
+                >
+                  <RefreshIcon />
+                </IconButton>
+              </Tooltip>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
+
+      {error && (
+        <Alert 
+          severity="error" 
+          sx={{ 
+            mb: 3, 
+            borderRadius: '12px',
+            boxShadow: '0 4px 12px rgba(211, 47, 47, 0.2)'
+          }}
+          onClose={() => setError(null)}
+        >
+          {error}
+        </Alert>
+      )}
+
+      <Card 
+        elevation={3} 
+        sx={{ 
+          borderRadius: '16px',
+          overflow: 'hidden',
+          mb: 4
+        }}
+      >
+        <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+          <Typography variant="h6" gutterBottom fontWeight="medium">
+            ตัวกรองข้อมูล
+          </Typography>
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6} md={3}>
+              <FormControl 
+                fullWidth 
+                size={isMobile ? "small" : "medium"}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '12px',
+                  }
+                }}
+              >
+                <InputLabel id="document-type-select-label">ประเภทเอกสาร</InputLabel>
+                <Select
+                  labelId="document-type-select-label"
+                  value={selectedDocumentType}
+                  onChange={handleDocumentTypeChange}
+                  label="ประเภทเอกสาร"
+                >
+                  <MenuItem value="">ทั้งหมด</MenuItem>
+                  {documentTypes.map((type) => (
+                    <MenuItem key={type} value={type}>
+                      {type}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={th}>
+                <DatePicker
+                  label="วันที่เอกสารเริ่มต้น"
+                  value={startDate}
+                  onChange={(newValue: Date | null) => setStartDate(newValue)}
+                  slotProps={{ 
+                    textField: { 
+                      fullWidth: true,
+                      size: isMobile ? "small" : "medium",
+                      sx: {
+                        borderRadius: '12px',
+                        '&.Mui-focused': {
+                          boxShadow: '0 0 0 3px rgba(63, 81, 181, 0.2)'
+                        }
+                      }
+                    } 
+                  }}
+                />
+              </LocalizationProvider>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={th}>
+                <DatePicker
+                  label="วันที่เอกสารสิ้นสุด"
+                  value={endDate}
+                  onChange={(newValue: Date | null) => setEndDate(newValue)}
+                  slotProps={{ 
+                    textField: { 
+                      fullWidth: true,
+                      size: isMobile ? "small" : "medium",
+                      sx: {
+                        borderRadius: '12px',
+                        '&.Mui-focused': {
+                          boxShadow: '0 0 0 3px rgba(63, 81, 181, 0.2)'
+                        }
+                      }
+                    } 
+                  }}
+                />
+              </LocalizationProvider>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <FormControl 
+                fullWidth 
+                size={isMobile ? "small" : "medium"}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '12px',
+                  }
+                }}
+              >
+                <InputLabel id="columns-select-label">คอลัมน์ที่ต้องการส่งออก</InputLabel>
+                <Select
+                  labelId="columns-select-label"
+                  multiple
+                  value={selectedColumns}
+                  onChange={handleColumnChange}
+                  input={<OutlinedInput label="คอลัมน์ที่ต้องการส่งออก" />}
+                  renderValue={(selected) => {
+                    return selected.map(value => {
+                      const column = columns.find(col => col.id === value);
+                      return column ? column.label : value;
+                    }).join(', ');
+                  }}
+                >
+                  {columns.map((column) => (
+                    <MenuItem key={column.id} value={column.id}>
+                      <Checkbox checked={selectedColumns.indexOf(column.id) > -1} />
+                      <ListItemText primary={column.label} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
+
+      <Box sx={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        mb: 2,
+        px: 1
+      }}>
+        <Typography variant="h6" fontWeight="medium">
+          ผลลัพธ์: {filteredData.length} รายการ
+        </Typography>
+      </Box>
+
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4, mb: 4 }}>
+          <CircularProgress size={60} thickness={4} />
+        </Box>
+      ) : (
+        <Card 
+          elevation={3} 
+          sx={{ 
+            borderRadius: '16px',
+            overflow: 'hidden'
+          }}
+        >
+          {isMobile ? renderMobileView() : renderTableView()}
+        </Card>
+      )}
+
+      <Snackbar
+        open={openSnackbar}
+        autoHideDuration={6000}
+        onClose={() => setOpenSnackbar(false)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert 
+          onClose={() => setOpenSnackbar(false)} 
+          severity="success" 
+          variant="filled"
+          sx={{ width: '100%', borderRadius: '8px' }}
+        >
+          {snackbarMessage}
+        </Alert>
+      </Snackbar>
+    </Box>
+  </Fade>
+);
+};
+
 export default ExportData;
 
