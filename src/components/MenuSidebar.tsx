@@ -7,25 +7,25 @@ import {
 
 export const menuItems = [
   {
-    text: 'Dashboard',
+    text: 'หน้าหลัก',
     icon: DashboardIcon,
     path: '/',
     nameTH: 'หน้าหลัก',
   },
   {
-    text: 'Data ',
+    text: 'ข้อมูล ',
     icon: People,
     path: '/data',
     nameTH: 'ข้อมูลทั้งหมด',
     children: [
       {
-        text: 'Data Lists',
+        text: 'ข้อมูลทั้งหมด',
         icon: List,
         path: '/data',
         nameTH: 'ข้อมูลทั้งหมด',
       },
       {
-        text: 'Add Data',
+        text: 'เพิ่มข้อมูล',
         icon: PersonAdd,
         path: '/data/addnew',
         nameTH: 'เพิ่มข้อมูล',

@@ -23,12 +23,12 @@ const LoginPage = () => {
     event.preventDefault();
     setLoading(true);
     setError('');
-  
+
     try {
       // ใช้ API URL จาก .env
       const apiUrl = import.meta.env.VITE_API_URL;
       console.log('API URL:', apiUrl); // แสดง API URL ที่ใช้
-      
+     
       // ใช้ axios.post แทน fetch
       const response = await axios.post(`${apiUrl}/login`, {
         username,
@@ -38,21 +38,36 @@ const LoginPage = () => {
           'Content-Type': 'application/json',
         }
       });
-  
+
       // axios จะจัดการ JSON parsing ให้อัตโนมัติ
       const data = response.data;
-      
+     
       console.log('Login successful:', data);
-    
+   
       // บันทึก token และ user ลงใน localStorage
       localStorage.setItem('token', data.token); // เก็บ token
-      localStorage.setItem('user', JSON.stringify(data.user)); // เก็บข้อมูลผู้ใช้
-    
+      
+      // เก็บข้อมูลผู้ใช้ (รวมถึง branchid)
+      localStorage.setItem('user', JSON.stringify({
+        id: data.user.id,
+        username: data.user.username,
+        role: data.user.role,
+        branchid: data.user.branchid // เพิ่ม branchid ในข้อมูลที่เก็บ
+      }));
+      
+      // Log เพื่อตรวจสอบว่า branchid ถูกเก็บหรือไม่
+      console.log('Stored user data:', {
+        id: data.user.id,
+        username: data.user.username,
+        role: data.user.role,
+        branchid: data.user.branchid
+      });
+   
       // เปลี่ยนเส้นทางไปหน้า Dashboard
       navigate('/');
     } catch (err) {
       console.error('Error during login:', err);
-      
+     
       // จัดการกับข้อผิดพลาดจาก axios
       if (axios.isAxiosError(err)) {
         // ถ้ามีข้อมูล response จาก server

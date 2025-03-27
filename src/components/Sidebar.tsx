@@ -41,7 +41,7 @@ function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => 
       >
 
         <Typography variant="h6" sx={{ color: 'var(--bg-primary)' }}>
-       DataSaved  
+       ระบบบันทึกข้อมูล  
         </Typography>
       </Box>
 

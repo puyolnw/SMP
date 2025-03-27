@@ -47,6 +47,7 @@ import {
 } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { getUserBranchId } from '../../utils/auth';
 
 interface DataItem {
   id: string;
@@ -84,6 +85,9 @@ const AllData: React.FC = () => {
   const apiUrl = import.meta.env.VITE_API_URL;
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  
+  // ดึง branchId ของ user ที่ login
+  const userBranchId = getUserBranchId();
 
   // ดึงข้อมูลสถานะทั้งหมด
   useEffect(() => {
@@ -99,13 +103,24 @@ const AllData: React.FC = () => {
     fetchStatuses();
   }, [apiUrl]);
 
+  // ดึงข้อมูลทั้งหมด
   const fetchData = async () => {
     try {
       setLoading(true);
       
       const response = await axios.get(`${apiUrl}/data`);
-      setData(response.data);
-      setFilteredData(response.data);
+      
+      // ถ้ามี branchId ให้กรองข้อมูลตาม branchId
+      if (userBranchId) {
+        const filteredData = response.data.filter((item: DataItem) => 
+          item.id.startsWith(userBranchId)
+        );
+        setData(filteredData);
+      } else {
+        // ถ้าไม่มี branchId ให้แสดงข้อมูลทั้งหมด
+        setData(response.data);
+      }
+      
       setError(null);
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -117,10 +132,20 @@ const AllData: React.FC = () => {
 
   const handleDelete = async (id: string) => {
     try {
+      // ตรวจสอบว่า user มีสิทธิ์ลบเอกสารนี้หรือไม่
+      if (userBranchId && !id.startsWith(userBranchId)) {
+        setSnackbarMessage('คุณไม่มีสิทธิ์ลบเอกสารนี้');
+        setOpenSnackbar(true);
+        return;
+      }
+      
       await axios.delete(`${apiUrl}/data/${id}`);
       setSnackbarMessage('ลบเอกสารเรียบร้อยแล้ว');
       setOpenSnackbar(true);
-      fetchData();
+      
+      // อัปเดตข้อมูลในสเตทโดยไม่ต้อง fetch ใหม่
+      setData(prevData => prevData.filter(item => item.id !== id));
+      
       handleCloseMenu();
     } catch (err) {
       console.error('Error deleting data:', err);
@@ -220,7 +245,6 @@ const AllData: React.FC = () => {
     setSelectedItemId(null);
   };
 
-  // Calculate empty rows to maintain consistent page height
   // Slice data for current page
   const currentPageData = filteredData.slice(
     page * rowsPerPage,
@@ -241,6 +265,12 @@ const AllData: React.FC = () => {
     }
   };
 
+  // ตรวจสอบว่า user มีสิทธิ์แก้ไขเอกสารหรือไม่
+  const canEditDocument = (documentId: string) => {
+    if (!userBranchId) return true; // ถ้าไม่มี branchId ให้แก้ไขได้ทั้งหมด
+    return documentId.startsWith(userBranchId);
+  };
+
   return (
     <Fade in={true} timeout={800}>
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
@@ -259,7 +289,12 @@ const AllData: React.FC = () => {
                   จัดการข้อมูลเอกสาร
                 </Typography>
                 <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
-                  ค้นหา จัดการ และเรียกดูข้อมูลเอกสารทั้งหมด
+                  ค้นหา จัดการ และเรียกดูข้อมูลเอกสาร
+                  {userBranchId && (
+                    <Typography component="span" fontWeight="medium" color="primary.main">
+                      {` (${userBranchId})`}
+                    </Typography>
+                  )}
                 </Typography>
               </Grid>
               
@@ -513,88 +548,109 @@ const AllData: React.FC = () => {
               <>
                 <TableContainer sx={{ minHeight: '400px' }}>
                   <Table>
-                  <TableHead>
-  <TableRow sx={{ bgcolor: 'primary.main' }}>
-    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>เลขที่เอกสาร</TableCell>
-    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>วันที่</TableCell>
-    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>จาก</TableCell>
-    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>ถึง</TableCell>
-    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>เรื่อง</TableCell>
-    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>การปฏิบัติ</TableCell>
-    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>สถานะ</TableCell>
-    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>หมายเหตุ</TableCell>
-    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>จัดการ</TableCell>
-  </TableRow>
-</TableHead>
+                    <TableHead>
+                      <TableRow sx={{ bgcolor: 'primary.main' }}>
+                        <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>เลขที่เอกสาร</TableCell>
+                        <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>วันที่</TableCell>
+                        <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>จาก</TableCell>
+                        <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>ถึง</TableCell>
+                        <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>เรื่อง</TableCell>
+                        <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>การปฏิบัติ</TableCell>
+                        <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>สถานะ</TableCell>
+                        <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>หมายเหตุ</TableCell>
+                        <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>จัดการ</TableCell>
+                      </TableRow>
+                    </TableHead>
 
-<TableBody>
-  {currentPageData.map((item) => (
-    <TableRow 
-      key={item.id} 
-      hover
-      sx={{
-        transition: 'all 0.2s',
-        '&:hover': {
-          backgroundColor: 'rgba(63, 81, 181, 0.08)',
-          transform: 'translateY(-1px)',
-          boxShadow: '0 4px 8px rgba(0, 0, 0, 0.05)'
-        }
-      }}
-    >
-      <TableCell sx={{ fontWeight: 'medium' }}>{item.id}</TableCell>
-      <TableCell>{item.document_date ? formatDate(item.document_date) : '-'}</TableCell>
-      <TableCell>{item.sender_name}</TableCell>
-      <TableCell>{item.receiver_name}</TableCell>
-      <TableCell>{item.document_name}</TableCell>
-      <TableCell>{item.action || '-'}</TableCell>
-      <TableCell>
-        <Chip 
-          label={item.status} 
-          color={getStatusColor(item.status) as "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning"}
-          size="small"
-          sx={{ borderRadius: '4px' }}
-        />
-      </TableCell>
-      <TableCell>{item.notes || '-'}</TableCell>
-      <TableCell>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Tooltip title="แก้ไข">
-            <IconButton 
-              color="primary" 
-              onClick={() => navigate(`/data/edit/${item.id}`)}
-              size="small"
-              sx={{ 
-                transition: 'all 0.2s',
-                '&:hover': {
-                  backgroundColor: 'primary.light',
-                  color: 'white'
-                }
-              }}
-            >
-              <EditIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="ลบ">
-            <IconButton 
-              color="error" 
-              onClick={() => handleDelete(item.id)}
-              size="small"
-              sx={{ 
-                transition: 'all 0.2s',
-                '&:hover': {
-                  backgroundColor: 'error.light',
-                  color: 'white'
-                }
-              }}
-            >
-              <DeleteIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        </Box>
-      </TableCell>
-    </TableRow>
-  ))}
-</TableBody>
+                    <TableBody>
+                      {currentPageData.map((item) => (
+                        <TableRow 
+                          key={item.id} 
+                          hover
+                          sx={{
+                            transition: 'all 0.2s',
+                            '&:hover': {
+                              backgroundColor: 'rgba(63, 81, 181, 0.08)',
+                              transform: 'translateY(-1px)',
+                              boxShadow: '0 4px 8px rgba(0, 0, 0, 0.05)'
+                            }
+                          }}
+                        >
+                          <TableCell sx={{ fontWeight: 'medium' }}>{item.id}</TableCell>
+                          <TableCell>{item.document_date ? formatDate(item.document_date) : '-'}</TableCell>
+                          <TableCell>{item.sender_name}</TableCell>
+                          <TableCell>{item.receiver_name}</TableCell>
+                          <TableCell>{item.document_name}</TableCell>
+                          <TableCell>{item.action || '-'}</TableCell>
+                          <TableCell>
+                            <Chip 
+                              label={item.status} 
+                              color={getStatusColor(item.status) as "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning"}
+                              size="small"
+                              sx={{ borderRadius: '4px' }}
+                            />
+                          </TableCell>
+                          <TableCell>{item.notes || '-'}</TableCell>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              {canEditDocument(item.id) ? (
+                                <>
+                                  <Tooltip title="แก้ไข">
+                                    <IconButton 
+                                      color="primary" 
+                                      onClick={() => navigate(`/data/edit/${item.id}`)}
+                                      size="small"
+                                      sx={{ 
+                                        transition: 'all 0.2s',
+                                        '&:hover': {
+                                          backgroundColor: 'primary.light',
+                                          color: 'white'
+                                        }
+                                      }}
+                                    >
+                                      <EditIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="ลบ">
+                                    <IconButton 
+                                      color="error" 
+                                      onClick={() => handleDelete(item.id)}
+                                      size="small"
+                                      sx={{ 
+                                        transition: 'all 0.2s',
+                                        '&:hover': {
+                                          backgroundColor: 'error.light',
+                                          color: 'white'
+                                        }
+                                      }}
+                                    >
+                                      <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                </>
+                              ) : (
+                                <Tooltip title="ดูเท่านั้น">
+                                  <IconButton 
+                                    color="info" 
+                                    onClick={() => navigate(`/data/view/${item.id}`)}
+                                    size="small"
+                                    sx={{ 
+                                      transition: 'all 0.2s',
+                                      '&:hover': {
+                                        backgroundColor: 'info.light',
+                                        color: 'white'
+                                      }
+                                    }}
+                                  >
+                                    <ViewIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
+                            </Box>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
                   </Table>
                 </TableContainer>
                 
@@ -701,26 +757,47 @@ const AllData: React.FC = () => {
                         
                         <Divider sx={{ my: 1.5 }} />
                         
-                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Chip 
+                            label={item.status} 
+                            color={getStatusColor(item.status) as "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning"}
+                            size="small"
+                            sx={{ borderRadius: '4px' }}
+                          />
+                          
                           <Box>
-                            <Tooltip title="แก้ไข">
-                              <IconButton 
-                                color="primary" 
-                                size="small"
-                                onClick={() => navigate(`/data/edit/${item.id}`)}
-                              >
-                                <EditIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="ลบ">
-                              <IconButton 
-                                color="error" 
-                                size="small"
-                                onClick={() => handleDelete(item.id)}
-                              >
-                                <DeleteIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
+                            {canEditDocument(item.id) ? (
+                              <>
+                                <Tooltip title="แก้ไข">
+                                  <IconButton 
+                                    color="primary" 
+                                    size="small"
+                                    onClick={() => navigate(`/data/edit/${item.id}`)}
+                                  >
+                                    <EditIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                                <Tooltip title="ลบ">
+                                  <IconButton 
+                                    color="error" 
+                                    size="small"
+                                    onClick={() => handleDelete(item.id)}
+                                  >
+                                    <DeleteIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              </>
+                            ) : (
+                              <Tooltip title="ดูเท่านั้น">
+                                <IconButton 
+                                  color="info" 
+                                  size="small"
+                                  onClick={() => navigate(`/data/view/${item.id}`)}
+                                >
+                                  <ViewIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            )}
                           </Box>
                         </Box>
                       </CardContent>
@@ -762,54 +839,61 @@ const AllData: React.FC = () => {
             }
           }}
         >
-                  <MenuItem onClick={() => {
-          if (selectedItemId) navigate(`/data/edit/${encodeURIComponent(selectedItemId)}`);
-          handleCloseMenu();
-        }}>
-          <ListItemIcon>
-            <EditIcon fontSize="small" color="primary" />
-          </ListItemIcon>
-          <ListItemText>แก้ไขเอกสาร</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={() => {
-          if (selectedItemId) handleDelete(selectedItemId);
-        }}>
-          <ListItemIcon>
-            <DeleteIcon fontSize="small" color="error" />
-          </ListItemIcon>
-          <ListItemText>ลบเอกสาร</ListItemText>
-        </MenuItem>
-        <Divider />
-        <MenuItem onClick={() => {
-          // ฟังก์ชันสำหรับดูรายละเอียด (ถ้ามี)
-          handleCloseMenu();
-        }}>
-          <ListItemIcon>
-            <ViewIcon fontSize="small" color="info" />
-          </ListItemIcon>
-          <ListItemText>ดูรายละเอียด</ListItemText>
-        </MenuItem>
-      </Menu>
+          <MenuItem onClick={() => {
+            if (selectedItemId && canEditDocument(selectedItemId)) {
+              navigate(`/data/edit/${encodeURIComponent(selectedItemId)}`);
+              handleCloseMenu();
+            }
+          }}>
+            <ListItemIcon>
+              <EditIcon fontSize="small" color="primary" />
+            </ListItemIcon>
+            <ListItemText>แก้ไขเอกสาร</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={() => {
+            if (selectedItemId && canEditDocument(selectedItemId)) {
+              handleDelete(selectedItemId);
+            }
+          }}>
+            <ListItemIcon>
+              <DeleteIcon fontSize="small" color="error" />
+            </ListItemIcon>
+            <ListItemText>ลบเอกสาร</ListItemText>
+          </MenuItem>
+          <Divider />
+          <MenuItem onClick={() => {
+            if (selectedItemId) {
+              navigate(`/data/view/${encodeURIComponent(selectedItemId)}`);
+              handleCloseMenu();
+            }
+          }}>
+            <ListItemIcon>
+              <ViewIcon fontSize="small" color="info" />
+            </ListItemIcon>
+            <ListItemText>ดูรายละเอียด</ListItemText>
+          </MenuItem>
+        </Menu>
 
-      <Snackbar
-        open={openSnackbar}
-        autoHideDuration={6000}
-        onClose={() => setOpenSnackbar(false)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
-        <Alert 
-          onClose={() => setOpenSnackbar(false)} 
-          severity="success" 
-          variant="filled"
-          sx={{ width: '100%', borderRadius: '8px' }}
+        <Snackbar
+          open={openSnackbar}
+          autoHideDuration={6000}
+          onClose={() => setOpenSnackbar(false)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         >
-          {snackbarMessage}
-        </Alert>
-      </Snackbar>
-    </Box>
-  </Fade>
-);
+          <Alert 
+            onClose={() => setOpenSnackbar(false)} 
+            severity="success" 
+            variant="filled"
+            sx={{ width: '100%', borderRadius: '8px' }}
+          >
+            {snackbarMessage}
+          </Alert>
+        </Snackbar>
+      </Box>
+    </Fade>
+  );
 };
 
 export default AllData;
+
 

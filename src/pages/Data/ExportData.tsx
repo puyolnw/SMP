@@ -45,6 +45,7 @@ import axios from 'axios';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
 import * as XLSX from 'xlsx';
+import { getUserBranchId } from '../../utils/auth'; // เพิ่มการ import getUserBranchId
 
 interface DataItem {
   id: string;
@@ -79,6 +80,9 @@ const ExportData: React.FC = () => {
   const [documentTypes, setDocumentTypes] = useState<string[]>([]);
   const [selectedDocumentType, setSelectedDocumentType] = useState<string>('');
   const apiUrl = import.meta.env.VITE_API_URL;
+  
+  // ดึง branchId ของ user ที่ login
+  const userBranchId = getUserBranchId();
 
   // Updated columns to match AllData.tsx
   const columns = [
@@ -105,8 +109,18 @@ const ExportData: React.FC = () => {
     try {
       setLoading(true);
       const response = await axios.get(`${apiUrl}/data`);
-      setData(response.data);
-      setFilteredData(response.data);
+      
+      // ถ้ามี branchId ให้กรองข้อมูลตาม branchId
+      if (userBranchId) {
+        const filteredByBranch = response.data.filter((item: DataItem) => 
+          item.id.startsWith(userBranchId)
+        );
+        setData(filteredByBranch);
+      } else {
+        // ถ้าไม่มี branchId ให้แสดงข้อมูลทั้งหมด
+        setData(response.data);
+      }
+      
       setError(null);
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -119,7 +133,16 @@ const ExportData: React.FC = () => {
   const fetchDocumentTypes = async () => {
     try {
       const response = await axios.get(`${apiUrl}/data/document-types`);
-      setDocumentTypes(response.data);
+      
+      // ถ้ามี branchId ให้กรองประเภทเอกสารที่เกี่ยวข้องกับ branch นั้นเท่านั้น
+      if (userBranchId) {
+        const filteredTypes = response.data.filter((type: string) => 
+          type.startsWith(userBranchId)
+        );
+        setDocumentTypes(filteredTypes);
+      } else {
+        setDocumentTypes(response.data);
+      }
     } catch (err) {
       console.error('Error fetching document types:', err);
       setError('ไม่สามารถดึงข้อมูลประเภทเอกสารได้');
@@ -351,7 +374,7 @@ const ExportData: React.FC = () => {
           ))
         ) : (
           <Paper sx={{ p: 2, textAlign: 'center' }}>
-            <Typography>ไม่พบข้อมูลที่ตรงกับเงื่อนไขการค้นหา</Typography>
+                        <Typography>ไม่พบข้อมูลที่ตรงกับเงื่อนไขการค้นหา</Typography>
           </Paper>
         )}
       </Box>
@@ -476,6 +499,11 @@ return (
               </Typography>
               <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
                 กรองและส่งออกข้อมูลเอกสารตามเงื่อนไขที่ต้องการ
+                {userBranchId && (
+                  <Typography component="span" fontWeight="medium" color="primary.main">
+                    {` (${userBranchId})`}
+                  </Typography>
+                )}
               </Typography>
             </Grid>
             
