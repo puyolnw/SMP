@@ -29,6 +29,7 @@ import {
   Card,
   CardContent,
   TablePagination,
+  Fade,
 } from '@mui/material';
 import {
   TableChart as ExcelIcon,
@@ -58,8 +59,8 @@ const ExportData: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const isTablet = useMediaQuery(theme.breakpoints.down('md'));
   const [page, setPage] = useState<number>(0);
-    const [rowsPerPage, setRowsPerPage] = useState<number>(10);
-    const rowsPerPageOptions = [5, 10, 20];
+  const [rowsPerPage, setRowsPerPage] = useState<number>(15);
+  const rowsPerPageOptions = [15, 25, 50];
   const [data, setData] = useState<DataItem[]>([]);
   const [filteredData, setFilteredData] = useState<DataItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -75,12 +76,13 @@ const ExportData: React.FC = () => {
 
   const columns = [
     { id: 'id', label: 'เลขที่เอกสาร' },
-    { id: 'document_name', label: 'ชื่อเอกสาร' },
-    { id: 'sender_name', label: 'ผู้ส่ง' },
-    { id: 'receiver_name', label: 'ผู้รับ' },
+    { id: 'document_name', label: 'เรื่อง' },
+    { id: 'sender_name', label: 'จาก' },
+    { id: 'receiver_name', label: 'ถึง' },
     { id: 'notes', label: 'หมายเหตุ' },
     { id: 'created_at', label: 'วันที่สร้าง' }
   ];
+  
   const handleChangePage = (_event: React.MouseEvent<HTMLButtonElement> | null, newPage: number) => {
     setPage(newPage);
   };
@@ -89,7 +91,6 @@ const ExportData: React.FC = () => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
-  
   
   const fetchData = async () => {
     try {
@@ -100,7 +101,7 @@ const ExportData: React.FC = () => {
       setError(null);
     } catch (err) {
       console.error('Error fetching data:', err);
-      setError('Failed to fetch data. Please try again later.');
+      setError('ไม่สามารถดึงข้อมูลได้ กรุณาลองใหม่อีกครั้ง');
     } finally {
       setLoading(false);
     }
@@ -136,6 +137,7 @@ const ExportData: React.FC = () => {
     }
 
     setFilteredData(filtered);
+    setPage(0); // Reset to first page when filtering
   };
 
   const handleColumnChange = (event: SelectChangeEvent<string[]>) => {
@@ -206,15 +208,25 @@ const ExportData: React.FC = () => {
     }
   };
 
-
   // แสดงผลแบบ Card สำหรับมือถือ
   const renderMobileView = () => {
     return (
       <Box>
         {filteredData.length > 0 ? (
-          filteredData.map((item) => (
-            <Card key={item.id} sx={{ mb: 2, boxShadow: 2 }}>
-              <CardContent>
+          filteredData.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((item) => (
+            <Card 
+              key={item.id} 
+              sx={{ 
+                mb: 2, 
+                borderRadius: '12px',
+                transition: 'all 0.2s',
+                '&:hover': {
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+                  transform: 'translateY(-2px)'
+                }
+              }}
+            >
+              <CardContent sx={{ pb: 1 }}>
                 {selectedColumns.includes('id') && (
                   <Typography variant="subtitle1" fontWeight="bold">
                     เลขที่เอกสาร: {item.id}
@@ -222,17 +234,17 @@ const ExportData: React.FC = () => {
                 )}
                 {selectedColumns.includes('document_name') && (
                   <Typography variant="body2" sx={{ mt: 1 }}>
-                    <strong>ชื่อเอกสาร:</strong> {item.document_name}
+                    <strong>เรื่อง:</strong> {item.document_name}
                   </Typography>
                 )}
                 {selectedColumns.includes('sender_name') && (
                   <Typography variant="body2">
-                    <strong>ผู้ส่ง:</strong> {item.sender_name}
+                    <strong>จาก:</strong> {item.sender_name}
                   </Typography>
                 )}
                 {selectedColumns.includes('receiver_name') && (
                   <Typography variant="body2">
-                    <strong>ผู้รับ:</strong> {item.receiver_name}
+                    <strong>ถึง:</strong> {item.receiver_name}
                   </Typography>
                 )}
                 {selectedColumns.includes('notes') && (
@@ -267,14 +279,14 @@ const ExportData: React.FC = () => {
   
     return (
       <>
-        <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
+        <TableContainer sx={{ minHeight: '400px' }}>
           <Table size={isTablet ? "small" : "medium"}>
             <TableHead>
               <TableRow sx={{ bgcolor: 'primary.main' }}>
                 {selectedColumns.map((colId) => {
                   const column = columns.find(col => col.id === colId);
                   return (
-                    <TableCell key={colId} sx={{ color: 'primary.contrastText' }}>
+                    <TableCell key={colId} sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>
                       {column ? column.label : colId}
                     </TableCell>
                   );
@@ -284,7 +296,18 @@ const ExportData: React.FC = () => {
             <TableBody>
               {paginatedData.length > 0 ? (
                 paginatedData.map((item) => (
-                  <TableRow key={item.id} hover>
+                  <TableRow 
+                    key={item.id} 
+                    hover
+                    sx={{
+                      transition: 'all 0.2s',
+                      '&:hover': {
+                        backgroundColor: 'rgba(63, 81, 181, 0.08)',
+                        transform: 'translateY(-1px)',
+                        boxShadow: '0 4px 8px rgba(0, 0, 0, 0.05)'
+                      }
+                    }}
+                  >
                     {selectedColumns.map((colId) => {
                       if (colId === 'created_at') {
                         return (
@@ -312,7 +335,6 @@ const ExportData: React.FC = () => {
           </Table>
         </TableContainer>
         
-        {/* เพิ่ม TablePagination สำหรับการจัดการหน้า */}
         <TablePagination
           rowsPerPageOptions={rowsPerPageOptions}
           component="div"
@@ -321,164 +343,252 @@ const ExportData: React.FC = () => {
           page={page}
           onPageChange={handleChangePage}
           onRowsPerPageChange={handleChangeRowsPerPage}
-          labelRowsPerPage="รายการต่อหน้า:"
+          labelRowsPerPage="แสดง:"
           labelDisplayedRows={({ from, to, count }) => `${from}-${to} จาก ${count}`}
+          sx={{
+            borderTop: '1px solid rgba(224, 224, 224, 1)',
+            '& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows': {
+              fontWeight: 'medium'
+            }
+          }}
         />
       </>
     );
   };
   
   return (
-    <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
-      <Box sx={{ 
-        display: 'flex', 
-        flexDirection: isMobile ? 'column' : 'row',
-        justifyContent: 'space-between', 
-        alignItems: isMobile ? 'flex-start' : 'center', 
-        mb: 3,
-        gap: 2
-      }}>
-        <Typography variant={isMobile ? "h5" : "h4"} component="h1">
-          ส่งออกข้อมูลเอกสาร
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button 
-            startIcon={<ArrowBackIcon />}
-            component={Link}
-            to="/data"
-            size={isMobile ? "small" : "medium"}
-            variant="outlined"
-          >
-            กลับ
-          </Button>
-          <IconButton onClick={fetchData} color="primary" size={isMobile ? "small" : "medium"}>
-            <RefreshIcon />
-          </IconButton>
-        </Box>
-      </Box>
-  
-      {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {error}
-        </Alert>
-      )}
-  
-      <Paper sx={{ p: { xs: 2, sm: 3 }, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          ตัวกรองข้อมูล
-        </Typography>
-        <Grid container spacing={2}>
-          <Grid item xs={12} sm={6} md={4}>
-            <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={th}>
-              <DatePicker
-                label="วันที่เริ่มต้น"
-                value={startDate}
-                onChange={(newValue: Date | null) => setStartDate(newValue)}
-                slotProps={{ 
-                  textField: { 
-                    fullWidth: true,
-                    size: isMobile ? "small" : "medium"
-                  } 
-                }}
-              />
-            </LocalizationProvider>
-          </Grid>
-          <Grid item xs={12} sm={6} md={4}>
-            <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={th}>
-              <DatePicker
-                label="วันที่สิ้นสุด"
-                value={endDate}
-                onChange={(newValue: Date | null) => setEndDate(newValue)}
-                slotProps={{ 
-                  textField: { 
-                    fullWidth: true,
-                    size: isMobile ? "small" : "medium"
-                  } 
-                }}
-              />
-            </LocalizationProvider>
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <FormControl fullWidth size={isMobile ? "small" : "medium"}>
-              <InputLabel id="columns-select-label">คอลัมน์ที่ต้องการส่งออก</InputLabel>
-              <Select
-                labelId="columns-select-label"
-                multiple
-                value={selectedColumns}
-                onChange={handleColumnChange}
-                input={<OutlinedInput label="คอลัมน์ที่ต้องการส่งออก" />}
-                renderValue={(selected) => {
-                  return selected.map(value => {
-                    const column = columns.find(col => col.id === value);
-                    return column ? column.label : value;
-                  }).join(', ');
-                }}
-              >
-                {columns.map((column) => (
-                  <MenuItem key={column.id} value={column.id}>
-                    <Checkbox checked={selectedColumns.indexOf(column.id) > -1} />
-                    <ListItemText primary={column.label} />
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Grid>
-        </Grid>
-      </Paper>
-  
-      <Box sx={{ 
-        display: 'flex', 
-        flexDirection: isMobile ? 'column' : 'row',
-        justifyContent: 'space-between', 
-        alignItems: isMobile ? 'flex-start' : 'center',
-        mb: 3,
-        gap: 2
-      }}>
-        <Typography variant="h6">
-          ผลลัพธ์: {filteredData.length} รายการ
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button
-            variant="contained"
-            startIcon={<ExcelIcon />}
-            onClick={exportToExcel}
-            color="success"
-            disabled={filteredData.length === 0}
-            size={isMobile ? "small" : "medium"}
-            fullWidth={isMobile}
-          >
-            ส่งออก Excel
-          </Button>
-        </Box>
-      </Box>
-  
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <>
-          {isMobile ? renderMobileView() : renderTableView()}
-        </>
-      )}
-  
-      <Snackbar
-        open={openSnackbar}
-        autoHideDuration={6000}
-        onClose={() => setOpenSnackbar(false)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert 
-          onClose={() => setOpenSnackbar(false)} 
-          severity="success" 
-          sx={{ width: '100%' }}
+    <Fade in={true} timeout={800}>
+      <Box sx={{ p: { xs: 2, sm: 3 } }}>
+        <Card 
+          elevation={3} 
+          sx={{ 
+            borderRadius: '16px',
+            overflow: 'hidden',
+            mb: 4
+          }}
         >
-          {snackbarMessage}
-        </Alert>
-      </Snackbar>
-    </Box>
+          <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+            <Grid container spacing={2} alignItems="center" justifyContent="space-between">
+              <Grid item xs={12} md={6}>
+                <Typography variant="h4" component="h1" fontWeight="bold" color="primary">
+                  ส่งออกข้อมูลเอกสาร
+                </Typography>
+                <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
+                กรองและส่งออกข้อมูลเอกสารตามเงื่อนไขที่ต้องการ
+                </Typography>
+              </Grid>
+              
+              <Grid item xs={12} md={6} sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' }, gap: 1, flexWrap: 'wrap' }}>
+                <Button 
+                  variant="contained" 
+                  startIcon={<ExcelIcon />}
+                  onClick={exportToExcel}
+                  color="success"
+                  disabled={filteredData.length === 0}
+                  sx={{ 
+                    borderRadius: '10px',
+                    boxShadow: '0 4px 14px rgba(0, 0, 0, 0.1)',
+                    transition: 'all 0.3s',
+                    '&:hover': {
+                      transform: 'translateY(-2px)',
+                      boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)'
+                    }
+                  }}
+                >
+                  ส่งออก Excel
+                </Button>
+                
+                <Button 
+                  variant="outlined" 
+                  startIcon={<ArrowBackIcon />}
+                  component={Link}
+                  to="/data"
+                  sx={{ 
+                    borderRadius: '10px',
+                    transition: 'all 0.3s',
+                    '&:hover': {
+                      transform: 'translateY(-2px)',
+                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)'
+                    }
+                  }}
+                >
+                  กลับไปหน้าข้อมูล
+                </Button>
+                
+                <Tooltip title="รีเฟรชข้อมูล">
+                  <IconButton 
+                    onClick={fetchData} 
+                    color="primary"
+                    sx={{ 
+                      borderRadius: '10px',
+                      transition: 'all 0.3s',
+                      '&:hover': {
+                        transform: 'rotate(180deg)',
+                        backgroundColor: 'rgba(63, 81, 181, 0.1)'
+                      }
+                    }}
+                  >
+                    <RefreshIcon />
+                  </IconButton>
+                </Tooltip>
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
+  
+        {error && (
+          <Alert 
+            severity="error" 
+            sx={{ 
+              mb: 3, 
+              borderRadius: '12px',
+              boxShadow: '0 4px 12px rgba(211, 47, 47, 0.2)'
+            }}
+            onClose={() => setError(null)}
+          >
+            {error}
+          </Alert>
+        )}
+  
+        <Card 
+          elevation={3} 
+          sx={{ 
+            borderRadius: '16px',
+            overflow: 'hidden',
+            mb: 4
+          }}
+        >
+          <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+            <Typography variant="h6" gutterBottom fontWeight="medium">
+              ตัวกรองข้อมูล
+            </Typography>
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6} md={4}>
+                <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={th}>
+                  <DatePicker
+                    label="วันที่เริ่มต้น"
+                    value={startDate}
+                    onChange={(newValue: Date | null) => setStartDate(newValue)}
+                    slotProps={{ 
+                      textField: { 
+                        fullWidth: true,
+                        size: isMobile ? "small" : "medium",
+                        sx: {
+                          borderRadius: '12px',
+                          '&.Mui-focused': {
+                            boxShadow: '0 0 0 3px rgba(63, 81, 181, 0.2)'
+                          }
+                        }
+                      } 
+                    }}
+                  />
+                </LocalizationProvider>
+              </Grid>
+              <Grid item xs={12} sm={6} md={4}>
+                <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={th}>
+                  <DatePicker
+                    label="วันที่สิ้นสุด"
+                    value={endDate}
+                    onChange={(newValue: Date | null) => setEndDate(newValue)}
+                    slotProps={{ 
+                      textField: { 
+                        fullWidth: true,
+                        size: isMobile ? "small" : "medium",
+                        sx: {
+                          borderRadius: '12px',
+                          '&.Mui-focused': {
+                            boxShadow: '0 0 0 3px rgba(63, 81, 181, 0.2)'
+                          }
+                        }
+                      } 
+                    }}
+                  />
+                </LocalizationProvider>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <FormControl 
+                  fullWidth 
+                  size={isMobile ? "small" : "medium"}
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: '12px',
+                    }
+                  }}
+                >
+                  <InputLabel id="columns-select-label">คอลัมน์ที่ต้องการส่งออก</InputLabel>
+                  <Select
+                    labelId="columns-select-label"
+                    multiple
+                    value={selectedColumns}
+                    onChange={handleColumnChange}
+                    input={<OutlinedInput label="คอลัมน์ที่ต้องการส่งออก" />}
+                    renderValue={(selected) => {
+                      return selected.map(value => {
+                        const column = columns.find(col => col.id === value);
+                        return column ? column.label : value;
+                      }).join(', ');
+                    }}
+                  >
+                    {columns.map((column) => (
+                      <MenuItem key={column.id} value={column.id}>
+                        <Checkbox checked={selectedColumns.indexOf(column.id) > -1} />
+                        <ListItemText primary={column.label} />
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
+  
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          mb: 2,
+          px: 1
+        }}>
+          <Typography variant="h6" fontWeight="medium">
+            ผลลัพธ์: {filteredData.length} รายการ
+          </Typography>
+        </Box>
+  
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4, mb: 4 }}>
+            <CircularProgress size={60} thickness={4} />
+          </Box>
+        ) : (
+          <Card 
+            elevation={3} 
+            sx={{ 
+              borderRadius: '16px',
+              overflow: 'hidden'
+            }}
+          >
+            {isMobile ? renderMobileView() : renderTableView()}
+          </Card>
+        )}
+  
+        <Snackbar
+          open={openSnackbar}
+          autoHideDuration={6000}
+          onClose={() => setOpenSnackbar(false)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        >
+          <Alert 
+            onClose={() => setOpenSnackbar(false)} 
+            severity="success" 
+            variant="filled"
+            sx={{ width: '100%', borderRadius: '8px' }}
+          >
+            {snackbarMessage}
+          </Alert>
+        </Snackbar>
+      </Box>
+    </Fade>
   );
-  };
+};
   
-  export default ExportData;
-  
+export default ExportData;
+

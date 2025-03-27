@@ -28,7 +28,11 @@ import {
   Menu,
   MenuItem,
   ListItemIcon,
-  ListItemText
+  ListItemText,
+  FormControl,
+  InputLabel,
+  Select,
+  SelectChangeEvent
 } from '@mui/material';
 import { 
   Add as AddIcon, 
@@ -37,10 +41,9 @@ import {
   Refresh as RefreshIcon,
   Search as SearchIcon,
   Clear as ClearIcon,
-  MoreVert as MoreVertIcon,
   Visibility as ViewIcon,
   FileDownload as ExportIcon,
-  CalendarMonth as DateIcon
+  CalendarMonth as DateIcon,
 } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -51,6 +54,9 @@ interface DataItem {
   sender_name: string;
   receiver_name: string;
   notes?: string;
+  action?: string;
+  status: string;
+  document_date?: string;
   created_at: string;
 }
 
@@ -63,6 +69,8 @@ const AllData: React.FC = () => {
   const [snackbarMessage, setSnackbarMessage] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [filterType, setFilterType] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statuses, setStatuses] = useState<string[]>([]);
   
   // Pagination
   const [page, setPage] = useState(0);
@@ -76,7 +84,20 @@ const AllData: React.FC = () => {
   const apiUrl = import.meta.env.VITE_API_URL;
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const isTablet = useMediaQuery(theme.breakpoints.down('md'));
+
+  // ดึงข้อมูลสถานะทั้งหมด
+  useEffect(() => {
+    const fetchStatuses = async () => {
+      try {
+        const response = await axios.get(`${apiUrl}/data/statuses`);
+        setStatuses(response.data);
+      } catch (err) {
+        console.error('Error fetching statuses:', err);
+      }
+    };
+
+    fetchStatuses();
+  }, [apiUrl]);
 
   const fetchData = async () => {
     try {
@@ -112,7 +133,7 @@ const AllData: React.FC = () => {
     fetchData();
   }, []);
 
-  // Filter data based on search term and filter type
+  // Filter data based on search term, filter type, and status
   useEffect(() => {
     let result = data;
     
@@ -123,11 +144,12 @@ const AllData: React.FC = () => {
         item.sender_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.receiver_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (item.notes && item.notes.toLowerCase().includes(searchTerm.toLowerCase()))
+        (item.notes && item.notes.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (item.action && item.action.toLowerCase().includes(searchTerm.toLowerCase()))
       );
     }
     
-    // Apply type filter
+    // Apply date filter
     if (filterType !== 'all') {
       const today = new Date();
       const oneWeekAgo = new Date(today);
@@ -157,17 +179,20 @@ const AllData: React.FC = () => {
       }
     }
     
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      result = result.filter(item => item.status === statusFilter);
+    }
+    
     setFilteredData(result);
     setPage(0); // Reset to first page when filtering
-  }, [searchTerm, filterType, data]);
+  }, [searchTerm, filterType, statusFilter, data]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('th-TH', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
     });
   };
 
@@ -183,12 +208,11 @@ const AllData: React.FC = () => {
   const handleClearFilters = () => {
     setSearchTerm('');
     setFilterType('all');
+    setStatusFilter('all');
   };
 
-  // Handle action menu
-  const handleOpenMenu = (event: React.MouseEvent<HTMLElement>, id: string) => {
-    setAnchorEl(event.currentTarget);
-    setSelectedItemId(id);
+  const handleStatusFilterChange = (event: SelectChangeEvent) => {
+    setStatusFilter(event.target.value);
   };
 
   const handleCloseMenu = () => {
@@ -197,15 +221,25 @@ const AllData: React.FC = () => {
   };
 
   // Calculate empty rows to maintain consistent page height
-  const emptyRows = page > 0 
-    ? Math.max(0, (1 + page) * rowsPerPage - filteredData.length) 
-    : 0;
-
   // Slice data for current page
   const currentPageData = filteredData.slice(
     page * rowsPerPage,
     page * rowsPerPage + rowsPerPage
   );
+
+  // Get status color
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'อนุมัติ':
+        return 'success';
+      case 'รอดำเนินการ':
+        return 'warning';
+      case 'แก้ไข':
+        return 'error';
+      default:
+        return 'default';
+    }
+  };
 
   return (
     <Fade in={true} timeout={800}>
@@ -380,23 +414,42 @@ const AllData: React.FC = () => {
                     }}
                   />
                   
-                  {(searchTerm || filterType !== 'all') && (
-  <Chip 
-    icon={<ClearIcon fontSize="small" />}
-    label="ล้างตัวกรอง" 
-    variant="outlined"
-    onClick={handleClearFilters}
-    sx={{ 
-      borderRadius: '8px',
-      transition: 'all 0.2s',
-      '&:hover': {
-        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
-        backgroundColor: 'error.light',
-        color: 'error.main'
-      }
-    }}
-  />
-)}
+                  <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+                  
+                  <FormControl variant="outlined" size="small" sx={{ minWidth: 120 }}>
+                    <InputLabel id="status-filter-label">สถานะ</InputLabel>
+                    <Select
+                      labelId="status-filter-label"
+                      id="status-filter"
+                      value={statusFilter}
+                      onChange={handleStatusFilterChange}
+                      label="สถานะ"
+                      sx={{ borderRadius: '8px' }}
+                    >
+                      <MenuItem value="all">ทั้งหมด</MenuItem>
+                      {statuses.map((status) => (
+                        <MenuItem key={status} value={status}>{status}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  
+                  {(searchTerm || filterType !== 'all' || statusFilter !== 'all') && (
+                    <Chip 
+                      icon={<ClearIcon fontSize="small" />}
+                      label="ล้างตัวกรอง" 
+                      variant="outlined"
+                      onClick={handleClearFilters}
+                      sx={{ 
+                        borderRadius: '8px',
+                        transition: 'all 0.2s',
+                        '&:hover': {
+                          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                          backgroundColor: 'error.light',
+                          color: 'error.main'
+                        }
+                      }}
+                    />
+                  )}
                 </Box>
               </Grid>
             </Grid>
@@ -428,7 +481,7 @@ const AllData: React.FC = () => {
             )}
           </CardContent>
         </Card>
-
+  
         {error && (
           <Alert 
             severity="error" 
@@ -442,7 +495,7 @@ const AllData: React.FC = () => {
             {error}
           </Alert>
         )}
-
+  
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4, mb: 4 }}>
             <CircularProgress size={60} thickness={4} />
@@ -460,82 +513,88 @@ const AllData: React.FC = () => {
               <>
                 <TableContainer sx={{ minHeight: '400px' }}>
                   <Table>
-                    <TableHead>
-                      <TableRow sx={{ bgcolor: 'primary.main' }}>
-                        <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>เลขที่เอกสาร</TableCell>
-                        <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>ชื่อเอกสาร</TableCell>
-                        {!isTablet && <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>ผู้ส่ง</TableCell>}
-                        <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>ผู้รับ</TableCell>
-                        {!isTablet && <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>หมายเหตุ</TableCell>}
-                        <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>วันที่สร้าง</TableCell>
-                        <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>การดำเนินการ</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {currentPageData.map((item) => (
-                        <TableRow 
-                          key={item.id} 
-                          hover
-                          sx={{
-                            transition: 'all 0.2s',
-                            '&:hover': {
-                              backgroundColor: 'rgba(63, 81, 181, 0.08)',
-                              transform: 'translateY(-1px)',
-                              boxShadow: '0 4px 8px rgba(0, 0, 0, 0.05)'
-                            }
-                          }}
-                        >
-                          <TableCell sx={{ fontWeight: 'medium' }}>{item.id}</TableCell>
-                          <TableCell>{item.document_name}</TableCell>
-                          {!isTablet && <TableCell>{item.sender_name}</TableCell>}
-                          <TableCell>{item.receiver_name}</TableCell>
-                          {!isTablet && <TableCell>{item.notes || '-'}</TableCell>}
-                          <TableCell>{formatDate(item.created_at)}</TableCell>
-                          <TableCell>
-                            <Box sx={{ display: 'flex', gap: 1 }}>
-                              <Tooltip title="แก้ไข">
-                                <IconButton 
-                                  color="primary" 
-                                  onClick={() => navigate(`/data/edit/${item.id}`)}
-                                  size="small"
-                                  sx={{ 
-                                    transition: 'all 0.2s',
-                                    '&:hover': {
-                                      backgroundColor: 'primary.light',
-                                      color: 'white'
-                                    }
-                                  }}
-                                >
-                                  <EditIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                              <Tooltip title="ลบ">
-                                <IconButton 
-                                  color="error" 
-                                  onClick={() => handleDelete(item.id)}
-                                  size="small"
-                                  sx={{ 
-                                    transition: 'all 0.2s',
-                                    '&:hover': {
-                                      backgroundColor: 'error.light',
-                                      color: 'white'
-                                    }
-                                  }}
-                                >
-                                  <DeleteIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            </Box>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      
-                      {emptyRows > 0 && (
-                        <TableRow style={{ height: 53 * emptyRows }}>
-                          <TableCell colSpan={isTablet ? 5 : 7} />
-                        </TableRow>
-                      )}
-                    </TableBody>
+                  <TableHead>
+  <TableRow sx={{ bgcolor: 'primary.main' }}>
+    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>เลขที่เอกสาร</TableCell>
+    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>วันที่</TableCell>
+    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>จาก</TableCell>
+    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>ถึง</TableCell>
+    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>เรื่อง</TableCell>
+    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>การปฏิบัติ</TableCell>
+    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>สถานะ</TableCell>
+    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>หมายเหตุ</TableCell>
+    <TableCell sx={{ color: 'primary.contrastText', fontWeight: 'bold' }}>จัดการ</TableCell>
+  </TableRow>
+</TableHead>
+
+<TableBody>
+  {currentPageData.map((item) => (
+    <TableRow 
+      key={item.id} 
+      hover
+      sx={{
+        transition: 'all 0.2s',
+        '&:hover': {
+          backgroundColor: 'rgba(63, 81, 181, 0.08)',
+          transform: 'translateY(-1px)',
+          boxShadow: '0 4px 8px rgba(0, 0, 0, 0.05)'
+        }
+      }}
+    >
+      <TableCell sx={{ fontWeight: 'medium' }}>{item.id}</TableCell>
+      <TableCell>{item.document_date ? formatDate(item.document_date) : '-'}</TableCell>
+      <TableCell>{item.sender_name}</TableCell>
+      <TableCell>{item.receiver_name}</TableCell>
+      <TableCell>{item.document_name}</TableCell>
+      <TableCell>{item.action || '-'}</TableCell>
+      <TableCell>
+        <Chip 
+          label={item.status} 
+          color={getStatusColor(item.status) as "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning"}
+          size="small"
+          sx={{ borderRadius: '4px' }}
+        />
+      </TableCell>
+      <TableCell>{item.notes || '-'}</TableCell>
+      <TableCell>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Tooltip title="แก้ไข">
+            <IconButton 
+              color="primary" 
+              onClick={() => navigate(`/data/edit/${item.id}`)}
+              size="small"
+              sx={{ 
+                transition: 'all 0.2s',
+                '&:hover': {
+                  backgroundColor: 'primary.light',
+                  color: 'white'
+                }
+              }}
+            >
+              <EditIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="ลบ">
+            <IconButton 
+              color="error" 
+              onClick={() => handleDelete(item.id)}
+              size="small"
+              sx={{ 
+                transition: 'all 0.2s',
+                '&:hover': {
+                  backgroundColor: 'error.light',
+                  color: 'white'
+                }
+              }}
+            >
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      </TableCell>
+    </TableRow>
+  ))}
+</TableBody>
                   </Table>
                 </TableContainer>
                 
@@ -585,18 +644,14 @@ const AllData: React.FC = () => {
                               {item.id}
                             </Typography>
                           </Box>
-                          <IconButton 
-                            size="small" 
-                            onClick={(e) => handleOpenMenu(e, item.id)}
-                            sx={{ mt: -1, mr: -1 }}
-                          >
-                            <MoreVertIcon />
-                          </IconButton>
+                          <Typography variant="body2" color="text.secondary">
+                            {item.document_date ? formatDate(item.document_date) : '-'}
+                          </Typography>
                         </Box>
                         
                         <Box sx={{ mt: 2 }}>
                           <Typography variant="subtitle2" color="text.secondary">
-                            ชื่อเอกสาร
+                            เรื่อง
                           </Typography>
                           <Typography variant="body1">
                             {item.document_name}
@@ -606,7 +661,7 @@ const AllData: React.FC = () => {
                         <Grid container spacing={2} sx={{ mt: 0.5 }}>
                           <Grid item xs={6}>
                             <Typography variant="subtitle2" color="text.secondary">
-                              ผู้ส่ง
+                              จาก
                             </Typography>
                             <Typography variant="body2">
                               {item.sender_name}
@@ -614,7 +669,7 @@ const AllData: React.FC = () => {
                           </Grid>
                           <Grid item xs={6}>
                             <Typography variant="subtitle2" color="text.secondary">
-                              ผู้รับ
+                              ถึง
                             </Typography>
                             <Typography variant="body2">
                               {item.receiver_name}
@@ -622,12 +677,31 @@ const AllData: React.FC = () => {
                           </Grid>
                         </Grid>
                         
+                        {item.action && (
+                          <Box sx={{ mt: 1 }}>
+                            <Typography variant="subtitle2" color="text.secondary">
+                              การปฏิบัติ
+                            </Typography>
+                            <Typography variant="body2">
+                              {item.action}
+                            </Typography>
+                          </Box>
+                        )}
+                        
+                        {item.notes && (
+                          <Box sx={{ mt: 1 }}>
+                            <Typography variant="subtitle2" color="text.secondary">
+                              หมายเหตุ
+                            </Typography>
+                            <Typography variant="body2">
+                              {item.notes}
+                            </Typography>
+                          </Box>
+                        )}
+                        
                         <Divider sx={{ my: 1.5 }} />
                         
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Typography variant="caption" color="text.secondary">
-                            {formatDate(item.created_at)}
-                          </Typography>
+                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
                           <Box>
                             <Tooltip title="แก้ไข">
                               <IconButton 
@@ -675,7 +749,7 @@ const AllData: React.FC = () => {
             )}
           </Card>
         )}
-
+  
         {/* Action Menu */}
         <Menu
           anchorEl={anchorEl}
@@ -688,53 +762,54 @@ const AllData: React.FC = () => {
             }
           }}
         >
-          <MenuItem onClick={() => {
-            if (selectedItemId) navigate(`/data/edit/${encodeURIComponent(selectedItemId)}`);
-            handleCloseMenu();
-          }}>
-            <ListItemIcon>
-              <EditIcon fontSize="small" color="primary" />
-            </ListItemIcon>
-            <ListItemText>แก้ไขเอกสาร</ListItemText>
-          </MenuItem>
-          <MenuItem onClick={() => {
-            if (selectedItemId) handleDelete(selectedItemId);
-          }}>
-            <ListItemIcon>
-              <DeleteIcon fontSize="small" color="error" />
-            </ListItemIcon>
-            <ListItemText>ลบเอกสาร</ListItemText>
-          </MenuItem>
-          <Divider />
-          <MenuItem onClick={() => {
-            // ฟังก์ชันสำหรับดูรายละเอียด (ถ้ามี)
-            handleCloseMenu();
-          }}>
-            <ListItemIcon>
-              <ViewIcon fontSize="small" color="info" />
-            </ListItemIcon>
-            <ListItemText>ดูรายละเอียด</ListItemText>
-          </MenuItem>
-        </Menu>
+                  <MenuItem onClick={() => {
+          if (selectedItemId) navigate(`/data/edit/${encodeURIComponent(selectedItemId)}`);
+          handleCloseMenu();
+        }}>
+          <ListItemIcon>
+            <EditIcon fontSize="small" color="primary" />
+          </ListItemIcon>
+          <ListItemText>แก้ไขเอกสาร</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => {
+          if (selectedItemId) handleDelete(selectedItemId);
+        }}>
+          <ListItemIcon>
+            <DeleteIcon fontSize="small" color="error" />
+          </ListItemIcon>
+          <ListItemText>ลบเอกสาร</ListItemText>
+        </MenuItem>
+        <Divider />
+        <MenuItem onClick={() => {
+          // ฟังก์ชันสำหรับดูรายละเอียด (ถ้ามี)
+          handleCloseMenu();
+        }}>
+          <ListItemIcon>
+            <ViewIcon fontSize="small" color="info" />
+          </ListItemIcon>
+          <ListItemText>ดูรายละเอียด</ListItemText>
+        </MenuItem>
+      </Menu>
 
-        <Snackbar
-          open={openSnackbar}
-          autoHideDuration={6000}
-          onClose={() => setOpenSnackbar(false)}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      <Snackbar
+        open={openSnackbar}
+        autoHideDuration={6000}
+        onClose={() => setOpenSnackbar(false)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert 
+          onClose={() => setOpenSnackbar(false)} 
+          severity="success" 
+          variant="filled"
+          sx={{ width: '100%', borderRadius: '8px' }}
         >
-          <Alert 
-            onClose={() => setOpenSnackbar(false)} 
-            severity="success" 
-            variant="filled"
-            sx={{ width: '100%', borderRadius: '8px' }}
-          >
-            {snackbarMessage}
-          </Alert>
-        </Snackbar>
-      </Box>
-    </Fade>
-  );
+          {snackbarMessage}
+        </Alert>
+      </Snackbar>
+    </Box>
+  </Fade>
+);
 };
 
 export default AllData;
+

@@ -23,7 +23,15 @@ import {
   Breadcrumbs,
   Link as MuiLink,
   Chip,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  SelectChangeEvent
 } from '@mui/material';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { 
   Save as SaveIcon, 
   ArrowBack as ArrowBackIcon,
@@ -33,7 +41,9 @@ import {
   Note as NoteIcon,
   CheckCircleOutline as SuccessIcon,
   Home as HomeIcon,
-  Article as ArticleIcon
+  Article as ArticleIcon,
+  Assignment as ActionIcon,
+  CalendarToday as CalendarIcon
 } from '@mui/icons-material';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
@@ -43,6 +53,9 @@ interface FormData {
   sender_name: string;
   receiver_name: string;
   notes: string;
+  action: string;
+  status: string;
+  document_date: Date | null;
 }
 
 const EditData: React.FC = () => {
@@ -51,7 +64,10 @@ const EditData: React.FC = () => {
     document_name: '',
     sender_name: '',
     receiver_name: '',
-    notes: ''
+    notes: '',
+    action: '',
+    status: 'รอดำเนินการ',
+    document_date: null
   });
   const [originalData, setOriginalData] = useState<FormData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,21 +76,43 @@ const EditData: React.FC = () => {
   const [openSnackbar, setOpenSnackbar] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [openSuccessDialog, setOpenSuccessDialog] = useState(false);
+  const [statuses, setStatuses] = useState<string[]>([]);
   const navigate = useNavigate();
   const apiUrl = import.meta.env.VITE_API_URL;
+
+  // โหลดข้อมูลสถานะ
+  useEffect(() => {
+    const fetchStatuses = async () => {
+      try {
+        const response = await axios.get(`${apiUrl}/data/statuses`);
+        setStatuses(response.data);
+      } catch (err) {
+        console.error('Error fetching statuses:', err);
+      }
+    };
+
+    fetchStatuses();
+  }, [apiUrl]);
+
   // โหลดข้อมูลเมื่อเปิดหน้า
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const response = await axios.get(`${apiUrl}/api/data/${id}`);
+        const response = await axios.get(`${apiUrl}/data/${id}`);
         const data = response.data;
+        
+        // แปลงวันที่จาก string เป็น Date object ถ้ามีข้อมูล
+        const documentDate = data.document_date ? new Date(data.document_date) : null;
         
         setFormData({
           document_name: data.document_name || '',
           sender_name: data.sender_name || '',
           receiver_name: data.receiver_name || '',
-          notes: data.notes || ''
+          notes: data.notes || '',
+          action: data.action || '',
+          status: data.status || 'รอดำเนินการ',
+          document_date: documentDate
         });
         
         // เก็บข้อมูลต้นฉบับไว้เพื่อเปรียบเทียบการเปลี่ยนแปลง
@@ -82,7 +120,10 @@ const EditData: React.FC = () => {
           document_name: data.document_name || '',
           sender_name: data.sender_name || '',
           receiver_name: data.receiver_name || '',
-          notes: data.notes || ''
+          notes: data.notes || '',
+          action: data.action || '',
+          status: data.status || 'รอดำเนินการ',
+          document_date: documentDate
         });
         
         setError(null);
@@ -107,14 +148,36 @@ const EditData: React.FC = () => {
     }));
   };
 
+  const handleSelectChange = (e: SelectChangeEvent) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleDateChange = (date: Date | null) => {
+    setFormData(prev => ({
+      ...prev,
+      document_date: date
+    }));
+  };
+
   const hasChanges = () => {
     if (!originalData) return false;
+    
+    // เปรียบเทียบวันที่แบบพิเศษ
+    const originalDateStr = originalData.document_date ? originalData.document_date.toISOString().substring(0, 10) : null;
+    const currentDateStr = formData.document_date ? formData.document_date.toISOString().substring(0, 10) : null;
     
     return (
       formData.document_name !== originalData.document_name ||
       formData.sender_name !== originalData.sender_name ||
       formData.receiver_name !== originalData.receiver_name ||
-      formData.notes !== originalData.notes
+      formData.notes !== originalData.notes ||
+      formData.action !== originalData.action ||
+      formData.status !== originalData.status ||
+      originalDateStr !== currentDateStr
     );
   };
 
@@ -122,7 +185,7 @@ const EditData: React.FC = () => {
     e.preventDefault();
     
     if (!formData.document_name || !formData.sender_name || !formData.receiver_name) {
-      setError('กรุณากรอกชื่อเอกสาร, ผู้ส่ง และผู้รับ');
+      setError('กรุณากรอกเรื่อง, จาก และถึง');
       return;
     }
 
@@ -137,7 +200,13 @@ const EditData: React.FC = () => {
       setSaving(true);
       setError(null);
       
-      await axios.put(`${apiUrl}/data/${id}`, formData);
+      // แปลงวันที่ให้เป็นรูปแบบที่เหมาะสม
+      const dataToSend = {
+        ...formData,
+        document_date: formData.document_date ? formData.document_date.toISOString().substring(0, 10) : null
+      };
+      
+      await axios.put(`${apiUrl}/data/${id}`, dataToSend);
       
       // อัพเดทข้อมูลต้นฉบับ
       setOriginalData({...formData});
@@ -319,7 +388,7 @@ const EditData: React.FC = () => {
                     <Grid item xs={12}>
                       <TextField
                         fullWidth
-                        label="ชื่อเอกสาร"
+                        label="เรื่อง"
                         name="document_name"
                         value={formData.document_name}
                         onChange={handleChange}
@@ -409,6 +478,100 @@ const EditData: React.FC = () => {
                       />
                     </Grid>
 
+                    <Grid item xs={12} md={6}>
+                      <LocalizationProvider dateAdapter={AdapterDateFns}>
+                        <DatePicker
+                          label="วันที่เอกสาร"
+                          value={formData.document_date}
+                          onChange={handleDateChange}
+                          slotProps={{
+                            textField: {
+                              fullWidth: true,
+                              variant: "outlined",
+                              InputProps: {
+                                startAdornment: (
+                                  <InputAdornment position="start">
+                                    <CalendarIcon color="primary" />
+                                  </InputAdornment>
+                                ),
+                              },
+                              sx: {
+                                '& .MuiOutlinedInput-root': {
+                                  borderRadius: '12px',
+                                  transition: 'all 0.3s',
+                                  '&:hover': {
+                                    boxShadow: '0 0 0 2px rgba(63, 81, 181, 0.2)'
+                                  },
+                                  '&.Mui-focused': {
+                                    boxShadow: '0 0 0 3px rgba(63, 81, 181, 0.3)'
+                                  }
+                                }
+                              }
+                            }
+                          }}
+                        />
+                      </LocalizationProvider>
+                    </Grid>
+
+                    <Grid item xs={12} md={6}>
+                      <FormControl fullWidth>
+                        <InputLabel id="status-label">สถานะ</InputLabel>
+                        <Select
+                          labelId="status-label"
+                          name="status"
+                          value={formData.status}
+                          onChange={handleSelectChange}
+                          label="สถานะ"
+                          sx={{
+                            borderRadius: '12px',
+                            transition: 'all 0.3s',
+                            '&:hover': {
+                              boxShadow: '0 0 0 2px rgba(63, 81, 181, 0.2)'
+                            },
+                            '&.Mui-focused': {
+                              boxShadow: '0 0 0 3px rgba(63, 81, 181, 0.3)'
+                            }
+                          }}
+                        >
+                          {statuses.map((status) => (
+                            <MenuItem key={status} value={status}>
+                              {status}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+
+                    <Grid item xs={12}>
+                      <TextField
+                        fullWidth
+                        label="การดำเนินการ"
+                        name="action"
+                        value={formData.action}
+                        onChange={handleChange}
+                        variant="outlined"
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <ActionIcon color="primary" />
+                            </InputAdornment>
+                          ),
+                        }}
+                        sx={{
+                          '& .MuiOutlinedInput-root': {
+                            borderRadius: '12px',
+                            transition: 'all 0.3s',
+                            '&:hover': {
+                              boxShadow: '0 0 0 2px rgba(63, 81, 181, 0.2)'
+                            },
+                            '&.Mui-focused': {
+                              boxShadow: '0 0 0 3px rgba(63, 81, 181, 0.3)'
+                            }
+                          }
+                        }}
+                      />
+                    </Grid>
+
                     <Grid item xs={12}>
                       <TextField
                         fullWidth
@@ -420,150 +583,148 @@ const EditData: React.FC = () => {
                         multiline
                         rows={4}
                         InputProps={{
-                            startAdornment: (
-                              <InputAdornment position="start" sx={{ alignSelf: 'flex-start', mt: 1.5 }}>
-                                <NoteIcon color="primary" />
-                              </InputAdornment>
-                            ),
-                          }}
-                          sx={{
-                            '& .MuiOutlinedInput-root': {
-                              borderRadius: '12px',
-                              transition: 'all 0.3s',
-                              '&:hover': {
-                                boxShadow: '0 0 0 2px rgba(63, 81, 181, 0.2)'
-                              },
-                              '&.Mui-focused': {
-                                boxShadow: '0 0 0 3px rgba(63, 81, 181, 0.3)'
-                              }
+                          startAdornment: (
+                            <InputAdornment position="start" sx={{ alignSelf: 'flex-start', mt: 1.5 }}>
+                              <NoteIcon color="primary" />
+                            </InputAdornment>
+                          ),
+                        }}
+                        sx={{
+                          '& .MuiOutlinedInput-root': {
+                            borderRadius: '12px',
+                            transition: 'all 0.3s',
+                            '&:hover': {
+                              boxShadow: '0 0 0 2px rgba(63, 81, 181, 0.2)'
+                            },
+                            '&.Mui-focused': {
+                              boxShadow: '0 0 0 3px rgba(63, 81, 181, 0.3)'
+                            }
+                          }
+                        }}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12}>
+                      <Divider sx={{ my: 1 }} />
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
+                        <Button
+                          variant="outlined"
+                          color="secondary"
+                          onClick={() => navigate('/data')}
+                          sx={{ 
+                            borderRadius: '10px',
+                            transition: 'all 0.3s',
+                            '&:hover': {
+                              transform: 'translateY(-2px)',
+                              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)'
                             }
                           }}
-                        />
-                      </Grid>
-  
-                      <Grid item xs={12}>
-                        <Divider sx={{ my: 1 }} />
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
-                          <Button
-                            variant="outlined"
-                            color="secondary"
-                            onClick={() => navigate('/data')}
-                            sx={{ 
-                              borderRadius: '10px',
-                              transition: 'all 0.3s',
-                              '&:hover': {
-                                transform: 'translateY(-2px)',
-                                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)'
-                              }
-                            }}
-                          >
-                            ยกเลิก
-                          </Button>
-                          
-                          <Button
-                            type="submit"
-                            variant="contained"
-                            color="primary"
-                            startIcon={saving ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />}
-                            disabled={saving || !hasChanges()}
-                            size="large"
-                            sx={{ 
-                              borderRadius: '10px',
-                              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.1)',
-                              transition: 'all 0.3s',
-                              '&:hover': {
-                                transform: 'translateY(-2px)',
-                                boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)'
-                              },
-                              '&.Mui-disabled': {
-                                bgcolor: 'rgba(63, 81, 181, 0.12)',
-                                color: 'rgba(0, 0, 0, 0.26)'
-                              }
-                            }}
-                          >
-                            {saving ? 'กำลังบันทึก...' : 'บันทึกการเปลี่ยนแปลง'}
-                          </Button>
-                        </Box>
-                      </Grid>
+                        >
+                          ยกเลิก
+                        </Button>
+                        
+                        <Button
+                          type="submit"
+                          variant="contained"
+                          color="primary"
+                          startIcon={saving ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />}
+                          disabled={saving || !hasChanges()}
+                          size="large"
+                          sx={{ 
+                            borderRadius: '10px',
+                            boxShadow: '0 4px 14px rgba(0, 0, 0, 0.1)',
+                            transition: 'all 0.3s',
+                            '&:hover': {
+                              transform: 'translateY(-2px)',
+                              boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)'
+                            },
+                            '&.Mui-disabled': {
+                              bgcolor: 'rgba(63, 81, 181, 0.12)',
+                              color: 'rgba(0, 0, 0, 0.26)'
+                            }
+                          }}
+                        >
+                          {saving ? 'กำลังบันทึก...' : 'บันทึกการเปลี่ยนแปลง'}
+                        </Button>
+                      </Box>
                     </Grid>
-                  </form>
-                )}
-              </CardContent>
-            </Card>
-  
-            {/* Dialog แสดงเมื่อบันทึกสำเร็จ */}
-            <Dialog
-              open={openSuccessDialog}
-              onClose={handleCloseSuccessDialog}
-              PaperProps={{
-                sx: {
-                  borderRadius: '16px',
-                  padding: 2,
-                  maxWidth: '400px'
-                }
-              }}
-            >
-              <DialogTitle sx={{ textAlign: 'center', pb: 1 }}>
-                <SuccessIcon color="success" sx={{ fontSize: 60, mb: 1 }} />
-                <Typography variant="h5" component="div" fontWeight="bold">
-                  บันทึกข้อมูลสำเร็จ
-                </Typography>
-              </DialogTitle>
-              <DialogContent>
-                <Typography variant="body1" align="center" sx={{ mb: 2 }}>
-                  อัพเดทข้อมูลเอกสารเรียบร้อยแล้ว
-                </Typography>
-                <Typography variant="body2" color="text.secondary" align="center">
-                  เลขที่เอกสาร: <strong>{id}</strong>
-                </Typography>
-              </DialogContent>
-              <DialogActions sx={{ justifyContent: 'center', p: 2 }}>
-                <Button 
-                  onClick={handleViewDocuments}
-                  variant="contained"
-                  color="primary"
-                  sx={{ 
-                    borderRadius: '10px',
-                    minWidth: '150px'
-                  }}
-                >
-                  ดูรายการเอกสาร
-                </Button>
-                <Button 
-                  onClick={handleCloseSuccessDialog}
-                  variant="outlined"
-                  sx={{ 
-                    borderRadius: '10px',
-                    minWidth: '150px'
-                  }}
-                >
-                  แก้ไขต่อ
-                </Button>
-              </DialogActions>
-            </Dialog>
-  
-            <Snackbar
-              open={openSnackbar}
-              autoHideDuration={6000}
-              onClose={() => setOpenSnackbar(false)}
-              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-            >
-              <Alert 
-                onClose={() => setOpenSnackbar(false)} 
-                severity="success" 
-                variant="filled"
-                sx={{ width: '100%', borderRadius: '8px' }}
+                  </Grid>
+                </form>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Dialog แสดงเมื่อบันทึกสำเร็จ */}
+          <Dialog
+            open={openSuccessDialog}
+            onClose={handleCloseSuccessDialog}
+            PaperProps={{
+              sx: {
+                borderRadius: '16px',
+                padding: 2,
+                maxWidth: '400px'
+              }
+            }}
+          >
+            <DialogTitle sx={{ textAlign: 'center', pb: 1 }}>
+              <SuccessIcon color="success" sx={{ fontSize: 60, mb: 1 }} />
+              <Typography variant="h5" component="div" fontWeight="bold">
+                บันทึกข้อมูลสำเร็จ
+              </Typography>
+            </DialogTitle>
+            <DialogContent>
+              <Typography variant="body1" align="center" sx={{ mb: 2 }}>
+                อัพเดทข้อมูลเอกสารเรียบร้อยแล้ว
+              </Typography>
+              <Typography variant="body2" color="text.secondary" align="center">
+                เลขที่เอกสาร: <strong>{id}</strong>
+              </Typography>
+            </DialogContent>
+            <DialogActions sx={{ justifyContent: 'center', p: 2 }}>
+              <Button 
+                onClick={handleViewDocuments}
+                variant="contained"
+                color="primary"
+                sx={{ 
+                  borderRadius: '10px',
+                  minWidth: '150px'
+                }}
               >
-                {snackbarMessage}
-              </Alert>
-            </Snackbar>
-  
-            {/* CSS Animation */}
-          </Box>
-        </Fade>
-      </Container>
-    );
-  };
-  
-  export default EditData;
-  
+                ดูรายการเอกสาร
+              </Button>
+              <Button 
+                onClick={handleCloseSuccessDialog}
+                variant="outlined"
+                sx={{ 
+                  borderRadius: '10px',
+                  minWidth: '150px'
+                }}
+              >
+                แก้ไขต่อ
+              </Button>
+            </DialogActions>
+          </Dialog>
+
+          <Snackbar
+            open={openSnackbar}
+            autoHideDuration={6000}
+            onClose={() => setOpenSnackbar(false)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          >
+            <Alert 
+              onClose={() => setOpenSnackbar(false)} 
+              severity="success" 
+              variant="filled"
+              sx={{ width: '100%', borderRadius: '8px' }}
+            >
+              {snackbarMessage}
+            </Alert>
+          </Snackbar>
+        </Box>
+      </Fade>
+    </Container>
+  );
+};
+
+export default EditData;
+
