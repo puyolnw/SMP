@@ -30,6 +30,7 @@ import {
   CardContent,
   TablePagination,
   Fade,
+  Chip,
 } from '@mui/material';
 import {
   TableChart as ExcelIcon,
@@ -51,6 +52,9 @@ interface DataItem {
   sender_name: string;
   receiver_name: string;
   notes?: string;
+  action?: string;
+  status: string;
+  document_date?: string;
   created_at: string;
 }
 
@@ -68,19 +72,22 @@ const ExportData: React.FC = () => {
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [selectedColumns, setSelectedColumns] = useState<string[]>([
-    'id', 'document_name', 'sender_name', 'receiver_name', 'notes', 'created_at'
+    'id', 'document_date', 'sender_name', 'receiver_name', 'document_name', 'action', 'status', 'notes'
   ]);
   const [openSnackbar, setOpenSnackbar] = useState<boolean>(false);
   const [snackbarMessage, setSnackbarMessage] = useState<string>('');
   const apiUrl = import.meta.env.VITE_API_URL;
 
+  // Updated columns to match AllData.tsx
   const columns = [
     { id: 'id', label: 'เลขที่เอกสาร' },
-    { id: 'document_name', label: 'เรื่อง' },
+    { id: 'document_date', label: 'วันที่' },
     { id: 'sender_name', label: 'จาก' },
     { id: 'receiver_name', label: 'ถึง' },
-    { id: 'notes', label: 'หมายเหตุ' },
-    { id: 'created_at', label: 'วันที่สร้าง' }
+    { id: 'document_name', label: 'เรื่อง' },
+    { id: 'action', label: 'การปฏิบัติ' },
+    { id: 'status', label: 'สถานะ' },
+    { id: 'notes', label: 'หมายเหตุ' }
   ];
   
   const handleChangePage = (_event: React.MouseEvent<HTMLButtonElement> | null, newPage: number) => {
@@ -146,7 +153,12 @@ const ExportData: React.FC = () => {
   };
 
   const formatDate = (dateString: string) => {
-    return format(parseISO(dateString), 'dd/MM/yyyy HH:mm', { locale: th });
+    if (!dateString) return '-';
+    return new Date(dateString).toLocaleDateString('th-TH', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
   };
 
   // ฟังก์ชันสำหรับตัดข้อความที่ยาวเกินไป
@@ -158,6 +170,20 @@ const ExportData: React.FC = () => {
         <span>{text.substring(0, maxLength)}...</span>
       </Tooltip>
     );
+  };
+
+  // Get status color (copied from AllData.tsx)
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'อนุมัติ':
+        return 'success';
+      case 'รอดำเนินการ':
+        return 'warning';
+      case 'แก้ไข':
+        return 'error';
+      default:
+        return 'default';
+    }
   };
 
   const exportToExcel = () => {
@@ -173,11 +199,13 @@ const ExportData: React.FC = () => {
         const row: Record<string, any> = {};
         
         selectedColumns.forEach(col => {
-          if (col === 'created_at') {
-            row['วันที่สร้าง'] = formatDate(item.created_at);
-          } else {
-            const column = columns.find(c => c.id === col);
-            if (column) {
+          const column = columns.find(c => c.id === col);
+          if (column) {
+            if (col === 'document_date') {
+              row[column.label] = item.document_date ? formatDate(item.document_date) : '-';
+            } else if (col === 'status') {
+              row[column.label] = item.status || '-';
+            } else {
               row[column.label] = item[col as keyof DataItem] || '-';
             }
           }
@@ -227,35 +255,80 @@ const ExportData: React.FC = () => {
               }}
             >
               <CardContent sx={{ pb: 1 }}>
-                {selectedColumns.includes('id') && (
-                  <Typography variant="subtitle1" fontWeight="bold">
-                    เลขที่เอกสาร: {item.id}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <Box>
+                    <Typography variant="subtitle2" color="text.secondary">
+                      เลขที่เอกสาร
+                    </Typography>
+                    <Typography variant="body1" fontWeight="medium">
+                      {item.id}
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2" color="text.secondary">
+                    {item.document_date ? formatDate(item.document_date) : '-'}
                   </Typography>
+                </Box>
+                
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    เรื่อง
+                  </Typography>
+                  <Typography variant="body1">
+                    {item.document_name}
+                  </Typography>
+                </Box>
+                
+                <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                  <Grid item xs={6}>
+                    <Typography variant="subtitle2" color="text.secondary">
+                      จาก
+                    </Typography>
+                    <Typography variant="body2">
+                      {item.sender_name}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Typography variant="subtitle2" color="text.secondary">
+                      ถึง
+                    </Typography>
+                    <Typography variant="body2">
+                      {item.receiver_name}
+                    </Typography>
+                  </Grid>
+                </Grid>
+                
+                {item.action && (
+                  <Box sx={{ mt: 1 }}>
+                    <Typography variant="subtitle2" color="text.secondary">
+                      การปฏิบัติ
+                    </Typography>
+                    <Typography variant="body2">
+                      {item.action}
+                    </Typography>
+                  </Box>
                 )}
-                {selectedColumns.includes('document_name') && (
-                  <Typography variant="body2" sx={{ mt: 1 }}>
-                    <strong>เรื่อง:</strong> {item.document_name}
+                
+                <Box sx={{ mt: 1 }}>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    สถานะ
                   </Typography>
-                )}
-                {selectedColumns.includes('sender_name') && (
-                  <Typography variant="body2">
-                    <strong>จาก:</strong> {item.sender_name}
-                  </Typography>
-                )}
-                {selectedColumns.includes('receiver_name') && (
-                  <Typography variant="body2">
-                    <strong>ถึง:</strong> {item.receiver_name}
-                  </Typography>
-                )}
-                {selectedColumns.includes('notes') && (
-                  <Typography variant="body2">
-                    <strong>หมายเหตุ:</strong> {item.notes || '-'}
-                  </Typography>
-                )}
-                {selectedColumns.includes('created_at') && (
-                  <Typography variant="body2">
-                    <strong>วันที่สร้าง:</strong> {formatDate(item.created_at)}
-                  </Typography>
+                  <Chip 
+                    label={item.status} 
+                    color={getStatusColor(item.status) as "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning"}
+                    size="small"
+                    sx={{ borderRadius: '4px', mt: 0.5 }}
+                  />
+                </Box>
+                
+                {item.notes && (
+                  <Box sx={{ mt: 1 }}>
+                    <Typography variant="subtitle2" color="text.secondary">
+                      หมายเหตุ
+                    </Typography>
+                    <Typography variant="body2">
+                      {item.notes}
+                    </Typography>
+                  </Box>
                 )}
               </CardContent>
             </Card>
@@ -309,18 +382,30 @@ const ExportData: React.FC = () => {
                     }}
                   >
                     {selectedColumns.map((colId) => {
-                      if (colId === 'created_at') {
+                      if (colId === 'document_date') {
                         return (
                           <TableCell key={colId}>
-                            {formatDate(item.created_at)}
+                                                        {item.document_date ? formatDate(item.document_date) : '-'}
+                          </TableCell>
+                        );
+                      } else if (colId === 'status') {
+                        return (
+                          <TableCell key={colId}>
+                            <Chip 
+                              label={item.status} 
+                              color={getStatusColor(item.status) as "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning"}
+                              size="small"
+                              sx={{ borderRadius: '4px' }}
+                            />
+                          </TableCell>
+                        );
+                      } else {
+                        return (
+                          <TableCell key={colId}>
+                            {item[colId as keyof DataItem] || '-'}
                           </TableCell>
                         );
                       }
-                      return (
-                        <TableCell key={colId}>
-                          {truncateText(item[colId as keyof DataItem] || '-')}
-                        </TableCell>
-                      );
                     })}
                   </TableRow>
                 ))
@@ -374,7 +459,7 @@ const ExportData: React.FC = () => {
                   ส่งออกข้อมูลเอกสาร
                 </Typography>
                 <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
-                กรองและส่งออกข้อมูลเอกสารตามเงื่อนไขที่ต้องการ
+                  กรองและส่งออกข้อมูลเอกสารตามเงื่อนไขที่ต้องการ
                 </Typography>
               </Grid>
               
