@@ -42,7 +42,7 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { format, parseISO } from 'date-fns';
+import { format} from 'date-fns';
 import { th } from 'date-fns/locale';
 import * as XLSX from 'xlsx';
 
@@ -162,15 +162,6 @@ const ExportData: React.FC = () => {
   };
 
   // ฟังก์ชันสำหรับตัดข้อความที่ยาวเกินไป
-  const truncateText = (text: string, maxLength: number = 30) => {
-    if (!text) return '-';
-    if (text.length <= maxLength) return text;
-    return (
-      <Tooltip title={text} arrow placement="top">
-        <span>{text.substring(0, maxLength)}...</span>
-      </Tooltip>
-    );
-  };
 
   // Get status color (copied from AllData.tsx)
   const getStatusColor = (status: string) => {
