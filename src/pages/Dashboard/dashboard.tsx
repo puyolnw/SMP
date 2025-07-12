@@ -9,11 +9,18 @@ import {
   styled
 } from '@mui/material';
 import { 
-  EmojiEmotions as WelcomeIcon,
-  Book as BookIcon,
-  People as PeopleIcon,
+  LocalHospital as HospitalIcon,
+  PersonSearch as ScreeningIcon,
+  Queue as QueueIcon,
   Assessment as ReportIcon,
-  Help as HelpIcon
+  PriorityHigh as UrgentIcon,
+  //Notifications as NotificationIcon,
+  People as PatientsIcon,
+  //MedicalServices as MedicalIcon,
+  CheckCircle as CheckIcon,
+  Schedule as ScheduleIcon,
+  Assignment as FormIcon,
+  MonitorHeart as VitalIcon
 } from '@mui/icons-material';
 
 const StyledPaper = styled(Paper)(({ theme }) => ({
@@ -24,6 +31,7 @@ const StyledPaper = styled(Paper)(({ theme }) => ({
   flexDirection: 'column',
   justifyContent: 'center',
   transition: 'transform 0.3s, box-shadow 0.3s',
+  cursor: 'pointer',
   '&:hover': {
     transform: 'translateY(-5px)',
     boxShadow: theme.shadows[8]
@@ -49,66 +57,202 @@ const Dashboard: React.FC = () => {
               gap: 2
             }}
           >
-            <WelcomeIcon fontSize="large" />
-            ระบบบันทึกข้อมูล
+            <HospitalIcon sx={{ fontSize: 80, color: '#e53e3e' }} />
+            ระบบคัดกรองและจัดคิวผู้ป่วย
           </Typography>
           <Typography variant="h5" color="text.secondary">
-            ยินดีต้อนรับเข้าสู่ระบบจัดการข้อมูลของพี่ตั๊ก
+            ระบบคัดกรองผู้ป่วยเพื่อจัดลำดับความสำคัญและจัดคิวการรักษา
           </Typography>
         </Box>
 
-        {/* Features Grid */}
+        {/* Quick Stats Section */}
+        <Grid container spacing={3} sx={{ mb: 4 }}>
+          <Grid item xs={12} sm={6} md={3}>
+            <Paper 
+              elevation={2} 
+              sx={{ 
+                p: 3, 
+                textAlign: 'center',
+                bgcolor: 'error.light',
+                color: 'error.contrastText'
+              }}
+            >
+              <UrgentIcon sx={{ fontSize: 40, mb: 1 }} />
+              <Typography variant="h4" fontWeight="bold">5</Typography>
+              <Typography variant="body2">ฉุกเฉิน</Typography>
+            </Paper>
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <Paper 
+              elevation={2} 
+              sx={{ 
+                p: 3, 
+                textAlign: 'center',
+                bgcolor: 'warning.light',
+                color: 'warning.contrastText'
+              }}
+            >
+              <ScheduleIcon sx={{ fontSize: 40, mb: 1 }} />
+              <Typography variant="h4" fontWeight="bold">18</Typography>
+              <Typography variant="body2">รอคัดกรอง</Typography>
+            </Paper>
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <Paper 
+              elevation={2} 
+              sx={{ 
+                p: 3, 
+                textAlign: 'center',
+                bgcolor: 'success.light',
+                color: 'success.contrastText'
+              }}
+            >
+              <CheckIcon sx={{ fontSize: 40, mb: 1 }} />
+              <Typography variant="h4" fontWeight="bold">42</Typography>
+              <Typography variant="body2">คัดกรองแล้ว</Typography>
+            </Paper>
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <Paper 
+              elevation={2} 
+              sx={{ 
+                p: 3, 
+                textAlign: 'center',
+                bgcolor: 'info.light',
+                color: 'info.contrastText'
+              }}
+            >
+              <QueueIcon sx={{ fontSize: 40, mb: 1 }} />
+              <Typography variant="h4" fontWeight="bold">24</Typography>
+              <Typography variant="body2">คิวรอรักษา</Typography>
+            </Paper>
+          </Grid>
+        </Grid>
+
+        {/* Main Features Grid */}
         <Grid container spacing={4} sx={{ mb: 6 }}>
           <Grid item xs={12} md={6} lg={3}>
             <StyledPaper elevation={3}>
-              <BookIcon color="primary" sx={{ fontSize: 50, mb: 2 }} />
+              <ScreeningIcon color="primary" sx={{ fontSize: 50, mb: 2 }} />
               <Typography variant="h5" gutterBottom>
-                บันทึกข้อมูล
+                คัดกรองผู้ป่วย
               </Typography>
               <Typography color="text.secondary">
-                ระบบสำหรับบันทึกข้อมูลต่างๆ อย่างเป็นระเบียบ
+                ประเมินอาการและจัดลำดับความสำคัญ
               </Typography>
             </StyledPaper>
           </Grid>
 
           <Grid item xs={12} md={6} lg={3}>
             <StyledPaper elevation={3}>
-              <PeopleIcon color="primary" sx={{ fontSize: 50, mb: 2 }} />
+              <FormIcon color="primary" sx={{ fontSize: 50, mb: 2 }} />
               <Typography variant="h5" gutterBottom>
-                จัดการข้อมูล
+                แบบฟอร์มคัดกรอง
               </Typography>
               <Typography color="text.secondary">
-                ดูและจัดการข้อมูลที่บันทึกไว้ในระบบ
+                กรอกข้อมูลอาการและประวัติผู้ป่วย
               </Typography>
             </StyledPaper>
           </Grid>
 
           <Grid item xs={12} md={6} lg={3}>
             <StyledPaper elevation={3}>
-              <ReportIcon color="primary" sx={{ fontSize: 50, mb: 2 }} />
+              <QueueIcon color="primary" sx={{ fontSize: 50, mb: 2 }} />
               <Typography variant="h5" gutterBottom>
-                สถิติ
+                จัดการคิว
               </Typography>
               <Typography color="text.secondary">
-                ดูรายงานและสถิติข้อมูลต่างๆ
+                จัดคิวตามลำดับความสำคัญ
               </Typography>
             </StyledPaper>
           </Grid>
 
           <Grid item xs={12} md={6} lg={3}>
             <StyledPaper elevation={3}>
-              <HelpIcon color="primary" sx={{ fontSize: 50, mb: 2 }} />
+              <VitalIcon color="primary" sx={{ fontSize: 50, mb: 2 }} />
               <Typography variant="h5" gutterBottom>
-                คู่มือ
+                ตรวจสัญญาณชีพ
               </Typography>
               <Typography color="text.secondary">
-                วิธีการใช้งานระบบ
+                บันทึกความดัน ชีพจร อุณหภูมิ
+              </Typography>
+            </StyledPaper>
+          </Grid>
+        </Grid>
+
+        {/* Secondary Features */}
+        <Grid container spacing={4} sx={{ mb: 6 }}>
+          <Grid item xs={12} md={6} lg={4}>
+            <StyledPaper elevation={3}>
+              <UrgentIcon color="error" sx={{ fontSize: 50, mb: 2 }} />
+              <Typography variant="h5" gutterBottom>
+                ผู้ป่วยฉุกเฉิน
+              </Typography>
+              <Typography color="text.secondary">
+                จัดการผู้ป่วยที่ต้องการความช่วยเหลือด่วน
+              </Typography>
+            </StyledPaper>
+          </Grid>
+
+          <Grid item xs={12} md={6} lg={4}>
+            <StyledPaper elevation={3}>
+              <PatientsIcon color="secondary" sx={{ fontSize: 50, mb: 2 }} />
+              <Typography variant="h5" gutterBottom>
+                รายชื่อผู้ป่วย
+              </Typography>
+              <Typography color="text.secondary">
+                ดูรายชื่อและสถานะผู้ป่วยทั้งหมด
+              </Typography>
+            </StyledPaper>
+          </Grid>
+
+          <Grid item xs={12} md={6} lg={4}>
+            <StyledPaper elevation={3}>
+              <ReportIcon color="secondary" sx={{ fontSize: 50, mb: 2 }} />
+              <Typography variant="h5" gutterBottom>
+                รายงานการคัดกรอง
+              </Typography>
+              <Typography color="text.secondary">
+                สถิติและรายงานการคัดกรองผู้ป่วย
               </Typography>
             </StyledPaper>
           </Grid>
         </Grid>
 
         <Divider sx={{ my: 4 }} />
+
+        {/* Priority Levels Info */}
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="h5" gutterBottom textAlign="center" fontWeight="bold">
+            ระดับความสำคัญในการคัดกรอง
+          </Typography>
+          <Grid container spacing={2} sx={{ mt: 2 }}>
+            <Grid item xs={12} sm={6} md={3}>
+              <Paper sx={{ p: 2, bgcolor: 'error.light', color: 'error.contrastText', textAlign: 'center' }}>
+                <Typography variant="h6" fontWeight="bold">ระดับ 1</Typography>
+                <Typography variant="body2">ฉุกเฉิน - ต้องรักษาทันที</Typography>
+              </Paper>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Paper sx={{ p: 2, bgcolor: 'warning.light', color: 'warning.contrastText', textAlign: 'center' }}>
+                <Typography variant="h6" fontWeight="bold">ระดับ 2</Typography>
+                <Typography variant="body2">เร่งด่วน - รักษาภายใน 15 นาที</Typography>
+              </Paper>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Paper sx={{ p: 2, bgcolor: 'info.light', color: 'info.contrastText', textAlign: 'center' }}>
+                <Typography variant="h6" fontWeight="bold">ระดับ 3</Typography>
+                <Typography variant="body2">ปานกลาง - รักษาภายใน 30 นาที</Typography>
+              </Paper>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Paper sx={{ p: 2, bgcolor: 'success.light', color: 'success.contrastText', textAlign: 'center' }}>
+                <Typography variant="h6" fontWeight="bold">ระดับ 4</Typography>
+                <Typography variant="body2">ไม่เร่งด่วน - รักษาภายใน 60 นาที</Typography>
+              </Paper>
+            </Grid>
+          </Grid>
+        </Box>
 
         {/* Welcome Message */}
         <Box sx={{ 
@@ -118,13 +262,35 @@ const Dashboard: React.FC = () => {
           textAlign: 'center'
         }}>
           <Typography variant="h4" gutterBottom sx={{ color: 'primary.contrastText' }}>
-            เริ่มต้นใช้งานระบบ
+            ระบบคัดกรองผู้ป่วยอัจฉริยะ
           </Typography>
           <Typography variant="body1" sx={{ color: 'primary.contrastText', mb: 2 }}>
-            ระบบบันทึกข้อมูลออกแบบมาเพื่อให้คุณสามารถจัดการข้อมูลได้อย่างง่ายดาย
+            ช่วยให้การจัดลำดับความสำคัญของผู้ป่วยเป็นไปอย่างมีประสิทธิภาพและปลอดภัย
           </Typography>
           <Typography variant="body2" sx={{ color: 'primary.contrastText' }}>
-            เลือกเมนูที่ต้องการจากด้านบนเพื่อเริ่มต้นใช้งาน
+            เริ่มต้นด้วยการคัดกรองผู้ป่วยเพื่อจัดคิวการรักษาที่เหมาะสม
+          </Typography>
+        </Box>
+
+        {/* Current Time Display */}
+        <Box sx={{ 
+          mt: 4, 
+          p: 2, 
+          textAlign: 'center',
+          bgcolor: 'background.paper',
+          borderRadius: 1,
+          border: '1px solid',
+          borderColor: 'divider'
+        }}>
+          <Typography variant="h6" color="text.secondary">
+            เวลาปัจจุบัน: {new Date().toLocaleString('th-TH', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit'
+            })}
           </Typography>
         </Box>
       </Container>

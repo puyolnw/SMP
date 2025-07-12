@@ -41,7 +41,7 @@ function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => 
       >
 
         <Typography variant="h6" sx={{ color: 'var(--bg-primary)' }}>
-       ระบบบันทึกข้อมูล  
+       SM : Smart Patient
         </Typography>
       </Box>
 

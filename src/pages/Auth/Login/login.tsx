@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom'; // ใช้ useNavigate สำหรับการเปลี่ยนเส้นทาง
 import { Box, TextField, Button, Typography, Paper, Alert } from '@mui/material';
-import axios from 'axios'; // เพิ่ม import axios
+//import axios from 'axios'; // เพิ่ม import axios
 
 const LoginPage = () => {
   const [username, setUsername] = useState('');
@@ -24,6 +24,51 @@ const LoginPage = () => {
     setLoading(true);
     setError('');
 
+    // Bypass authentication - allow any username/password combination
+    try {
+      // Simulate a successful login response
+      const mockResponse = {
+        token: 'mock-token-' + Date.now(),
+        user: {
+          id: 1,
+          username: username || 'guest',
+          role: 'user',
+          branchid: '001' // Default branch ID
+        }
+      };
+
+      console.log('Mock login successful:', mockResponse);
+   
+      // บันทึก token และ user ลงใน localStorage
+      localStorage.setItem('token', mockResponse.token); // เก็บ token
+      
+      // เก็บข้อมูลผู้ใช้ (รวมถึง branchid)
+      localStorage.setItem('user', JSON.stringify({
+        id: mockResponse.user.id,
+        username: mockResponse.user.username,
+        role: mockResponse.user.role,
+        branchid: mockResponse.user.branchid // เพิ่ม branchid ในข้อมูลที่เก็บ
+      }));
+      
+      // Log เพื่อตรวจสอบว่า branchid ถูกเก็บหรือไม่
+      console.log('Stored user data:', {
+        id: mockResponse.user.id,
+        username: mockResponse.user.username,
+        role: mockResponse.user.role,
+        branchid: mockResponse.user.branchid
+      });
+   
+      // เปลี่ยนเส้นทางไปหน้า Dashboard
+      navigate('/');
+    } catch (err) {
+      console.error('Error during login:', err);
+      setError('An unexpected error occurred. Please try again later.');
+    } finally {
+      setLoading(false);
+    }
+
+    // Original API call code (commented out for bypass)
+    /*
     try {
       // ใช้ API URL จาก .env
       const apiUrl = import.meta.env.VITE_API_URL;
@@ -86,6 +131,7 @@ const LoginPage = () => {
     } finally {
       setLoading(false);
     }
+    */
   };
 
   return (
@@ -122,7 +168,7 @@ const LoginPage = () => {
             marginBottom: 3,
           }}
         >
-          ระบบบันทึกข้อมูล
+         SM : Smart Patient
         </Typography>
 
         {/* แสดงข้อความ error */}
@@ -131,6 +177,11 @@ const LoginPage = () => {
             {error}
           </Alert>
         )}
+
+        {/* แสดงข้อความแจ้งเตือนว่าเป็น bypass mode */}
+        <Alert severity="info" sx={{ marginBottom: 2 }}>
+          Development Mode: Any username/password will work
+        </Alert>
 
         {/* แบบฟอร์มเข้าสู่ระบบ */}
         <form onSubmit={handleSubmit}>
@@ -141,7 +192,7 @@ const LoginPage = () => {
             margin="normal"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            required
+            placeholder="Enter any username"
             sx={{
               '& .MuiOutlinedInput-root': {
                 fontFamily: 'var(--font-primary)', // ใช้ฟอนต์จาก theme.css
@@ -156,7 +207,7 @@ const LoginPage = () => {
             margin="normal"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            required
+            placeholder="Enter any password"
             sx={{
               '& .MuiOutlinedInput-root': {
                 fontFamily: 'var(--font-primary)', // ใช้ฟอนต์จาก theme.css
@@ -180,7 +231,7 @@ const LoginPage = () => {
               },
             }}
           >
-            {loading ? 'Logging in...' : 'Login'}
+            {loading ? 'Logging in...' : 'Login (Bypass Mode)'}
           </Button>
         </form>
       </Paper>
