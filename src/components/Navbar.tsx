@@ -94,7 +94,7 @@ function NavBar({ onSidebarToggle }: { onSidebarToggle: () => void }) {
             flexGrow: 1
           }}
         >
-          {isMobile ? 'DataSaved' : currentPage}
+          {isMobile ? 'SMP : SMART PATIENT' : currentPage}
         </Typography>
 
         {/* User Greeting and Icon */}
