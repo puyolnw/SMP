@@ -1,8 +1,18 @@
 import {
   Dashboard as DashboardIcon,
-  People,
-  List,
   PersonAdd,
+  LocalHospital,
+  QueueMusic,
+  Visibility,
+  PersonSearch,
+  VerifiedUser,
+  Assignment,
+  WavingHand,
+  Healing,
+  MonitorHeart,
+  Security,
+  Analytics,
+
 } from '@mui/icons-material';
 
 export const menuItems = [
@@ -13,32 +23,32 @@ export const menuItems = [
     nameTH: 'หน้าหลัก',
   },
   {
-    text:'Test ',
-    icon: People,
+    text:'ระบบจัดการ',
+    icon: LocalHospital,
     path: '/dat',
     nameTH: 'ข้อมูล',
     children: [
       {
         text: 'ผู้ป่วย',
-        icon: List,
+        icon: MonitorHeart,
         path: '/data',
         nameTH: 'ผู้ป่วยประจำวัน',
       },
        {
         text: 'จอแสดงคิว',
-        icon: PersonAdd,
+        icon: Visibility,
         path: '/queue/showqueue',
         nameTH: 'จอแสดงคิว',
       },
       {
         text: 'จัดการคิว',
-        icon: PersonAdd,
+        icon: QueueMusic,
         path: '/queue/manage',
         nameTH: 'จัดการคิว',
       },
        {
         text: 'ค้นหาผู้ป่วย+ข้อมูล',
-        icon: PersonAdd,
+        icon: PersonSearch,
         path: '/member/pantient/searchpantient',
         nameTH: 'ค้นหาผู้ป่วย',
       },
@@ -49,48 +59,44 @@ export const menuItems = [
         nameTH: 'เพิ่มผู้ป่วย',
       },
        {
-        text: 'ยืนยันตัว 1',
-        icon: PersonAdd,
+        text: 'ยืนยันตัวตน 1',
+        icon: VerifiedUser,
         path: '/Screening/AuthenPatient',
         nameTH: 'ยืนยันตัวตน 1',
       },
        {
-        text: 'ยืนยันตัว 2',
-        icon: PersonAdd,
+        text: 'ยืนยันตัวตน 2',
+        icon: Security,
         path: '/Screening/AuthenPatient2',
         nameTH: 'ยืนยันตัวตน 2',
       },
       {
         text: 'คัดกรอง 1',
-        icon: PersonAdd,
+        icon: Assignment,
         path: '/Screening/Patient',
-        nameTH: 'ยืนยันตัวตน 2',
+        nameTH: 'คัดกรองผู้ป่วย 1',
       },
       {
         text: 'คัดกรอง 2',
-        icon: PersonAdd,
+        icon: Analytics,
         path: '/Screening/Patient2',
-        nameTH: 'ยืนยันตัวตน 2',
+        nameTH: 'คัดกรองผู้ป่วย 2',
       },
-
     ],
   },
 
    {
-    text:'Moblie Test ', //ใช้สำหรับเป็นแสดงผลแบบ user ผู้ป่วยที่เข้ามาใช้
-    icon: People,
+    text:'ระบบผู้ป่วย', //ใช้สำหรับเป็นแสดงผลแบบ user ผู้ป่วยที่เข้ามาใช้
+    icon: Healing,
     path: '/dat',
-    nameTH: 'ข้อมูล',
+    nameTH: 'ระบบผู้ป่วย',
     children: [
       {
         text: 'ยินดีต้อนรับ',
-        icon: List,
+        icon: WavingHand,
         path: '/welcome',
         nameTH: 'ยินดีต้อนรับ',
       },
-   
-
     ],
   },
-
 ];
