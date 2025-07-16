@@ -2,54 +2,59 @@ import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Navbar from './Navbar';
 import Sidebar from './Sidebar';
+import { GlobalDebugPanel } from './GlobalDebugPanel';
+import { DebugProvider } from '../contexts/DebugContext';
 import { Box, useMediaQuery, useTheme } from '@mui/material';
 
 function Layout() {
-  const [mobileOpen, setMobileOpen] = useState(false); // State to control sidebar visibility
+  const [mobileOpen, setMobileOpen] = useState(false);
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm')); // Detect screen size
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const handleSidebarToggle = () => {
-    setMobileOpen(!mobileOpen); // Toggle the sidebar
+    setMobileOpen(!mobileOpen);
   };
 
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        bgcolor: 'var(--bg-secondary)',
-        minHeight: '100vh',
-      }}
-    >
-      {/* Pass mobileOpen and onClose to Sidebar */}
-      <Sidebar mobileOpen={mobileOpen} onClose={handleSidebarToggle} />
-
+    <DebugProvider>
       <Box
         sx={{
-          flexGrow: 1,
           display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          ml: isMobile ? 0 : '240px', // Add margin-left to account for the sidebar width in desktop mode
+          bgcolor: 'var(--bg-secondary)',
+          minHeight: '100vh',
         }}
       >
-        {/* Pass the toggle function to Navbar */}
-        <Navbar onSidebarToggle={handleSidebarToggle} />
+        <Sidebar mobileOpen={mobileOpen} onClose={handleSidebarToggle} />
 
         <Box
-          component="main"
           sx={{
             flexGrow: 1,
-            p: 3,
-            mt: 8,
-            bgcolor: 'var(--bg-tertiary)',
-            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            ml: isMobile ? 0 : '240px',
           }}
         >
-          <Outlet />
+          <Navbar onSidebarToggle={handleSidebarToggle} />
+
+          <Box
+            component="main"
+            sx={{
+              flexGrow: 1,
+              p: 3,
+              mt: 8,
+              bgcolor: 'var(--bg-tertiary)',
+              overflowY: 'auto',
+            }}
+          >
+            <Outlet />
+          </Box>
         </Box>
+
+        {/* Global Debug Panel */}
+        <GlobalDebugPanel />
       </Box>
-    </Box>
+    </DebugProvider>
   );
 }
 

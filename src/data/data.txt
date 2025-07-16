@@ -1,0 +1,204 @@
+
+1. patients – ข้อมูลผู้ป่วย
+json
+Copy
+Edit
+{
+  "_id": "uuid",
+  "national_id": "1234567890123",
+  "first_name": "สมชาย",
+  "last_name": "ใจดี",
+  "gender": "male",
+  "date_of_birth": "1990-01-01",
+  "contact_number": "0812345678",
+  "face_scan_data": "base64...",
+  "entries": [
+    {
+      "method": "face", 
+      "value": "face-embedding-data",
+      "timestamp": "2025-07-16T09:30:00Z"
+    }
+  ],
+  "visits": [ ObjectId("...") ]  // reference ไป collection visits
+}
+
+2. visits – การมารับบริการของผู้ป่วยแต่ละวัน
+json
+Copy
+Edit
+{
+  "_id": "uuid",
+  "patient_id": ObjectId("..."),
+  "visit_date": "2025-07-16",
+  "status": "in_progress",  // completed, skipped
+  "screening": {
+    "blood_pressure": "120/80",
+    "weight": 65.5,
+    "height": 171,
+    "temperature": 36.5,
+    "symptoms": "ปวดหัวเล็กน้อย",
+    "screening_time": "2025-07-16T09:35:00Z"
+  },
+  "queues": [
+    {
+      "room_id": ObjectId("..."),
+      "room_name": "ตรวจโรคทั่วไป",
+      "queue_number": 15,
+      "preferred_doctor_id": ObjectId("..."),
+      "status": "completed",
+      "start_time": "2025-07-16T10:00:00Z",
+      "end_time": "2025-07-16T10:15:00Z",
+      "referral_to": {
+        "room_id": ObjectId("..."),
+        "note": "ส่งต่อห้อง X-ray"
+      }
+    }
+  ]
+}
+
+3. buildings – ข้อมูลตึก
+json
+Copy
+Edit
+{
+  "_id": "uuid",
+  "building_code": "A",
+  "building_name": "อาคารผู้ป่วยนอก",
+  "description": "อาคารตรวจโรคทั่วไปและคลินิกเฉพาะทาง",
+  "floors": 5,
+  "active": true
+}
+
+4. exam_rooms – ห้องตรวจ
+json
+Copy
+Edit
+{
+  "_id": "uuid",
+  "room_code": "A-301",
+  "room_name": "ห้องตรวจอายุรกรรม 1",
+  "floor": 3,
+  "building_id": ObjectId("..."),
+  "building_name": "อาคารผู้ป่วยนอก",
+  "department": "อายุรกรรม",
+  "capacity": 3,
+  "active": true
+}
+
+5. departments – แผนก
+json
+Copy
+Edit
+{
+  "_id": "uuid",
+  "dept_code": "MED",
+  "dept_name": "อายุรกรรม",
+  "description": "แผนกตรวจและรักษาโรคทั่วไปทางอายุรกรรม",
+  "head_doctor_id": ObjectId("..."),
+  "location": {
+    "building_id": ObjectId("..."),
+    "floor": 3
+  }
+}
+
+6. doctors – แพทย์
+json
+Copy
+Edit
+{
+  "_id": "uuid",
+  "doctor_code": "D0001",
+  "prefix": "นพ.",
+  "first_name": "สุริยา",
+  "last_name": "พงษ์ธรรม",
+  "specialty": "อายุรกรรมทั่วไป",
+  "department_id": ObjectId("..."),
+  "license_number": "12345",
+  "contact_number": "0891234567",
+  "email": "suriya.p@hospital.com",
+  "active": true
+}
+
+7. room_schedules – ตารางเวรของแพทย์
+json
+Copy
+Edit
+{
+  "_id": "uuid",
+  "room_id": ObjectId("..."),
+  "doctor_id": ObjectId("..."),
+  "work_date": "2025-07-16",
+  "start_time": "08:00",
+  "end_time": "16:00",
+  "max_patients": 30,
+  "current_patients": 15
+}
+
+8. users – เจ้าหน้าที่
+json
+Copy
+Edit
+{
+  "_id": "uuid",
+  "username": "kulnart",
+  "password_hash": "...",
+  "prefix": "นาง",
+  "first_name": "กุลนาถ",
+  "last_name": "สมบูรณ์",
+  "role": "nurse",  // doctor, admin, receptionist
+  "department_id": ObjectId("..."),
+  "contact_number": "0812345678",
+  "email": "kulnart.s@hospital.com",
+  "active": true
+}
+
+9. queues – คิวรอตรวจ
+json
+Copy
+Edit
+{
+  "_id": "uuid",
+  "queue_date": "2025-07-16",
+  "department_id": ObjectId("..."),
+  "room_id": ObjectId("..."),
+  "doctor_id": ObjectId("..."),
+  "queue_number": "A025",
+  "patient_id": ObjectId("..."),
+  "patient_name": "สมชาย ใจดี",
+  "priority": "normal", // urgent, elderly, normal
+  "status": "waiting", // waiting, in_progress, completed, cancelled
+  "check_in_time": "2025-07-16T09:30:00Z",
+  "start_time": null,
+  "end_time": null,
+  "estimated_wait_time": 30, // minutes
+  "notes": ""
+}
+
+10. screening_records – บันทึกการคัดกรอง
+json
+Copy
+Edit
+{
+  "_id": "uuid",
+  "patient_id": ObjectId("..."),
+  "visit_id": ObjectId("..."),
+  "screening_time": "2025-07-16T09:35:00Z",
+  "vital_signs": {
+    "blood_pressure": {
+      "systolic": 120,
+      "diastolic": 80
+    },
+    "pulse": 72,
+    "temperature": 36.5,
+    "respiratory_rate": 16,
+    "oxygen_saturation": 98,
+    "weight": 65.5,
+    "height": 171,
+    "bmi": 22.4
+  },
+  "symptoms": "ปวดหัวเล็กน้อย มีไข้ต่ำๆ",
+  "initial_diagnosis": "สงสัยไข้หวัด",
+  "priority_assessment": "normal",
+  "screened_by": ObjectId("..."), // user_id ของพยาบาลที่คัดกรอง
+  "notes": ""
+}

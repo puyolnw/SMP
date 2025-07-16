@@ -41,7 +41,7 @@ function findCurrentPageName(routes: Route[], pathname: string): string | null {
 
 function NavBar({ onSidebarToggle }: { onSidebarToggle: () => void }) {
   const location = useLocation();
-  const currentPage = findCurrentPageName(routes, location.pathname) || 'SM : Smart Pantient'; // Default หากไม่เจอ
+  const currentPage = findCurrentPageName(routes, location.pathname) || 'SM : Smart Patient'; // Default หากไม่เจอ
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm')); // Detect screen size
