@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { usePageDebug } from '../../../hooks/usePageDebug';
+import { TableSchema } from '../../../types/Debug';
 
 interface PatientQueue {
   queueNumber: string;
@@ -26,6 +28,15 @@ interface Department {
   color: string;
   currentQueue: string;
   totalWaiting: number;
+  isActive: boolean;
+}
+
+interface PatientData {
+  id: string;
+  name: string;
+  nationalId: string;
+  phone?: string;
+  profileImage?: string;
 }
 
 // Extend Window interface for Speech Recognition
@@ -39,95 +50,222 @@ declare global {
 const Welcome: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [currentStep, setCurrentStep] = useState<'welcome' | 'voice-input' | 'text-input' | 'analysis' | 'queue-result'>('welcome');
+
+  // Debug setup - เหมือนหน้าอื่นๆ
+  const requiredTables: TableSchema[] = useMemo(() => [
+    {
+      tableName: 'departments',
+      columns: ['id', 'name', 'keywords', 'description', 'room', 'building', 'floor', 'color', 'currentQueue', 'totalWaiting', 'isActive'],
+      description: 'แผนกต่างๆ ในโรงพยาบาล'
+    },
+    {
+      tableName: 'patients',
+      columns: ['id', 'prefix', 'firstNameTh', 'lastNameTh', 'nationalId', 'phone', 'profileImage'],
+      description: 'ข้อมูลผู้ป่วย'
+    },
+    {
+      tableName: 'queues',
+      columns: ['id', 'patientId', 'departmentId', 'roomId', 'queueNumber', 'status', 'timestamp'],
+      description: 'ข้อมูลคิว'
+    }
+  ], []);
+
+  const { debugData, refreshData } = usePageDebug('คัดกรองอาการด้วย AI', requiredTables);
+
+  const [currentStep, setCurrentStep] = useState<'id-verification' | 'welcome' | 'voice-input' | 'text-input' | 'analysis' | 'queue-result'>('welcome');
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [manualInput, setManualInput] = useState('');
   const [inputMode, setInputMode] = useState<'voice' | 'text'>('voice');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [assignedQueue, setAssignedQueue] = useState<PatientQueue | null>(null);
-  const [queueStatus, setQueueStatus] = useState<'auto-queued' | 'manual-queue'>('auto-queued');
+  const [queueStatus, setQueueStatus] = useState<'auto-queued' | 'manual-queue'>('manual-queue');
   const [speechSupported, setSpeechSupported] = useState(false);
   const [permissionStatus, setPermissionStatus] = useState<'unknown' | 'granted' | 'denied'>('unknown');
   const [errorMessage, setErrorMessage] = useState('');
   const [retryCount, setRetryCount] = useState(0);
   const [isInitializing, setIsInitializing] = useState(false);
-  
+  const [patientData, setPatientData] = useState<PatientData | null>(null);
+  const [nationalIdInput, setNationalIdInput] = useState('');
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const recognitionRef = useRef<any>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isRecognitionActive = useRef(false);
 
-  // Mock patient data
-  const patientData = location.state?.patient || {
-    name: "นายสมชาย ใจดี",
-    id: "1234567890123",
-    phone: "081-234-5678"
+  // Load patient data from location state และ departments จาก debugData
+  useEffect(() => {
+    // Try to get from location state first
+    if (location.state?.patient) {
+      setPatientData(location.state.patient);
+      setCurrentStep('welcome');
+    } else {
+      // If no patient data, set to ID verification step
+      setCurrentStep('id-verification');
+    }
+
+    // Load departments from debugData
+    if (debugData.departments && debugData.departments.length > 0) {
+      setDepartments(debugData.departments);
+    }
+  }, [location.state, debugData]);
+
+  // ฟังก์ชัน handleIdVerification ใช้ debugData แทน localStorage โดยตรง
+  const handleIdVerification = async () => {
+    if (!nationalIdInput.trim()) {
+      setErrorMessage('กรุณากรอกเลขบัตรประชาชน');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage('');
+
+    try {
+      // Simulate verification delay
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // ใช้ข้อมูลจาก debugData แทน localStorage
+      const patients = debugData.patients || [];
+      const foundPatient = patients.find((p: any) => p.nationalId === nationalIdInput);
+
+      if (foundPatient) {
+        const patient: PatientData = {
+          id: foundPatient.id,
+          name: `${foundPatient.prefix || ''} ${foundPatient.firstNameTh || ''} ${foundPatient.lastNameTh || ''}`.trim(),
+          nationalId: foundPatient.nationalId,
+          phone: foundPatient.phone,
+          profileImage: foundPatient.profileImage
+        };
+        
+        setPatientData(patient);
+        setCurrentStep('welcome');
+      } else {
+        setErrorMessage('ไม่พบข้อมูลผู้ป่วย กรุณาตรวจสอบเลขบัตรประชาชน');
+      }
+    } catch (error) {
+      console.error('Error verifying ID:', error);
+      setErrorMessage('เกิดข้อผิดพลาดในการตรวจสอบข้อมูล');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // Department data
-  const departments: Department[] = [
-    {
-      id: 'internal',
-      name: 'แผนกอายุรกรรม',
-      keywords: ['ปวดท้อง', 'ท้องเสีย', 'ไข้', 'หวัด', 'ไอ', 'เบาหวาน', 'ความดัน', 'หัวใจ', 'ตับ', 'ไต', 'ปวดหัว', 'เหนื่อย', 'อ่อนเพลีย', 'คลื่นไส้', 'อาเจียน', 'ปวด', 'เจ็บ'],
-      description: 'โรคทั่วไป โรคเรื้อรัง',
-      room: 'ห้อง 201-205',
-      building: 'อาคาร A',
-      floor: 'ชั้น 2',
-      color: 'blue',
-      currentQueue: 'A015',
-      totalWaiting: 12
-    },
-    {
-      id: 'surgery',
-      name: 'แผนกศัลยกรรม',
-      keywords: ['ปวดท้อง', 'ก้อน', 'บาดแผล', 'แผล', 'ผ่าตัด', 'ไส้ติ่ง', 'นิ่ว', 'ฝี', 'บวม', 'แข็ง', 'เลือดออก', 'แผลผ่าตัด'],
-      description: 'ผ่าตัด บาดแผล',
-      room: 'ห้อง 301-305',
-      building: 'อาคาร B',
-      floor: 'ชั้น 3',
-      color: 'red',
-      currentQueue: 'S008',
-      totalWaiting: 5
-    },
-    {
-      id: 'orthopedic',
-      name: 'แผนกกระดูก',
-      keywords: ['ปวดหลัง', 'ปวดคอ', 'ปวดเข่า', 'ปวดไหล่', 'กระดูก', 'ข้อ', 'หัก', 'เคล็ด', 'ขัด', 'ล้ม', 'กล้ามเนื้อ', 'ปวดข้อ', 'ข้อเสื่อม'],
-      description: 'กระดูก ข้อ กล้ามเนื้อ',
-      room: 'ห้อง 401-403',
-      building: 'อาคาร A',
-      floor: 'ชั้น 4',
-      color: 'orange',
-      currentQueue: 'O003',
-      totalWaiting: 3
-    },
-    {
-      id: 'pediatric',
-      name: 'แผนกเด็ก',
-      keywords: ['เด็ก', 'ลูก', 'หลาน', 'ไข้', 'ท้องเสีย', 'อาเจียน', 'ผื่น', 'แพ้', 'วัคซีน', 'ตรวจพัฒนาการ', 'เด็กป่วย'],
-      description: 'เด็กและวัยรุ่น',
-      room: 'ห้อง 501-503',
-      building: 'อาคาร C',
-      floor: 'ชั้น 5',
-      color: 'pink',
-      currentQueue: 'P012',
-      totalWaiting: 8
-    },
-    {
-      id: 'dermatology',
-      name: 'แผนกผิวหนัง',
-      keywords: ['ผื่น', 'คัน', 'แพ้', 'สิว', 'ผิวหนัง', 'เล็บ', 'ผม', 'ตกผม', 'รอยดำ', 'ฝ้า', 'กระ', 'ผิวแห้ง', 'ผิวมัน'],
-      description: 'ผิวหนัง เล็บ ผม',
-      room: 'ห้อง 601-602',
-      building: 'อาคาร A',
-      floor: 'ชั้น 6',
-      color: 'green',
-      currentQueue: 'D005',
-      totalWaiting: 4
+  // ฟังก์ชัน analyzeSymptoms ใช้ departments จาก state
+  const analyzeSymptoms = useCallback(async () => {
+    const inputText = inputMode === 'voice' ? transcript : manualInput;
+    if (!inputText.trim()) {
+      setErrorMessage('กรุณาบอกอาการก่อนวิเคราะห์');
+      return;
     }
-  ];
+
+    console.log('🤖 Analyzing symptoms:', inputText);
+    setIsAnalyzing(true);
+    setCurrentStep('analysis');
+    setErrorMessage('');
+
+    try {
+      // Simulate AI analysis delay
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // ใช้ departments จาก state
+      if (departments.length === 0) {
+        setErrorMessage('ไม่พบข้อมูลแผนก กรุณาลองใหม่อีกครั้ง');
+        setIsAnalyzing(false);
+        setCurrentStep('voice-input');
+        return;
+      }
+
+      // Simple keyword matching algorithm
+      const departmentScores = departments.map(dept => {
+        const matchCount = dept.keywords.filter(keyword => 
+          inputText.toLowerCase().includes(keyword.toLowerCase())
+        ).length;
+
+        return {
+          department: dept,
+          score: matchCount,
+          matchedKeywords: dept.keywords.filter(keyword => 
+            inputText.toLowerCase().includes(keyword.toLowerCase())
+          )
+        };
+      });
+
+      // Sort by score and get best match
+      const bestMatch = departmentScores.sort((a, b) => b.score - a.score)[0];
+      const selectedDept = bestMatch.score > 0 ? bestMatch.department : departments[0]; // Default to first department
+
+      console.log('🎯 Best department match:', {
+        department: selectedDept.name,
+        score: bestMatch.score,
+        keywords: bestMatch.matchedKeywords
+      });
+
+      // Generate queue number
+      const queuePrefix = selectedDept.id.charAt(selectedDept.id.length - 1);
+      const queueNumber = `${queuePrefix}${String(Math.floor(Math.random() * 99) + 20).padStart(3, '0')}`;
+      
+      // Determine queue strategy based on waiting time
+      const shouldAutoQueue = selectedDept.totalWaiting < 10;
+      
+      // Create queue assignment
+      const queue: PatientQueue = {
+        queueNumber,
+        department: selectedDept.name,
+        room: selectedDept.room,
+        building: selectedDept.building,
+        floor: selectedDept.floor,
+        estimatedTime: `${selectedDept.totalWaiting * 3}-${selectedDept.totalWaiting * 5} นาที`,
+        patientName: patientData?.name || '',
+        appointmentType: 'Walk-in',
+        currentQueue: selectedDept.currentQueue,
+        totalWaiting: selectedDept.totalWaiting,
+        status: shouldAutoQueue ? 'waiting' : 'ready'
+      };
+
+      // Save queue to debugData (ใช้ refreshData เพื่อ trigger update)
+      const queueData = {
+        id: `Q${Date.now()}`,
+        patientId: patientData?.id,
+        departmentId: selectedDept.id,
+        queueNumber: queue.queueNumber,
+        status: queue.status,
+        timestamp: new Date().toISOString(),
+        symptoms: inputText
+      };
+      
+      // เพิ่มข้อมูลคิวใหม่
+      try {
+        const existingQueues = debugData.queues || [];
+        existingQueues.push(queueData);
+        // อัพเดทข้อมูลใน localStorage ผ่าน debugManager
+        localStorage.setItem('queues', JSON.stringify(existingQueues));
+        refreshData(); // รีเฟรชข้อมูล
+      } catch (error) {
+        console.error('Error saving queue:', error);
+      }
+
+      setAssignedQueue(queue);
+      setQueueStatus(shouldAutoQueue ? 'auto-queued' : 'manual-queue');
+      setIsAnalyzing(false);
+      setCurrentStep('queue-result');
+
+      console.log('✅ Analysis complete:', {
+        queue: queue.queueNumber,
+        department: queue.department,
+        status: shouldAutoQueue ? 'auto-queued' : 'manual-queue'
+      });
+
+    } catch (error) {
+      console.error('💥 Analysis error:', error);
+      setErrorMessage('เกิดข้อผิดพลาดในการวิเคราะห์ กรุณาลองใหม่');
+      setIsAnalyzing(false);
+      setCurrentStep('voice-input');
+    }
+  }, [inputMode, transcript, manualInput, departments, patientData, debugData, refreshData]);
+
+  // ส่วนที่เหลือของโค้ดเหมือนเดิม...
+  // (ฟังก์ชัน Speech Recognition และ UI components)
 
   // Cleanup function
   const cleanup = useCallback(() => {
@@ -210,7 +348,7 @@ const Welcome: React.FC = () => {
           const transcript = event.results[i][0].transcript;
           const confidence = event.results[i][0].confidence;
           
-          console.log(`Result ${i}: "${transcript}" (confidence: ${confidence})`);
+                    console.log(`Result ${i}: "${transcript}" (confidence: ${confidence})`);
           
           if (event.results[i].isFinal) {
             finalTranscript += transcript;
@@ -314,7 +452,7 @@ const Welcome: React.FC = () => {
         }
       };
 
-            recognition.onspeechstart = () => {
+      recognition.onspeechstart = () => {
         console.log('🗣️ Speech detected');
         setErrorMessage('');
       };
@@ -339,7 +477,7 @@ const Welcome: React.FC = () => {
       setIsInitializing(false);
       return false;
     }
-  }, [checkSpeechSupport, transcript, retryCount, cleanup]);
+  }, [checkSpeechSupport, transcript, retryCount, cleanup, analyzeSymptoms]);
 
   // Start listening
   const startListening = useCallback(async () => {
@@ -409,108 +547,6 @@ const Welcome: React.FC = () => {
     cleanup();
   }, [cleanup]);
 
-  // Analyze symptoms
-  const analyzeSymptoms = useCallback(async () => {
-    const inputText = inputMode === 'voice' ? transcript : manualInput;
-    if (!inputText.trim()) {
-      setErrorMessage('กรุณาบอกอาการก่อนวิเคราะห์');
-      return;
-    }
-
-    console.log('🤖 Analyzing symptoms:', inputText);
-    setIsAnalyzing(true);
-    setCurrentStep('analysis');
-    setErrorMessage('');
-
-    try {
-      // Simulate AI analysis delay
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // Simple keyword matching algorithm
-      const departmentScores = departments.map(dept => {
-        const matchCount = dept.keywords.filter(keyword => 
-          inputText.toLowerCase().includes(keyword.toLowerCase())
-        ).length;
-
-        return {
-          department: dept,
-          score: matchCount,
-          matchedKeywords: dept.keywords.filter(keyword => 
-            inputText.toLowerCase().includes(keyword.toLowerCase())
-          )
-        };
-      });
-
-      // Sort by score and get best match
-      const bestMatch = departmentScores.sort((a, b) => b.score - a.score)[0];
-      const selectedDept = bestMatch.score > 0 ? bestMatch.department : departments[0]; // Default to internal medicine
-
-      console.log('🎯 Best department match:', {
-        department: selectedDept.name,
-        score: bestMatch.score,
-        keywords: bestMatch.matchedKeywords
-      });
-
-      // Generate queue number
-      const queuePrefix = selectedDept.id.charAt(0).toUpperCase();
-      const queueNumber = `${queuePrefix}${String(Math.floor(Math.random() * 99) + 20).padStart(3, '0')}`;
-      
-      // Determine queue strategy based on waiting time
-      const shouldAutoQueue = selectedDept.totalWaiting < 10;
-      
-      // Create queue assignment
-      const queue: PatientQueue = {
-        queueNumber,
-        department: selectedDept.name,
-        room: selectedDept.room,
-        building: selectedDept.building,
-        floor: selectedDept.floor,
-        estimatedTime: `${selectedDept.totalWaiting * 3}-${selectedDept.totalWaiting * 5} นาที`,
-        patientName: patientData.name,
-        appointmentType: 'Walk-in',
-        currentQueue: selectedDept.currentQueue,
-        totalWaiting: selectedDept.totalWaiting,
-        status: shouldAutoQueue ? 'waiting' : 'ready'
-      };
-
-      setAssignedQueue(queue);
-      setQueueStatus(shouldAutoQueue ? 'auto-queued' : 'manual-queue');
-      setIsAnalyzing(false);
-      setCurrentStep('queue-result');
-
-      console.log('✅ Analysis complete:', {
-        queue: queue.queueNumber,
-        department: queue.department,
-        status: shouldAutoQueue ? 'auto-queued' : 'manual-queue'
-      });
-
-    } catch (error) {
-      console.error('💥 Analysis error:', error);
-      setErrorMessage('เกิดข้อผิดพลาดในการวิเคราะห์ กรุณาลองใหม่');
-      setIsAnalyzing(false);
-      setCurrentStep('voice-input');
-    }
-  }, [inputMode, transcript, manualInput, departments, patientData]);
-
-  // Initialize on component mount
-  useEffect(() => {
-    console.log('🔧 Component mounted, checking speech support...');
-    checkSpeechSupport();
-    
-    // Cleanup on unmount
-    return () => {
-      console.log('🧹 Component unmounting, cleaning up...');
-      cleanup();
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.abort();
-        } catch (error) {
-          console.warn('Error aborting recognition on unmount:', error);
-        }
-      }
-    };
-  }, [checkSpeechSupport, cleanup]);
-
   // Handle manual queue entry
   const handleManualQueue = () => {
     if (assignedQueue) {
@@ -545,6 +581,138 @@ const Welcome: React.FC = () => {
       minute: '2-digit' 
     });
   };
+
+  // Initialize on component mount
+  useEffect(() => {
+    console.log('🔧 Component mounted, checking speech support...');
+    checkSpeechSupport();
+    
+    // Cleanup on unmount
+    return () => {
+      console.log('🧹 Component unmounting, cleaning up...');
+      cleanup();
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (error) {
+          console.warn('Error aborting recognition on unmount:', error);
+        }
+      }
+    };
+  }, [checkSpeechSupport, cleanup]);
+
+  // ID Verification Step
+  if (currentStep === 'id-verification') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-500 via-purple-600 to-pink-500 flex flex-col px-4 py-6 relative overflow-hidden">
+        {/* Background Animation */}
+        <div className="absolute inset-0">
+          <div className="absolute -top-40 -right-40 w-80 h-80 bg-white/10 rounded-full animate-pulse"></div>
+          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-white/10 rounded-full animate-pulse delay-1000"></div>
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-white/5 rounded-full animate-ping"></div>
+        </div>
+
+        {/* Content */}
+        <div className="relative z-10 flex flex-col h-full">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 mx-auto bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center shadow-2xl mb-4 border border-white/30">
+              <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </div>
+            
+            <h1 className="text-3xl font-black text-white mb-2 tracking-wider">
+              SMART MEDICAL
+            </h1>
+            <p className="text-lg text-white/90 font-medium tracking-wide">
+              AI SCREENING SYSTEM
+            </p>
+          </div>
+
+          {/* ID Input Form */}
+          <div className="flex-1 flex flex-col justify-center max-w-md mx-auto w-full">
+            <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-6 shadow-2xl border border-white/30">
+              <h2 className="text-xl font-bold text-gray-800 mb-4 text-center">
+                ยืนยันตัวตน
+              </h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    เลขบัตรประชาชน
+                  </label>
+                  <input
+                    type="text"
+                    value={nationalIdInput}
+                    onChange={(e) => setNationalIdInput(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleIdVerification()}
+                    maxLength={13}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-center text-lg tracking-wider"
+                    placeholder="1234567890123"
+                  />
+                </div>
+
+                {errorMessage && (
+                  <div className="bg-red-100 border border-red-300 rounded-lg p-3">
+                    <p className="text-red-700 text-sm text-center">{errorMessage}</p>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleIdVerification}
+                  disabled={isLoading || !nationalIdInput.trim()}
+                  className="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
+                >
+                  {isLoading ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>กำลังตรวจสอบ...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>ยืนยัน</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Access */}
+            <div className="mt-6 text-center">
+              <p className="text-white/80 text-sm mb-3">ตัวอย่างเลขบัตรประชาชนสำหรับทดสอบ:</p>
+              <div className="space-y-2">
+                <button
+                  onClick={() => setNationalIdInput('1234567890123')}
+                  className="block w-full bg-white/20 backdrop-blur-sm text-white text-sm py-2 px-4 rounded-lg hover:bg-white/30 transition-colors border border-white/30"
+                >
+                  1234567890123 (นายสมชาย ใจดี)
+                </button>
+                <button
+                                    onClick={() => setNationalIdInput('2345678901234')}
+                  className="block w-full bg-white/20 backdrop-blur-sm text-white text-sm py-2 px-4 rounded-lg hover:bg-white/30 transition-colors border border-white/30"
+                >
+                  2345678901234 (นางสาวสมหญิง รักสุขภาพ)
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer Info */}
+          <div className="text-center mt-6 space-y-2">
+            <div className="flex justify-center space-x-4 text-white/60 text-xs">
+              <span>🚨 ฉุกเฉิน: 1669</span>
+              <span>ℹ️ ช่วยเหลือ: 1111</span>
+            </div>
+            <p className="text-white/40 text-xs">Version 2.0.0 - AI Enhanced</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Welcome Step
   if (currentStep === 'welcome') {
@@ -588,10 +756,10 @@ const Welcome: React.FC = () => {
             </h2>
             <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 max-w-sm mx-auto border border-white/30">
               <p className="text-white font-semibold text-lg mb-1">
-                {patientData.name}
+                {patientData?.name}
               </p>
               <p className="text-white/80 text-sm">
-                QR Code ได้รับการยืนยันแล้ว
+                ยืนยันตัวตนเรียบร้อยแล้ว
               </p>
               <div className="flex items-center justify-center mt-2 text-white/70 text-xs">
                 <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -622,7 +790,7 @@ const Welcome: React.FC = () => {
             </div>
             <div className="bg-white/15 backdrop-blur-sm rounded-lg p-3 text-center border border-white/20">
               <div className="w-8 h-8 mx-auto bg-purple-400/30 rounded-full flex items-center justify-center mb-2">
-                                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
@@ -717,7 +885,7 @@ const Welcome: React.FC = () => {
             </button>
           </div>
 
-          {/* Voice Input Mode */}
+                    {/* Voice Input Mode */}
           {inputMode === 'voice' && (
             <>
               {/* Browser Support Warning */}
@@ -848,7 +1016,7 @@ const Welcome: React.FC = () => {
               {transcript && (
                 <div className="bg-white/95 backdrop-blur-sm rounded-xl p-4 mb-6 border border-white/30">
                   <div className="flex items-center mb-2">
-                                       <svg className="w-5 h-5 text-purple-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-purple-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                     <span className="text-purple-800 font-medium text-sm">ข้อความที่รู้จำได้:</span>
@@ -949,7 +1117,7 @@ const Welcome: React.FC = () => {
                   : 'bg-gray-400 text-gray-600 cursor-not-allowed'
               }`}
             >
-              {isAnalyzing ? (
+                            {isAnalyzing ? (
                 <>
                   <div className="w-5 h-5 border-2 border-gray-600 border-t-transparent rounded-full animate-spin"></div>
                   <span>กำลังวิเคราะห์...</span>
@@ -1060,7 +1228,7 @@ const Welcome: React.FC = () => {
 
           {/* Symptoms Preview */}
           <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-                        <p className="text-white/80 text-xs mb-2">อาการที่วิเคราะห์:</p>
+            <p className="text-white/80 text-xs mb-2">อาการที่วิเคราะห์:</p>
             <p className="text-white text-sm font-medium leading-relaxed">
               "{getCurrentInput()}"
             </p>
@@ -1149,7 +1317,7 @@ const Welcome: React.FC = () => {
                 <span>{assignedQueue?.estimatedTime}</span>
               </div>
               <div className="flex items-center">
-                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                               <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
                 <span>รอ {assignedQueue?.totalWaiting} คน</span>
@@ -1203,8 +1371,9 @@ const Welcome: React.FC = () => {
               </div>
               
               <div className="text-sm text-gray-700">
-                <p><span className="font-medium">เลขบัตร:</span> {patientData.id}</p>
-                <p><span className="font-medium">โทรศัพท์:</span> {patientData.phone}</p>
+                {/* ปิดไว้ก่อนมี err แก้ให้ด้วยนะ */}
+                {/*<p><span className="font-medium">เลขบัตร:</span> {patientData.id}</p>
+                <p><span className="font-medium">โทรศัพท์:</span> {patientData.phone}</p>*/}
                 <p><span className="font-medium">เวลา:</span> {getCurrentTime()}</p>
               </div>
             </div>
@@ -1341,7 +1510,7 @@ const Welcome: React.FC = () => {
                 <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span>ช่วยเหลือ: 1111</span>
+                                <span>ช่วยเหลือ: 1111</span>
               </a>
             </div>
             <p className="text-white/50 text-xs">
