@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { usePageDebug } from '../../../hooks/usePageDebug';
 import { TableSchema } from '../../../types/Debug';
 import { DebugManager } from '../../../utils/Debuger';
+import * as faceapi from 'face-api.js';
+import axios from 'axios';
 
 interface PatientData {
   id: string;
@@ -12,17 +14,45 @@ interface PatientData {
   faceData?: string;
 }
 
+interface FaceRecognitionResult {
+  location: [number, number, number, number];
+  name: string;
+  confidence: number;
+  patient_id: string | null;
+}
+
+interface OCRResult {
+  full_text: string;
+  id_card: {
+    id_numbers: string[];
+    names: string[];
+  };
+  phone_numbers: string[];
+  emails: string[];
+  card_detected: boolean;
+  tesseract_available: boolean;
+}
+
+interface RealtimeScanResult {
+  faces: FaceRecognitionResult[];
+  ocr: OCRResult;
+  id_card_areas: Array<[number, number, number, number]>;
+  scan_status?: {
+    faces_found: number;
+    faces_recognized: number;
+    id_cards_found: number;
+    ocr_available: boolean;
+  };
+}
+
 type VerificationStep = 'face-scan' | 'id-input' | 'register' | 'success';
-type VerificationMode = 'camera' | 'upload';
 
 const AuthenPatient: React.FC = () => {
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const debugManager = DebugManager.getInstance();
-  const [cameraInitialized, setCameraInitialized] = useState(false);
-  console.log('cameraInitialized:', cameraInitialized);
   // Debug setup
-  
   const requiredTables: TableSchema[] = [
     {
       tableName: 'patients',
@@ -36,29 +66,33 @@ const AuthenPatient: React.FC = () => {
     }
   ];
 
-  
-  
   const [currentStep, setCurrentStep] = useState<VerificationStep>('face-scan');
   const [isScanning, setIsScanning] = useState(false);
   const [nationalId, setNationalId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [verificationMode, setVerificationMode] = useState<VerificationMode>('camera');
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [uploadedFileUrl, setUploadedFileUrl] = useState<string>('');
   const [foundPatient, setFoundPatient] = useState<PatientData | null>(null);
-  const { debugData } = usePageDebug('ยืนยันตัวตนผู้ป่วย', requiredTables);
-  console.log('debugData:', debugData);
+  const [scanResults, setScanResults] = useState<RealtimeScanResult | null>(null);
+  const [autoScanInterval, setAutoScanInterval] = useState<number | null>(null);
+  const [scanCount, setScanCount] = useState<number>(0);
+  const [maxScanAttempts] = useState<number>(5); // จำนวนครั้งสูงสุดก่อนดีดไปหน้าเลขบัตร
+  const [isFaceApiLoaded, setIsFaceApiLoaded] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  usePageDebug('ยืนยันตัวตนผู้ป่วย', requiredTables);
+
+  // API Base URL
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
   // ดึงข้อมูลผู้ป่วยจาก localStorage
   const getPatientData = (): PatientData[] => {
     const patients = debugManager.getData('patients');
-    return patients.map((patient: any) => ({
-      id: patient.id || 'P' + Math.random().toString().slice(2, 8),
-      name: `${patient.prefix || ''} ${patient.firstNameTh || ''} ${patient.lastNameTh || ''}`.trim(),
-      nationalId: patient.nationalId || '',
-      profileImage: patient.profileImage,
-      faceData: patient.faceData
+    return patients.map((patient: Record<string, unknown>) => ({
+      id: (patient.id as string) || 'P' + Math.random().toString().slice(2, 8),
+      name: `${(patient.prefix as string) || ''} ${(patient.firstNameTh as string) || ''} ${(patient.lastNameTh as string) || ''}`.trim(),
+      nationalId: (patient.nationalId as string) || '',
+      profileImage: patient.profileImage as string,
+      faceData: patient.faceData as string
     }));
   };
 
@@ -69,48 +103,75 @@ const AuthenPatient: React.FC = () => {
     nationalId: '1234567890123'
   };
 
-  // Toggle verification mode (debug feature)
-  const toggleVerificationMode = () => {
-    setVerificationMode(prev => prev === 'camera' ? 'upload' : 'camera');
-    if (verificationMode === 'camera') {
-      stopCamera();
-    } else {
-      startCamera();
-    }
-  };
-
-  // Handle file upload (debug feature)
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setUploadedFile(file);
-      const url = URL.createObjectURL(file);
-      setUploadedFileUrl(url);
-    }
-  };
-
   // เริ่มกล้อง
   const startCamera = async () => {
-  if (verificationMode !== 'camera' || stream) return;
-  
-  try {
-    const mediaStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: 1280, height: 720 }
-    });
-    setStream(mediaStream);
-    if (videoRef.current) {
-      videoRef.current.srcObject = mediaStream;
+    if (stream) return;
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: 1280, height: 720 }
+      });
+      setStream(mediaStream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+      }
+    } catch (error) {
+      console.error('Camera error:', error);
+      setErrorMessage('ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้อง');
     }
-  } catch (error) {
-    setErrorMessage('ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้อง');
-  }
-};
+  };
 
   // หยุดกล้อง
   const stopCamera = () => {
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
       setStream(null);
+    }
+  };
+
+  // จับภาพจากกล้อง
+  const captureImage = async (): Promise<File | null> => {
+    if (!canvasRef.current || !videoRef.current) return null;
+    
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    
+    // ตั้งค่าขนาด canvas ให้ตรงกับ video
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    // วาดภาพจาก video ลงบน canvas
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    
+    ctx.drawImage(video, 0, 0);
+    
+    // แปลง canvas เป็น File
+    return new Promise<File | null>((resolve) => {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const file = new File([blob], 'face-scan.jpg', { type: 'image/jpeg' });
+          resolve(file);
+        } else {
+          resolve(null);
+        }
+      }, 'image/jpeg', 0.8);
+    });
+  };
+
+  // ส่งภาพไปยัง backend API
+  const sendImageToBackend = async (imageFile: File): Promise<RealtimeScanResult> => {
+    const formData = new FormData();
+    formData.append('image', imageFile);
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/api/realtime/scan`,
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('API Error:', error);
+      throw new Error('ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้');
     }
   };
 
@@ -131,47 +192,109 @@ const AuthenPatient: React.FC = () => {
     debugManager.updateData('screeningQueue', [...currentQueue, screeningQueue]);
   };
 
-  // สแกนใบหน้า
+  // สแกนใบหน้าแบบ manual
   const handleFaceScan = async () => {
+    await performScan();
+  };
+
+  // สแกนแบบอัตโนมัติ
+  const performScan = async () => {
+    if (isScanning) return;
     setIsScanning(true);
     setErrorMessage('');
-    
-    // จำลองการสแกนใบหน้า
-    setTimeout(() => {
-      const patients = getPatientData();
-      
-      if (verificationMode === 'upload' && uploadedFile) {
-        // ในโหมด debug ให้สำเร็จเสมอถ้ามีไฟล์อัพโหลด
-        if (patients.length > 0) {
-          const patient = patients[0]; // ใช้ผู้ป่วยคนแรก
-          setFoundPatient(patient);
+    setScanCount(prev => prev + 1);
+    try {
+      let imageFile: File | null = null;
+      imageFile = await captureImage();
+      if (!imageFile) {
+        throw new Error('ไม่สามารถจับภาพจากกล้องได้');
+      }
+      const result = await sendImageToBackend(imageFile);
+      setScanResults(result);
+      if (result.faces && result.faces.length > 0) {
+        const recognizedFace = result.faces.find(face => face.name !== 'Unknown');
+        if (recognizedFace && recognizedFace.confidence > 0.7) {
+          const patientData: PatientData = {
+            id: recognizedFace.patient_id || 'P' + Math.random().toString().slice(2, 8),
+            name: recognizedFace.name,
+            nationalId: result.ocr?.id_card?.id_numbers?.[0] || '',
+            profileImage: undefined
+          };
+          setFoundPatient(patientData);
           setCurrentStep('success');
-        } else {
-          setFoundPatient(mockPatientData);
-          setCurrentStep('success');
-        }
-        stopCamera();
-      } else {
-        // โหมดกล้องปกติ
-        const isSuccess = Math.random() > 0.3; // 70% โอกาสสำเร็จ
-        
-        if (isSuccess && patients.length > 0) {
-          const patient = patients[0]; // ใช้ผู้ป่วยคนแรก
-          setFoundPatient(patient);
-          setCurrentStep('success');
+          stopAutoScan();
           stopCamera();
-        } else if (isSuccess) {
-          setFoundPatient(mockPatientData);
-          setCurrentStep('success');
-          stopCamera();
-        } else {
-          setErrorMessage('ไม่พบข้อมูลใบหน้าในระบบ กรุณากรอกเลขบัตรประชาชน');
-          setCurrentStep('id-input');
-          stopCamera();
+          return;
         }
       }
+      if (result.ocr?.id_card?.id_numbers?.length > 0) {
+        const idNumber = result.ocr.id_card.id_numbers[0];
+        setNationalId(idNumber);
+        const patients = getPatientData();
+        const foundPatientById = patients.find(p => p.nationalId === idNumber);
+        if (foundPatientById) {
+          setFoundPatient(foundPatientById);
+          setCurrentStep('success');
+          stopAutoScan();
+          stopCamera();
+          return;
+        }
+      }
+      if (scanCount >= maxScanAttempts) {
+        setErrorMessage(`สแกนแล้ว ${scanCount} ครั้ง ไม่พบข้อมูล กรุณากรอกเลขบัตรประชาชน`);
+        setCurrentStep('id-input');
+        stopAutoScan();
+        stopCamera();
+      } else {
+        const faceFound = result.faces && result.faces.length > 0;
+        const faceRecognized = result.faces && result.faces.some(f => f.name !== 'Unknown');
+        if (!faceFound) {
+          setErrorMessage(`ไม่พบใบหน้าในภาพ (สแกนครั้งที่ ${scanCount}/${maxScanAttempts}) กรุณาลองใหม่อีกครั้ง`);
+        } else if (!faceRecognized) {
+          setErrorMessage(`พบใบหน้าแต่ไม่รู้จัก (สแกนครั้งที่ ${scanCount}/${maxScanAttempts}) กรุณาลองใหม่อีกครั้ง`);
+        } else {
+          setErrorMessage(`ไม่พบข้อมูลในระบบ (สแกนครั้งที่ ${scanCount}/${maxScanAttempts}) กรุณาลองใหม่อีกครั้ง`);
+        }
+      }
+    } catch (error) {
+      console.error('Face scan error:', error);
+      setErrorMessage(error instanceof Error ? error.message : 'เกิดข้อผิดพลาดในการสแกน');
+    } finally {
       setIsScanning(false);
-    }, 3000);
+    }
+  };
+
+  // เริ่มการสแกนอัตโนมัติ
+  const startAutoScan = () => {
+    if (autoScanInterval) return; // ป้องกันการเริ่มซ้อน
+    
+    // รีเซ็ตการนับครั้งเมื่อเริ่มใหม่
+    resetScanCount();
+    
+    const interval = window.setInterval(() => {
+      if (currentStep === 'face-scan' && stream) {
+        performScan();
+      }
+    }, 10000); // ทุก 10 วินาที
+    
+    setAutoScanInterval(interval);
+    console.log('Auto scan started - every 10 seconds');
+  };
+
+  // หยุดการสแกนอัตโนมัติ
+  const stopAutoScan = () => {
+    if (autoScanInterval) {
+      clearInterval(autoScanInterval);
+      setAutoScanInterval(null);
+      console.log('Auto scan stopped');
+    }
+  };
+
+  // รีเซ็ตการนับครั้งสแกน
+  const resetScanCount = () => {
+    setScanCount(0);
+    setErrorMessage('');
+    console.log('Scan count reset');
   };
 
   // ตรวจสอบเลขบัตรประชาชน
@@ -184,7 +307,7 @@ const AuthenPatient: React.FC = () => {
     setIsLoading(true);
     setErrorMessage('');
 
-    setTimeout(() => {
+    try {
       const patients = getPatientData();
       const foundPatientById = patients.find(p => p.nationalId === nationalId);
       
@@ -198,13 +321,16 @@ const AuthenPatient: React.FC = () => {
         setErrorMessage('ไม่พบข้อมูลในระบบ กรุณาลงทะเบียนสมาชิกใหม่');
         setCurrentStep('register');
       }
+    } catch (error) {
+      console.error('ID verification error:', error);
+      setErrorMessage('เกิดข้อผิดพลาดในการตรวจสอบ');
+    } finally {
       setIsLoading(false);
-    }, 2000);
+    }
   };
 
   // ลงทะเบียนสมาชิกใหม่
   const handleRegister = () => {
-    // ไม่ใช้ replace เพื่อให้สามารถกดปุ่มย้อนกลับได้
     navigate('/member/patient/add', { state: { nationalId } });
   };
 
@@ -215,38 +341,109 @@ const AuthenPatient: React.FC = () => {
     // บันทึกข้อมูลผู้ป่วยที่ยืนยันตัวตนสำเร็จ
     saveAuthenticatedPatient(patientToPass);
     
-    // นำทางไปยังหน้าคัดกรอง โดยไม่ใช้ replace
+    // นำทางไปยังหน้าคัดกรอง
     navigate('/screening/patient', { state: { patient: patientToPass } });
   };
 
- const handleBackToFaceScan = () => {
-  setCurrentStep('face-scan');
-  setNationalId('');
-  setErrorMessage('');
-  setUploadedFile(null);
-  setUploadedFileUrl('');
-  setCameraInitialized(false); // รีเซ็ตสถานะกล้อง
-};
-
-  // เริ่มกล้องเมื่อเข้าหน้า face-scan
- useEffect(() => {
-  // เพิ่มเงื่อนไขเพื่อป้องกันการเรียกซ้ำ
-  if (currentStep === 'face-scan' && verificationMode === 'camera' && !stream) {
-    startCamera();
-  }
-  
-  // Cleanup function
-  return () => {
-    if (currentStep !== 'face-scan') {
-      stopCamera();
-    }
+  const handleBackToFaceScan = () => {
+    setCurrentStep('face-scan');
+    setNationalId('');
+    setErrorMessage('');
+    setScanResults(null);
+    resetScanCount(); // รีเซ็ตการนับครั้งเมื่อกลับมา
   };
-}, [currentStep, verificationMode]); // ลบ stream ออกจาก dependency array
 
-  // หยุดกล้องเมื่อออกจากหน้านี้
+  // โหลด face-api.js models เมื่อ component mount
+  useEffect(() => {
+    const loadModels = async () => {
+      await faceapi.nets.tinyFaceDetector.loadFromUri('/models');
+      await faceapi.nets.faceLandmark68Net.loadFromUri('/models');
+      await faceapi.nets.faceRecognitionNet.loadFromUri('/models');
+      setIsFaceApiLoaded(true);
+    };
+    loadModels();
+  }, []);
+
+  // เริ่มกล้องเมื่อหน้า face-scan
+  useEffect(() => {
+    if (currentStep === 'face-scan' && !stream) {
+      startCamera();
+    }
+    return () => {
+      stopCamera();
+    };
+  }, [currentStep]);
+
+  // ประมวลผล video stream อัตโนมัติ
+  useEffect(() => {
+    let animationId: number;
+    const processFrame = async () => {
+      if (!isFaceApiLoaded || !videoRef.current || processing) {
+        animationId = requestAnimationFrame(processFrame);
+        return;
+      }
+      setProcessing(true);
+      const detections = await faceapi.detectAllFaces(videoRef.current, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
+      if (detections.length > 0) {
+        // ส่ง descriptor ไป backend
+        const descriptor = Array.from(detections[0].descriptor);
+        try {
+          const response = await axios.post(`${API_BASE_URL}/api/face/recognize`, { descriptor });
+          setScanResults(response.data);
+          // ถ้ารู้จักใบหน้า ให้ setFoundPatient และเปลี่ยน step
+          if (response.data.faces && response.data.faces.length > 0) {
+            const recognizedFace = response.data.faces.find((f: FaceRecognitionResult) => f.name !== 'Unknown');
+            if (recognizedFace && recognizedFace.confidence > 0.7) {
+              setFoundPatient({
+                id: recognizedFace.patient_id || '',
+                name: recognizedFace.name,
+                nationalId: '',
+                profileImage: undefined
+              });
+              setCurrentStep('success');
+              stopCamera();
+              return;
+            }
+          }
+        } catch (error) {
+          console.error('Face recognition API error:', error);
+        }
+      }
+      setProcessing(false);
+      animationId = requestAnimationFrame(processFrame);
+    };
+    if (currentStep === 'face-scan' && isFaceApiLoaded && videoRef.current) {
+      animationId = requestAnimationFrame(processFrame);
+    }
+    return () => {
+      cancelAnimationFrame(animationId);
+    };
+  }, [currentStep, isFaceApiLoaded, videoRef]);
+
+  // เริ่มกล้องและ auto scan เมื่อเข้าหน้า face-scan
+  useEffect(() => {
+    if (currentStep === 'face-scan' && !stream) {
+      startCamera();
+    }
+    
+    // เริ่ม auto scan เมื่อกล้องพร้อม
+    if (currentStep === 'face-scan' && stream && !autoScanInterval) {
+      startAutoScan();
+    }
+    
+    return () => {
+      if (currentStep !== 'face-scan') {
+        stopCamera();
+        stopAutoScan();
+      }
+    };
+  }, [currentStep, stream, autoScanInterval]);
+
+  // หยุดกล้องและ auto scan เมื่อออกจากหน้านี้
   useEffect(() => {
     return () => {
       stopCamera();
+      stopAutoScan();
     };
   }, []);
 
@@ -277,11 +474,11 @@ const AuthenPatient: React.FC = () => {
               <ul className="space-y-3 text-white/80">
                 <li className="flex items-start">
                   <span className="text-green-400 mr-2">1.</span>
-                  {verificationMode === 'camera' ? 'วางใบหน้าให้อยู่ในกรอบสี่เหลี่ยม' : 'เลือกไฟล์รูปภาพหรือวิดีโอ'}
+                  วางใบหน้าให้อยู่ในกรอบสี่เหลี่ยม
                 </li>
                 <li className="flex items-start">
                   <span className="text-green-400 mr-2">2.</span>
-                  {verificationMode === 'camera' ? 'หันหน้าตรงและอยู่นิ่งๆ' : 'ตรวจสอบไฟล์ที่อัพโหลด'}
+                  หันหน้าตรงและอยู่นิ่งๆ
                 </li>
                 <li className="flex items-start">
                   <span className="text-green-400 mr-2">3.</span>
@@ -294,23 +491,106 @@ const AuthenPatient: React.FC = () => {
               </ul>
             </div>
 
-                        <div className="bg-yellow-500/20 border border-yellow-400/30 rounded-xl p-4">
+            <div className="bg-yellow-500/20 border border-yellow-400/30 rounded-xl p-4">
               <p className="text-yellow-200 text-sm">
                 <strong>หมายเหตุ:</strong> หากไม่พบข้อมูลใบหน้าในระบบ คุณสามารถยืนยันตัวตนด้วยเลขบัตรประชาชนได้
               </p>
             </div>
 
-            {/* Debug Mode Toggle */}
-            {process.env.NODE_ENV !== 'production' && (
-              <button
-                onClick={toggleVerificationMode}
-                className="w-full bg-white/20 hover:bg-white/30 text-white font-medium py-3 px-4 rounded-xl transition-all duration-300 flex items-center justify-center space-x-2"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                </svg>
-                <span>สลับโหมด: {verificationMode === 'camera' ? 'กล้อง' : 'อัพโหลดไฟล์'}</span>
-              </button>
+            {/* Tesseract Status */}
+            <div className="bg-blue-500/20 border border-blue-400/30 rounded-xl p-4">
+              <div className="flex items-center space-x-2 mb-2">
+                <div className={`w-2 h-2 rounded-full ${scanResults?.ocr.tesseract_available ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                <span className="text-blue-200 text-sm font-medium">
+                  OCR Status: {scanResults?.ocr.tesseract_available ? 'พร้อมใช้งาน' : 'ไม่พร้อมใช้งาน'}
+                </span>
+              </div>
+              <p className="text-blue-200 text-xs">
+                {scanResults?.ocr.tesseract_available 
+                  ? 'ระบบสามารถอ่านข้อมูลจากบัตรประชาชนได้' 
+                  : 'ระบบจะจับใบหน้าและบัตรประชาชนได้ แต่ไม่สามารถอ่านข้อมูลจากบัตรได้'
+                }
+              </p>
+            </div>
+
+            {/* Scan Results Display */}
+            {scanResults && (
+              <div className="bg-white/20 rounded-xl p-4">
+                <h4 className="text-white font-semibold mb-2">ผลการสแกน:</h4>
+                
+                {/* Face Recognition Results */}
+                <div className="mb-3">
+                  <h5 className="text-white font-medium mb-1">ใบหน้า:</h5>
+                  {scanResults.faces.length > 0 ? (
+                    <div className="space-y-1">
+                      {scanResults.faces.map((face, index) => (
+                        <div key={index} className="text-sm text-white/80">
+                          <span className={`font-medium ${face.name === 'Unknown' ? 'text-yellow-300' : 'text-green-300'}`}>
+                            {face.name}
+                          </span>
+                          <span className="ml-2">({(face.confidence * 100).toFixed(1)}%)</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-red-300">ไม่พบใบหน้า</p>
+                  )}
+                  
+                  {/* Scan Status */}
+                  {scanResults.scan_status && (
+                    <div className="mt-2 text-xs text-blue-300">
+                      พบใบหน้า: {scanResults.scan_status.faces_found} | 
+                      รู้จัก: {scanResults.scan_status.faces_recognized} | 
+                      บัตร: {scanResults.scan_status.id_cards_found}
+                    </div>
+                  )}
+                </div>
+
+                {/* ID Card Detection */}
+                <div className="mb-3">
+                  <h5 className="text-white font-medium mb-1">บัตรประชาชน:</h5>
+                  {scanResults.id_card_areas && scanResults.id_card_areas.length > 0 ? (
+                    <div className="text-sm text-green-300">
+                      ✓ พบบัตรประชาชน ({scanResults.id_card_areas.length} แผ่น)
+                    </div>
+                  ) : (
+                    <div className="text-sm text-yellow-300">
+                      ⚠ ไม่พบบัตรประชาชน
+                    </div>
+                  )}
+                </div>
+
+                {/* OCR Results (only if card detected) */}
+                {scanResults.ocr.card_detected && (
+                  <div className="mb-3">
+                    <h5 className="text-white font-medium mb-1">ข้อมูลที่อ่านได้:</h5>
+                    {scanResults.ocr.tesseract_available ? (
+                      scanResults.ocr.id_card.id_numbers.length > 0 ? (
+                        <div className="space-y-1 text-sm text-white/80">
+                          {scanResults.ocr.id_card.id_numbers.map((id, index) => (
+                            <div key={index}>
+                              <span className="font-medium">เลขบัตร:</span> {id}
+                            </div>
+                          ))}
+                          {scanResults.ocr.id_card.names.map((name, index) => (
+                            <div key={index}>
+                              <span className="font-medium">ชื่อ:</span> {name}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-yellow-300">
+                          ⚠ พบบัตรประชาชนแต่ไม่สามารถอ่านข้อมูลได้
+                        </div>
+                      )
+                    ) : (
+                      <div className="text-sm text-orange-300">
+                        ⚠ Tesseract ไม่พร้อมใช้งาน (OCR ไม่ทำงาน)
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -319,71 +599,29 @@ const AuthenPatient: React.FC = () => {
         <div className="flex-1 flex flex-col items-center justify-center p-8">
           <div className="w-full max-w-md">
             <div className="bg-white/95 backdrop-blur-sm rounded-3xl p-8 shadow-2xl">
-              <div className="text-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800 mb-2">สแกนใบหน้า</h2>
-                <p className="text-gray-600">กรุณาวางใบหน้าให้อยู่ในกรอบและหันหน้าตรง</p>
+              {/* ปุ่มอัพโหลดรูปภาพ (ทดสอบ) */}
+              <div className="relative mb-6 rounded-xl overflow-hidden bg-black aspect-[4/3]">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                />
+                <canvas
+                  ref={canvasRef}
+                  className="hidden"
+                />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-3/4 h-3/4 border-2 border-dashed border-white/70 rounded-xl"></div>
+                </div>
+                {isScanning && (
+                  <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center">
+                    <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                    <p className="text-white font-medium">กำลังสแกน...</p>
+                  </div>
+                )}
               </div>
-
-              {verificationMode === 'camera' ? (
-                <div className="relative mb-6 rounded-xl overflow-hidden bg-black aspect-[4/3]">
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-3/4 h-3/4 border-2 border-dashed border-white/70 rounded-xl"></div>
-                  </div>
-                  {isScanning && (
-                    <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center">
-                      <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                      <p className="text-white font-medium">กำลังสแกน...</p>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="mb-6">
-                  <div className="relative rounded-xl overflow-hidden bg-gray-100 aspect-[4/3] mb-4">
-                    {uploadedFileUrl ? (
-                      <img
-                        src={uploadedFileUrl}
-                        alt="Uploaded"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <svg className="w-16 h-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                      </div>
-                    )}
-                    {isScanning && (
-                      <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center">
-                        <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                        <p className="text-white font-medium">กำลังสแกน...</p>
-                      </div>
-                    )}
-                  </div>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    id="face-upload"
-                  />
-                  <label
-                    htmlFor="face-upload"
-                    className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-3 px-4 rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 cursor-pointer"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                    </svg>
-                    <span>อัพโหลดรูปภาพ</span>
-                  </label>
-                </div>
-              )}
 
               {/* Error Message */}
               {errorMessage && (
@@ -397,9 +635,10 @@ const AuthenPatient: React.FC = () => {
                 </div>
               )}
 
+              {/* ปุ่มอัพโหลดรูปภาพ (ทดสอบ) */}
               <button
                 onClick={handleFaceScan}
-                disabled={isScanning || (verificationMode === 'upload' && !uploadedFile)}
+                disabled={isScanning}
                 className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold py-4 px-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 flex items-center justify-center space-x-2"
               >
                 {isScanning ? (
@@ -413,11 +652,11 @@ const AuthenPatient: React.FC = () => {
                   <>
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                    </svg>
-                    <span>เริ่มสแกน</span>
-                  </>
-                )}
-              </button>
+                  </svg>
+                  <span>สแกนใบหน้าเพื่อยืนยันตัวตน</span>
+                </>
+              )}
+            </button>
 
               <div className="mt-6 text-center">
                 <button
@@ -773,4 +1012,3 @@ const AuthenPatient: React.FC = () => {
 };
 
 export default AuthenPatient;
-

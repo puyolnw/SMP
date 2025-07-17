@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { usePageDebug } from '../../../../hooks/usePageDebug';
-import { TableSchema } from '../../../../types/Debug';
-import { DebugManager } from '../../../../utils/Debuger';
+// import { usePageDebug } from '../../../../hooks/usePageDebug';
+// import { TableSchema } from '../../../../types/Debug';
+import axios from 'axios';
+import CameraCapture from '../../../../components/CameraCapture';
 
 interface Patient {
   id: string;
@@ -50,19 +51,8 @@ const AddPatient: React.FC = () => {
   const isEdit = location.state?.isEdit || false;
   const existingPatient = location.state?.patient as Patient;
   
-   const debugManager = useMemo(() => DebugManager.getInstance(), []);
   const [isNavigating, setIsNavigating] = useState(false);
-  // Debug setup
-  const requiredTables: TableSchema[] = useMemo(() => [
-    {
-      tableName: 'patients',
-      columns: ['id', 'prefix', 'firstNameTh', 'lastNameTh', 'firstNameEn', 'lastNameEn', 'gender', 'birthDate', 'age', 'nationalId', 'address', 'phone', 'email', 'profileImage', 'qrCode', 'bloodType', 'chronicDiseases', 'allergies', 'currentMedications', 'emergencyContact'],
-      description: 'ข้อมูลผู้ป่วยทั้งหมด'
-    }
-  ], []);
-  const debugPageData = usePageDebug('เพิ่มผู้ป่วยใหม่', requiredTables);
-  const debugData = usePageDebug('เพิ่มผู้ป่วยใหม่', requiredTables);
-  console.log('debugData', debugData,debugPageData);
+  // 1. Change currentStep to 1 | 2 | 3
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
   const [formData, setFormData] = useState<Patient>({
     id: '',
@@ -99,14 +89,12 @@ const AddPatient: React.FC = () => {
     }
   });
 
-  // States for adding items
   const [newChronicDisease, setNewChronicDisease] = useState('');
   const [newAllergy, setNewAllergy] = useState('');
   const [newMedication, setNewMedication] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
-  console.log('profileImageFile', profileImageFile);
-  // Thai provinces for dropdown
+
   const provinces = [
     'กรุงเทพมหานคร', 'กระบี่', 'กาญจนบุรี', 'กาฬสินธุ์', 'กำแพงเพชร', 'ขอนแก่น',
     'จันทบุรี', 'ฉะเชิงเทรา', 'ชลบุรี', 'ชัยนาท', 'ชัยภูมิ', 'ชุมพร', 'เชียงราย',
@@ -121,110 +109,50 @@ const AddPatient: React.FC = () => {
     'อุตรดิตถ์', 'อุทัยธานี', 'อุบลราชธานี'
   ];
 
-useEffect(() => {
+  useEffect(() => {
     if (isEdit && existingPatient) {
       setFormData(existingPatient);
     } else {
       const newId = 'P' + Date.now().toString().slice(-6);
       setFormData(prev => ({ ...prev, id: newId }));
     }
-  }, [isEdit, existingPatient]); // dependency ที่ชัดเจน
+  }, [isEdit, existingPatient]);
 
-  // useEffect แยกสำหรับ sample data
-  useEffect(() => {
-    const initializeSampleData = () => {
-      try {
-        const existingData = debugManager.getData('patients');
-        if (existingData.length === 0) {
-          const sampleData = {
-            id: 'P000001',
-            prefix: 'นาย',
-            firstNameTh: 'สมชาย',
-            lastNameTh: 'ใจดี',
-            gender: 'ชาย',
-            birthDate: '1990-01-01',
-            age: 34,
-            nationalId: '1234567890123',
-            address: {
-              houseNumber: '123/45',
-              subDistrict: 'บางนา',
-              district: 'บางนา',
-              province: 'กรุงเทพมหานคร',
-              postalCode: '10260'
-            },
-            phone: '081-234-5678',
-            email: 'somchai@email.com',
-            bloodType: 'O+',
-            chronicDiseases: ['เบาหวาน'],
-            allergies: ['ยาปฏิชีวนะ'],
-            currentMedications: ['ยาเบาหวาน'],
-            emergencyContact: {
-              name: 'สมหญิง ใจดี',
-              phone: '081-234-5679',
-              relationship: 'คู่สมรส'
-            }
-          };
-          debugManager.addData('patients', sampleData);
-        }
-      } catch (error) {
-        console.error('Error initializing sample data:', error);
-      }
-    };
-    
-    // เรียกใช้เพียงครั้งเดียว
-    initializeSampleData();
-  }, []); // empty dependency array
-
-
-  // Calculate age from birth date
   const calculateAge = (birthDate: string): number => {
     const today = new Date();
     const birth = new Date(birthDate);
     let age = today.getFullYear() - birth.getFullYear();
     const monthDiff = today.getMonth() - birth.getMonth();
-    
     if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
       age--;
     }
-    
     return age;
   };
 
-  // Validate National ID (simple checksum)
   const validateNationalId = (id: string): boolean => {
     if (id.length !== 13) return false;
-    
     let sum = 0;
     for (let i = 0; i < 12; i++) {
       sum += parseInt(id.charAt(i)) * (13 - i);
     }
-    
     const remainder = sum % 11;
     const checkDigit = remainder < 2 ? remainder : 11 - remainder;
-    
     return checkDigit === parseInt(id.charAt(12));
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    
     if (name.startsWith('address.')) {
       const field = name.split('.')[1];
       setFormData(prev => ({
         ...prev,
-        address: {
-          ...prev.address,
-          [field]: value
-        }
+        address: { ...prev.address, [field]: value }
       }));
     } else if (name.startsWith('emergencyContact.')) {
       const field = name.split('.')[1];
       setFormData(prev => ({
         ...prev,
-        emergencyContact: {
-          ...prev.emergencyContact!,
-          [field]: value
-        }
+        emergencyContact: { ...prev.emergencyContact!, [field]: value }
       }));
     } else if (name === 'birthDate') {
       const age = calculateAge(value);
@@ -241,7 +169,6 @@ useEffect(() => {
     }
   };
 
-  // Handle profile image upload
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -257,7 +184,6 @@ useEffect(() => {
     }
   };
 
-  // Add chronic disease
   const addChronicDisease = () => {
     if (newChronicDisease.trim() && !formData.chronicDiseases?.includes(newChronicDisease.trim())) {
       setFormData(prev => ({
@@ -275,7 +201,6 @@ useEffect(() => {
     }));
   };
 
-  // Add allergy
   const addAllergy = () => {
     if (newAllergy.trim() && !formData.allergies?.includes(newAllergy.trim())) {
       setFormData(prev => ({
@@ -293,7 +218,6 @@ useEffect(() => {
     }));
   };
 
-  // Add medication
   const addMedication = () => {
     if (newMedication.trim() && !formData.currentMedications?.includes(newMedication.trim())) {
       setFormData(prev => ({
@@ -311,8 +235,7 @@ useEffect(() => {
     }));
   };
 
-  // Validate current step
-  const validateStep = (step: number): boolean => {
+  const validateStep = useCallback((step: number): boolean => {
     switch (step) {
       case 1:
         return !!(
@@ -331,13 +254,11 @@ useEffect(() => {
           formData.phone
         );
       case 2:
-        return true; // ข้อมูลสุขภาพไม่บังคับ
-      case 3:
-        return true; // ข้อมูลผู้ติดต่อฉุกเฉินไม่บังคับ
+        return true;
       default:
         return false;
     }
-  };
+  }, [formData]);
 
   const handleNext = () => {
     if (validateStep(currentStep)) {
@@ -351,48 +272,74 @@ useEffect(() => {
     setCurrentStep((prev) => Math.max(prev - 1, 1) as 1 | 2 | 3);
   };
 
+  const API_BASE_URL = import.meta.env.VITE_API_URL;
+
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (isNavigating || isLoading) return; // ป้องกันการ submit ซ้ำ
-    
+    if (isNavigating || isLoading || currentStep !== 3) return; // ป้องกันการ submit หากไม่ใช่ Step 3
     if (!validateStep(1)) {
       alert('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน');
       setCurrentStep(1);
       return;
     }
-
     setIsLoading(true);
-
     try {
-      // บันทึกข้อมูลลง localStorage ผ่าน DebugManager
-      debugManager.addData('patients', formData);
-      
-      // จำลองการบันทึกข้อมูล
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
+      const form = new FormData();
+      form.append('prefix', formData.prefix);
+      form.append('first_name_th', formData.firstNameTh);
+      form.append('last_name_th', formData.lastNameTh);
+      form.append('first_name_en', formData.firstNameEn || '');
+      form.append('last_name_en', formData.lastNameEn || '');
+      form.append('gender', formData.gender);
+      form.append('birth_date', formData.birthDate);
+      form.append('age', String(formData.age));
+      form.append('national_id', formData.nationalId);
+      form.append('house_no', formData.address.houseNumber);
+      form.append('village', formData.address.village || '');
+      form.append('road', formData.address.street || '');
+      form.append('subdistrict', formData.address.subDistrict);
+      form.append('district', formData.address.district);
+      form.append('province', formData.address.province);
+      form.append('zipcode', formData.address.postalCode);
+      form.append('phone', formData.phone);
+      form.append('email', formData.email || '');
+      form.append('qr_code', formData.qrCode || '');
+      form.append('blood_type', formData.bloodType || '');
+      (formData.chronicDiseases || []).forEach(d => form.append('chronic_diseases', d));
+      (formData.allergies || []).forEach(a => form.append('allergies', a));
+      (formData.currentMedications || []).forEach(m => form.append('current_medications', m));
+      if (formData.emergencyContact) {
+        form.append('emergency_contact_name', formData.emergencyContact.name || '');
+        form.append('emergency_contact_phone', formData.emergencyContact.phone || '');
+        form.append('emergency_contact_relationship', formData.emergencyContact.relationship || '');
+      }
+      if (profileImageFile) {
+        form.append('image', profileImageFile);
+      }
+      const response = await axios.post(`${API_BASE_URL}/api/patient`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const patientId = response.data._id;
+      navigate(`/member/patient/dataPatient/${patientId}`);
       alert(isEdit ? 'แก้ไขข้อมูลผู้ป่วยเรียบร้อยแล้ว' : 'เพิ่มผู้ป่วยใหม่เรียบร้อยแล้ว');
-      
       setIsNavigating(true);
-      navigate('/member/patient/dataPatient', { state: { patient: formData } });
-    } catch (error) {
-      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error) && error.response && error.response.data && error.response.data.message) {
+        alert('เกิดข้อผิดพลาด: ' + error.response.data.message);
+      } else {
+        alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [formData, isEdit, isLoading, isNavigating, navigate, debugManager]);
+  }, [formData, isEdit, isLoading, isNavigating, navigate, profileImageFile, API_BASE_URL, validateStep, currentStep]);
 
-  // Cleanup function
   useEffect(() => {
-    return () => {
-      setIsNavigating(false);
-    };
+    return () => setIsNavigating(false);
   }, []);
 
-
-   const handleCancel = useCallback(() => {
-    if (isNavigating) return; // ป้องกันการ navigate ซ้ำ
-    
+  const handleCancel = useCallback(() => {
+    if (isNavigating) return;
     setIsNavigating(true);
     if (isEdit) {
       navigate('/member/patient/data', { state: { patient: existingPatient } });
@@ -401,25 +348,21 @@ useEffect(() => {
     }
   }, [isEdit, existingPatient, navigate, isNavigating]);
 
-  // Step indicator
+  // 2. StepIndicator: show 3 steps
   const StepIndicator = () => (
     <div className="flex items-center justify-center mb-8">
       {[1, 2, 3].map((step) => (
         <div key={step} className="flex items-center">
           <div
             className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium ${
-              currentStep >= step
-                ? 'bg-green-600 text-white'
-                : 'bg-gray-300 text-gray-600'
+              currentStep >= step ? 'bg-green-600 text-white' : 'bg-gray-300 text-gray-600'
             }`}
           >
             {step}
           </div>
           {step < 3 && (
             <div
-              className={`w-16 h-1 mx-2 ${
-                currentStep > step ? 'bg-green-600' : 'bg-gray-300'
-              }`}
+              className={`w-16 h-1 mx-2 ${currentStep > step ? 'bg-green-600' : 'bg-gray-300'}`}
             />
           )}
         </div>
@@ -427,23 +370,15 @@ useEffect(() => {
     </div>
   );
 
-  // Step 1: Personal Information
+  // 3. renderStep1: personal info
   const renderStep1 = () => (
     <div className="space-y-6">
-      <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">
-        ข้อมูลส่วนตัว
-      </h2>
-
-      {/* Profile Image */}
+      <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">ข้อมูลส่วนตัว</h2>
       <div className="flex items-center space-x-6">
         <div className="flex-shrink-0">
           <div className="w-32 h-32 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center overflow-hidden">
             {formData.profileImage ? (
-              <img
-                src={formData.profileImage}
-                alt="Profile"
-                className="w-full h-full object-cover"
-              />
+              <img src={formData.profileImage} alt="Profile" className="w-full h-full object-cover" />
             ) : (
               <div className="text-center">
                 <svg className="w-12 h-12 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -455,38 +390,23 @@ useEffect(() => {
           </div>
         </div>
         <div>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleImageUpload}
-            className="hidden"
-            id="profileImage"
-          />
-          <label
-            htmlFor="profileImage"
-            className="cursor-pointer bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 inline-block"
-          >
-            อัปโหลดรูปภาพ
-          </label>
-          <p className="text-sm text-gray-500 mt-1">
-            ไฟล์ JPG, PNG ขนาดไม่เกิน 5MB
-          </p>
+          <input type="file" accept="image/*" capture="environment" onChange={handleImageUpload} className="hidden" id="profileImage" />
+          <label htmlFor="profileImage" className="cursor-pointer bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 inline-block mr-2">อัปโหลดรูปภาพ</label>
+          <CameraCapture onCapture={(file) => {
+            setProfileImageFile(file);
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              setFormData(prev => ({ ...prev, profileImage: event.target?.result as string }));
+            };
+            reader.readAsDataURL(file);
+          }} />
+          <p className="text-sm text-gray-500 mt-1">ไฟล์ JPG, PNG ขนาดไม่เกิน 5MB</p>
         </div>
       </div>
-
-      {/* Basic Info */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            คำนำหน้า <span className="text-red-500">*</span>
-          </label>
-          <select
-            name="prefix"
-            value={formData.prefix}
-            onChange={handleInputChange}
-            required
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-          >
+          <label className="block text-sm font-medium text-gray-700 mb-2">คำนำหน้า <span className="text-red-500">*</span></label>
+          <select name="prefix" value={formData.prefix} onChange={handleInputChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
             <option value="">เลือกคำนำหน้า</option>
             <option value="นาย">นาย</option>
             <option value="นาง">นาง</option>
@@ -496,78 +416,28 @@ useEffect(() => {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            ชื่อ (ภาษาไทย) <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            name="firstNameTh"
-            value={formData.firstNameTh}
-            onChange={handleInputChange}
-            required
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            placeholder="ชื่อ"
-          />
+          <label className="block text-sm font-medium text-gray-700 mb-2">ชื่อ (ภาษาไทย) <span className="text-red-500">*</span></label>
+          <input type="text" name="firstNameTh" value={formData.firstNameTh} onChange={handleInputChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="ชื่อ" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            นามสกุล (ภาษาไทย) <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            name="lastNameTh"
-            value={formData.lastNameTh}
-            onChange={handleInputChange}
-            required
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            placeholder="นามสกุล"
-          />
+          <label className="block text-sm font-medium text-gray-700 mb-2">นามสกุล (ภาษาไทย) <span className="text-red-500">*</span></label>
+          <input type="text" name="lastNameTh" value={formData.lastNameTh} onChange={handleInputChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="นามสกุล" />
         </div>
       </div>
-
-      {/* English Name */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            ชื่อ (ภาษาอังกฤษ)
-          </label>
-          <input
-            type="text"
-            name="firstNameEn"
-            value={formData.firstNameEn}
-            onChange={handleInputChange}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            placeholder="First Name"
-          />
+          <label className="block text-sm font-medium text-gray-700 mb-2">ชื่อ (ภาษาอังกฤษ)</label>
+          <input type="text" name="firstNameEn" value={formData.firstNameEn} onChange={handleInputChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="First Name" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            นามสกุล (ภาษาอังกฤษ)
-          </label>
-          <input
-            type="text"
-            name="lastNameEn"
-            value={formData.lastNameEn}
-            onChange={handleInputChange}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            placeholder="Last Name"
-          />
+          <label className="block text-sm font-medium text-gray-700 mb-2">นามสกุล (ภาษาอังกฤษ)</label>
+          <input type="text" name="lastNameEn" value={formData.lastNameEn} onChange={handleInputChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Last Name" />
         </div>
       </div>
-
-      {/* Gender and Birth Date */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            เพศ <span className="text-red-500">*</span>
-          </label>
-          <select
-            name="gender"
-            value={formData.gender}
-            onChange={handleInputChange}
-            required
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-          >
+          <label className="block text-sm font-medium text-gray-700 mb-2">เพศ <span className="text-red-500">*</span></label>
+          <select name="gender" value={formData.gender} onChange={handleInputChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
             <option value="">เลือกเพศ</option>
             <option value="ชาย">ชาย</option>
             <option value="หญิง">หญิง</option>
@@ -575,221 +445,79 @@ useEffect(() => {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            วันเดือนปีเกิด <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="date"
-            name="birthDate"
-            value={formData.birthDate}
-            onChange={handleInputChange}
-            required
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-          />
+          <label className="block text-sm font-medium text-gray-700 mb-2">วันเดือนปีเกิด <span className="text-red-500">*</span></label>
+          <input type="date" name="birthDate" value={formData.birthDate} onChange={handleInputChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">อายุ</label>
-          <input
-            type="number"
-            value={formData.age}
-            readOnly
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed"
-            placeholder="คำนวณอัตโนมัติ"
-          />
+          <input type="number" value={formData.age} readOnly className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed" placeholder="คำนวณอัตโนมัติ" />
         </div>
       </div>
-
-      {/* National ID */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          หมายเลขบัตรประชาชน <span className="text-red-500">*</span>
-        </label>
-        <input
-          type="text"
-          name="nationalId"
-          value={formData.nationalId}
-          onChange={handleInputChange}
-          required
-          maxLength={13}
-          className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${
-            formData.nationalId && !validateNationalId(formData.nationalId)
-              ? 'border-red-500'
-              : 'border-gray-300'
-          }`}
-          placeholder="1234567890123"
-        />
-        {formData.nationalId && !validateNationalId(formData.nationalId) && (
-          <p className="text-red-500 text-sm mt-1">หมายเลขบัตรประชาชนไม่ถูกต้อง</p>
-        )}
+        <label className="block text-sm font-medium text-gray-700 mb-2">หมายเลขบัตรประชาชน <span className="text-red-500">*</span></label>
+        <input type="text" name="nationalId" value={formData.nationalId} onChange={handleInputChange} required maxLength={13} className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${formData.nationalId && !validateNationalId(formData.nationalId) ? 'border-red-500' : 'border-gray-300'}`} placeholder="1234567890123" />
+        {formData.nationalId && !validateNationalId(formData.nationalId) && <p className="text-red-500 text-sm mt-1">หมายเลขบัตรประชาชนไม่ถูกต้อง</p>}
       </div>
-
-      {/* Address */}
       <div>
         <h3 className="text-lg font-medium text-gray-800 mb-4">ที่อยู่</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              บ้านเลขที่ <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              name="address.houseNumber"
-              value={formData.address.houseNumber}
-              onChange={handleInputChange}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="123/45"
-            />
+            <label className="block text-sm font-medium text-gray-700 mb-2">บ้านเลขที่ <span className="text-red-500">*</span></label>
+            <input type="text" name="address.houseNumber" value={formData.address.houseNumber} onChange={handleInputChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="123/45" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">หมู่บ้าน</label>
-            <input
-              type="text"
-              name="address.village"
-              value={formData.address.village}
-              onChange={handleInputChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="หมู่บ้าน/โครงการ"
-            />
+            <input type="text" name="address.village" value={formData.address.village} onChange={handleInputChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="หมู่บ้าน/โครงการ" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">ถนน</label>
-            <input
-              type="text"
-              name="address.street"
-              value={formData.address.street}
-              onChange={handleInputChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="ถนน"
-            />
+            <input type="text" name="address.street" value={formData.address.street} onChange={handleInputChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="ถนน" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              ตำบล/แขวง <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              name="address.subDistrict"
-              value={formData.address.subDistrict}
-              onChange={handleInputChange}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="ตำบล/แขวง"
-            />
+            <label className="block text-sm font-medium text-gray-700 mb-2">ตำบล/แขวง <span className="text-red-500">*</span></label>
+            <input type="text" name="address.subDistrict" value={formData.address.subDistrict} onChange={handleInputChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="ตำบล/แขวง" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              อำเภอ/เขต <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              name="address.district"
-              value={formData.address.district}
-              onChange={handleInputChange}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="อำเภอ/เขต"
-            />
+            <label className="block text-sm font-medium text-gray-700 mb-2">อำเภอ/เขต <span className="text-red-500">*</span></label>
+            <input type="text" name="address.district" value={formData.address.district} onChange={handleInputChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="อำเภอ/เขต" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              จังหวัด <span className="text-red-500">*</span>
-            </label>
-            <select
-              name="address.province"
-              value={formData.address.province}
-              onChange={handleInputChange}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            >
+            <label className="block text-sm font-medium text-gray-700 mb-2">จังหวัด <span className="text-red-500">*</span></label>
+            <select name="address.province" value={formData.address.province} onChange={handleInputChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
               <option value="">เลือกจังหวัด</option>
-              {provinces.map((province) => (
-                <option key={province} value={province}>
-                  {province}
-                </option>
-              ))}
+              {provinces.map((province) => <option key={province} value={province}>{province}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              รหัสไปรษณีย์ <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              name="address.postalCode"
-              value={formData.address.postalCode}
-              onChange={handleInputChange}
-              required
-              maxLength={5}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="10110"
-            />
+            <label className="block text-sm font-medium text-gray-700 mb-2">รหัสไปรษณีย์ <span className="text-red-500">*</span></label>
+            <input type="text" name="address.postalCode" value={formData.address.postalCode} onChange={handleInputChange} required maxLength={5} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="10110" />
           </div>
         </div>
       </div>
-
-      {/* Contact Info */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            เบอร์โทรศัพท์ <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="tel"
-            name="phone"
-            value={formData.phone}
-            onChange={handleInputChange}
-            required
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            placeholder="081-234-5678"
-          />
+          <label className="block text-sm font-medium text-gray-700 mb-2">เบอร์โทรศัพท์ <span className="text-red-500">*</span></label>
+          <input type="tel" name="phone" value={formData.phone} onChange={handleInputChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="081-234-5678" />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">อีเมล</label>
-          <input
-            type="email"
-            name="email"
-            value={formData.email}
-            onChange={handleInputChange}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            placeholder="example@email.com"
-          />
+          <input type="email" name="email" value={formData.email} onChange={handleInputChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="example@email.com" />
         </div>
       </div>
-
-      {/* QR Code */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          QR Code / รหัสคนไข้ (สำหรับสแกนภายหลัง)
-        </label>
-        <input
-          type="text"
-          name="qrCode"
-          value={formData.qrCode}
-          onChange={handleInputChange}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-          placeholder="QR Code หรือรหัสพิเศษ"
-        />
+        <label className="block text-sm font-medium text-gray-700 mb-2">QR Code / รหัสคนไข้ (สำหรับสแกนภายหลัง)</label>
+        <input type="text" name="qrCode" value={formData.qrCode} onChange={handleInputChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="QR Code หรือรหัสพิเศษ" />
       </div>
     </div>
   );
 
-  // Step 2: Health Information
+  // 4. renderStep2: health info + emergency contact fields (from old step 3)
   const renderStep2 = () => (
     <div className="space-y-6">
-      <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">
-        ข้อมูลสุขภาพพื้นฐาน
-      </h2>
-
-      {/* Blood Type */}
+      <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">ข้อมูลสุขภาพพื้นฐาน</h2>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">กรุ๊ปเลือด</label>
-        <select
-          name="bloodType"
-          value={formData.bloodType}
-          onChange={handleInputChange}
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-        >
+        <select name="bloodType" value={formData.bloodType} onChange={handleInputChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
           <option value="">เลือกกรุ๊ปเลือด</option>
           <option value="A+">A+</option>
           <option value="A-">A-</option>
@@ -798,41 +526,23 @@ useEffect(() => {
           <option value="AB+">AB+</option>
           <option value="AB-">AB-</option>
           <option value="O+">O+</option>
+          <option value="O">O</option>
           <option value="O-">O-</option>
         </select>
       </div>
-
-      {/* Chronic Diseases */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">โรคประจำตัว</label>
         <div className="space-y-4">
           <div className="flex gap-2">
-            <input
-              type="text"
-              value={newChronicDisease}
-              onChange={(e) => setNewChronicDisease(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addChronicDisease())}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="เช่น เบาหวาน, ความดันโลหิตสูง, โรคหัวใจ"
-            />
-            <button
-              type="button"
-              onClick={addChronicDisease}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              เพิ่ม
-            </button>
+            <input type="text" value={newChronicDisease} onChange={(e) => setNewChronicDisease(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addChronicDisease())} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="เช่น เบาหวาน, ความดันโลหิตสูง, โรคหัวใจ" />
+            <button type="button" onClick={addChronicDisease} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">เพิ่ม</button>
           </div>
           {formData.chronicDiseases && formData.chronicDiseases.length > 0 && (
             <div className="space-y-2">
               {formData.chronicDiseases.map((disease, index) => (
                 <div key={index} className="flex items-center justify-between bg-blue-50 p-3 rounded-lg">
                   <span className="text-blue-700">{disease}</span>
-                  <button
-                    type="button"
-                    onClick={() => removeChronicDisease(index)}
-                    className="text-blue-500 hover:text-blue-700"
-                  >
+                  <button type="button" onClick={() => removeChronicDisease(index)} className="text-blue-500 hover:text-blue-700">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
@@ -843,38 +553,19 @@ useEffect(() => {
           )}
         </div>
       </div>
-
-      {/* Allergies */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">แพ้ยา/แพ้อาหาร</label>
         <div className="space-y-4">
           <div className="flex gap-2">
-            <input
-              type="text"
-              value={newAllergy}
-              onChange={(e) => setNewAllergy(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addAllergy())}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="เช่น ยาปฏิชีวนะ Penicillin, อาหารทะเล, ถั่ว"
-            />
-            <button
-              type="button"
-              onClick={addAllergy}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-            >
-              เพิ่ม
-            </button>
+            <input type="text" value={newAllergy} onChange={(e) => setNewAllergy(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addAllergy())} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="เช่น ยาปฏิชีวนะ Penicillin, อาหารทะเล, ถั่ว" />
+            <button type="button" onClick={addAllergy} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">เพิ่ม</button>
           </div>
           {formData.allergies && formData.allergies.length > 0 && (
             <div className="space-y-2">
               {formData.allergies.map((allergy, index) => (
                 <div key={index} className="flex items-center justify-between bg-red-50 p-3 rounded-lg">
                   <span className="text-red-700">{allergy}</span>
-                  <button
-                    type="button"
-                    onClick={() => removeAllergy(index)}
-                    className="text-red-500 hover:text-red-700"
-                  >
+                  <button type="button" onClick={() => removeAllergy(index)} className="text-red-500 hover:text-red-700">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
@@ -885,38 +576,19 @@ useEffect(() => {
           )}
         </div>
       </div>
-
-      {/* Current Medications */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">ยาที่รับประทานประจำ</label>
         <div className="space-y-4">
           <div className="flex gap-2">
-            <input
-              type="text"
-              value={newMedication}
-              onChange={(e) => setNewMedication(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addMedication())}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="เช่น ยาลดความดัน, ยาเบาหวาน, วิตามิน"
-            />
-            <button
-              type="button"
-              onClick={addMedication}
-              className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
-            >
-              เพิ่ม
-            </button>
+            <input type="text" value={newMedication} onChange={(e) => setNewMedication(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addMedication())} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="เช่น ยาลดความดัน, ยาเบาหวาน, วิตามิน" />
+            <button type="button" onClick={addMedication} className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors">เพิ่ม</button>
           </div>
           {formData.currentMedications && formData.currentMedications.length > 0 && (
             <div className="space-y-2">
               {formData.currentMedications.map((medication, index) => (
                 <div key={index} className="flex items-center justify-between bg-yellow-50 p-3 rounded-lg">
                   <span className="text-yellow-700">{medication}</span>
-                  <button
-                    type="button"
-                    onClick={() => removeMedication(index)}
-                    className="text-yellow-500 hover:text-yellow-700"
-                  >
+                  <button type="button" onClick={() => removeMedication(index)} className="text-yellow-500 hover:text-yellow-700">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
@@ -927,67 +599,46 @@ useEffect(() => {
           )}
         </div>
       </div>
+      <div className="mt-8 p-6 bg-gray-50 rounded-lg">
+        <h3 className="text-lg font-medium text-gray-800 mb-4">ข้อมูลผู้ติดต่อฉุกเฉิน</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">ชื่อ-นามสกุล</label>
+            <input type="text" name="emergencyContact.name" value={formData.emergencyContact?.name || ''} onChange={handleInputChange} disabled={isLoading} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="ชื่อผู้ติดต่อฉุกเฉิน" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">เบอร์โทรศัพท์</label>
+            <input type="tel" name="emergencyContact.phone" value={formData.emergencyContact?.phone || ''} onChange={handleInputChange} disabled={isLoading} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="081-234-5678" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">ความสัมพันธ์</label>
+            <select name="emergencyContact.relationship" value={formData.emergencyContact?.relationship || ''} onChange={handleInputChange} disabled={isLoading} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+              <option value="">เลือกความสัมพันธ์</option>
+              <option value="คู่สมรส">คู่สมรส</option>
+              <option value="บิดา">บิดา</option>
+              <option value="มารดา">มารดา</option>
+              <option value="บุตร">บุตร</option>
+              <option value="บุตรี">บุตรี</option>
+              <option value="พี่ชาย">พี่ชาย</option>
+              <option value="พี่สาว">พี่สาว</option>
+              <option value="น้องชาย">น้องชาย</option>
+              <option value="น้องสาว">น้องสาว</option>
+              <option value="ญาติ">ญาติ</option>
+              <option value="เพื่อน">เพื่อน</option>
+              <option value="อื่นๆ">อื่นๆ</option>
+            </select>
+          </div>
+        </div>
+      </div>
     </div>
   );
 
-  // Step 3: Emergency Contact
+  // Add renderStep3: only summary and submit button
   const renderStep3 = () => (
     <div className="space-y-6">
-      <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">
-        ข้อมูลผู้ติดต่อฉุกเฉิน
-      </h2>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">ชื่อ-นามสกุล</label>
-          <input
-            type="text"
-            name="emergencyContact.name"
-            value={formData.emergencyContact?.name || ''}
-            onChange={handleInputChange}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            placeholder="ชื่อผู้ติดต่อฉุกเฉิน"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">เบอร์โทรศัพท์</label>
-          <input
-            type="tel"
-            name="emergencyContact.phone"
-            value={formData.emergencyContact?.phone || ''}
-            onChange={handleInputChange}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            placeholder="081-234-5678"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">ความสัมพันธ์</label>
-          <select
-            name="emergencyContact.relationship"
-            value={formData.emergencyContact?.relationship || ''}
-            onChange={handleInputChange}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-          >
-            <option value="">เลือกความสัมพันธ์</option>
-            <option value="คู่สมรส">คู่สมรส</option>
-            <option value="บิดา">บิดา</option>
-            <option value="มารดา">มารดา</option>
-            <option value="บุตร">บุตร</option>
-            <option value="บุตรี">บุตรี</option>
-            <option value="พี่ชาย">พี่ชาย</option>
-            <option value="พี่สาว">พี่สาว</option>
-            <option value="น้องชาย">น้องชาย</option>
-            <option value="น้องสาว">น้องสาว</option>
-            <option value="ญาติ">ญาติ</option>
-            <option value="เพื่อน">เพื่อน</option>
-            <option value="อื่นๆ">อื่นๆ</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Summary */}
+      <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">สรุปข้อมูล</h2>
       <div className="mt-8 p-6 bg-gray-50 rounded-lg">
-        <h3 className="text-lg font-medium text-gray-800 mb-4">สรุปข้อมูล</h3>
+        <h3 className="text-lg font-medium text-gray-800 mb-4">ข้อมูลผู้ป่วย</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
           <div>
             <p><strong>ชื่อ-นามสกุล:</strong> {formData.prefix} {formData.firstNameTh} {formData.lastNameTh}</p>
@@ -1002,43 +653,39 @@ useEffect(() => {
             <p><strong>ยาประจำ:</strong> {formData.currentMedications?.length || 0} รายการ</p>
           </div>
         </div>
+        <h3 className="text-lg font-medium text-gray-800 mt-6 mb-4">ข้อมูลผู้ติดต่อฉุกเฉิน</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div>
+            <p><strong>ชื่อ-นามสกุล:</strong> {formData.emergencyContact?.name || '-'}</p>
+          </div>
+          <div>
+            <p><strong>เบอร์โทรศัพท์:</strong> {formData.emergencyContact?.phone || '-'}</p>
+          </div>
+          <div>
+            <p><strong>ความสัมพันธ์:</strong> {formData.emergencyContact?.relationship || '-'}</p>
+          </div>
+        </div>
       </div>
     </div>
   );
 
+  // 5. In the form, renderStep1, renderStep2, renderStep3 by currentStep
   return (
     <div className="container mx-auto p-6 max-w-4xl">
       <div className="bg-white rounded-lg shadow-lg">
-        {/* Header */}
         <div className="bg-green-600 text-white p-6 rounded-t-lg">
-          <h1 className="text-2xl font-bold">
-            {isEdit ? 'แก้ไขข้อมูลผู้ป่วย' : 'เพิ่มผู้ป่วยใหม่'}
-          </h1>
-          <p className="text-green-100">
-            {isEdit ? `แก้ไขข้อมูลของ ${formData.firstNameTh} ${formData.lastNameTh}` : 'กรอกข้อมูลผู้ป่วยใหม่'}
-          </p>
+          <h1 className="text-2xl font-bold">{isEdit ? 'แก้ไขข้อมูลผู้ป่วย' : 'เพิ่มผู้ป่วยใหม่'}</h1>
+          <p className="text-green-100">{isEdit ? `แก้ไขข้อมูลของ ${formData.firstNameTh} ${formData.lastNameTh}` : 'กรอกข้อมูลผู้ป่วยใหม่'}</p>
         </div>
-
-        {/* Form */}
         <form onSubmit={handleSubmit} className="p-6">
-          {/* Step Indicator */}
           <StepIndicator />
-
-          {/* Step Content */}
           {currentStep === 1 && renderStep1()}
           {currentStep === 2 && renderStep2()}
           {currentStep === 3 && renderStep3()}
-
-          {/* Navigation Buttons */}
           <div className="flex justify-between items-center pt-6 border-t mt-8">
             <div>
               {currentStep > 1 && (
-                <button
-                  type="button"
-                  onClick={handlePrevious}
-                  disabled={isLoading}
-                  className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                >
+                <button type="button" onClick={handlePrevious} disabled={isLoading} className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                   </svg>
@@ -1046,35 +693,17 @@ useEffect(() => {
                 </button>
               )}
             </div>
-
             <div className="flex gap-4">
-              <button
-                type="button"
-                onClick={handleCancel}
-                disabled={isLoading}
-                className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-              >
-                ยกเลิก
-              </button>
-
+              <button type="button" onClick={handleCancel} disabled={isLoading} className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors">ยกเลิก</button>
               {currentStep < 3 ? (
-                <button
-                  type="button"
-                  onClick={handleNext}
-                  disabled={isLoading}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                >
+                <button type="button" onClick={handleNext} disabled={isLoading} className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2">
                   ถัดไป
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </button>
               ) : (
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="px-8 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                >
+                <button type="submit" disabled={isLoading} className="px-8 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2">
                   {isLoading ? (
                     <>
                       <svg className="animate-spin w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1094,14 +723,8 @@ useEffect(() => {
               )}
             </div>
           </div>
-
-          {/* Progress Info */}
           <div className="mt-4 text-center text-sm text-gray-500">
-            ขั้นตอนที่ {currentStep} จาก 3: {
-              currentStep === 1 ? 'ข้อมูลส่วนตัว' :
-              currentStep === 2 ? 'ข้อมูลสุขภาพพื้นฐาน' :
-              'ข้อมูลผู้ติดต่อฉุกเฉิน'
-            }
+            ขั้นตอนที่ {currentStep} จาก 3: {currentStep === 1 ? 'ข้อมูลส่วนตัว' : currentStep === 2 ? 'ข้อมูลสุขภาพพื้นฐาน' : 'สรุปข้อมูล'}
           </div>
         </form>
       </div>
@@ -1110,5 +733,3 @@ useEffect(() => {
 };
 
 export default AddPatient;
-
-

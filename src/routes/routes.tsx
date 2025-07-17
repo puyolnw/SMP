@@ -96,6 +96,13 @@ export const routes = [
             element: <DataPatient />
           },
           {
+            path: '/member/patient/dataPatient/:id',
+            name: 'dataPatientById',
+            nameTH: 'ข้อมูลผู้ป่วย',
+            icon: DashboardIcon,
+            element: <DataPatient />
+          },
+          {
             path: '/Screening/AuthenPatient',
             name: 'AuthenPatient',
             nameTH: 'ยืนยันตัวตนผู้ป่วย',
