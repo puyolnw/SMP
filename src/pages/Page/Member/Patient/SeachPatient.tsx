@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { usePageDebug } from '../../../../hooks/usePageDebug';
-import { useDebugContext } from '../../../../contexts/DebugContext';
-import { TableSchema } from '../../../../types/Debug';
+import axios from 'axios';
+
 
 interface Patient {
   id: string;
@@ -39,177 +38,68 @@ interface Patient {
   };
 }
 
+const API_BASE_URL = import.meta.env.VITE_API_URL;
+
+// เพิ่มฟังก์ชัน getProfileImageUrl
+const getProfileImageUrl = (profileImage?: string) => {
+  if (!profileImage) return undefined;
+  // ถ้า profileImage มี uploads/ อยู่แล้ว
+  return `${API_BASE_URL}/api/patient/${profileImage}`;
+};
+
 const SearchPatient: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<Patient[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [allPatients, setAllPatients] = useState<Patient[]>([]);
   const navigate = useNavigate();
-  const { debugManager } = useDebugContext();
 
-  // Debug setup
-  const requiredTables: TableSchema[] = useMemo(() => [
-    {
-      tableName: 'patients',
-      columns: ['id', 'prefix', 'firstNameTh', 'lastNameTh', 'firstNameEn', 'lastNameEn', 'gender', 'birthDate', 'age', 'nationalId', 'address', 'phone', 'email', 'profileImage', 'qrCode', 'bloodType', 'chronicDiseases', 'allergies', 'currentMedications', 'emergencyContact'],
-      description: 'ข้อมูลผู้ป่วยทั้งหมด'
-    }
-  ], []);
-
-  const debugPageData = usePageDebug('ค้นหาผู้ป่วย', requiredTables);
-  console.log('debugPageData', debugPageData);
-  // Load patients from debug data
+  // ดึงข้อมูลผู้ป่วยจาก API
   useEffect(() => {
-    const loadPatients = () => {
-      const patients = debugManager.getData('patients');
-      
-      if (patients.length === 0) {
-        // สร้างข้อมูลตัวอย่าง
-        const mockPatients: Patient[] = [
-          {
-            id: 'P000001',
-            prefix: 'นาย',
-            firstNameTh: 'สมชาย',
-            lastNameTh: 'ใจดี',
-            firstNameEn: 'Somchai',
-            lastNameEn: 'Jaidee',
-            gender: 'ชาย',
-            birthDate: '1990-01-01',
-            age: 34,
-            nationalId: '1234567890123',
-            address: {
-              houseNumber: '123/45',
-              village: 'หมู่บ้านสวยงาม',
-              street: 'ถนนสุขุมวิท',
-              subDistrict: 'บางนา',
-              district: 'บางนา',
-              province: 'กรุงเทพมหานคร',
-              postalCode: '10260'
-            },
-            phone: '081-234-5678',
-            email: 'somchai@email.com',
-            bloodType: 'O+',
-            chronicDiseases: ['เบาหวาน'],
-            allergies: ['ยาปฏิชีวนะ Penicillin'],
-            currentMedications: ['ยาเบาหวาน'],
-            emergencyContact: {
-              name: 'สมหญิง ใจดี',
-              phone: '081-234-5679',
-              relationship: 'คู่สมรส'
-            }
-          },
-          {
-            id: 'P000002',
-            prefix: 'นางสาว',
-            firstNameTh: 'สมหญิง',
-            lastNameTh: 'รักสุขภาพ',
-            firstNameEn: 'Somying',
-            lastNameEn: 'Raksukkhaphap',
-            gender: 'หญิง',
-            birthDate: '1995-05-15',
-            age: 28,
-            nationalId: '2345678901234',
-            address: {
-              houseNumber: '456/78',
-              village: 'หมู่บ้านสุขใจ',
-              street: 'ถนนพหลโยธิน',
-              subDistrict: 'จตุจักร',
-              district: 'จตุจักร',
-              province: 'กรุงเทพมหานคร',
-              postalCode: '10900'
-            },
-            phone: '082-345-6789',
-            email: 'somying@email.com',
-            bloodType: 'A+',
-            chronicDiseases: [],
-            allergies: ['อาหารทะเล'],
-            currentMedications: [],
-            emergencyContact: {
-              name: 'สมชาย รักสุขภาพ',
-              phone: '082-345-6790',
-              relationship: 'พี่ชาย'
-            }
-          },
-          {
-            id: 'P000003',
-            prefix: 'นาย',
-            firstNameTh: 'วิชัย',
-            lastNameTh: 'แข็งแรง',
-            firstNameEn: 'Wichai',
-            lastNameEn: 'Khaengraeng',
-            gender: 'ชาย',
-            birthDate: '1982-12-20',
-            age: 41,
-            nationalId: '3456789012345',
-            address: {
-              houseNumber: '789/12',
-              village: '',
-              street: 'ถนนรัชดาภิเษก',
-              subDistrict: 'ห้วยขวาง',
-              district: 'ห้วยขวาง',
-              province: 'กรุงเทพมหานคร',
-              postalCode: '10310'
-            },
-            phone: '083-456-7890',
-            email: 'wichai@email.com',
-            bloodType: 'B+',
-            chronicDiseases: ['ความดันโลหิตสูง'],
-            allergies: [],
-            currentMedications: ['ยาลดความดัน'],
-            emergencyContact: {
-              name: 'มาลี แข็งแรง',
-              phone: '083-456-7891',
-              relationship: 'คู่สมรส'
-            }
-          }
-        ];
-
-        // เพิ่มข้อมูลตัวอย่างลง debug storage
-        mockPatients.forEach(patient => {
-          debugManager.addData('patients', patient);
-        });
-        
-        setAllPatients(mockPatients);
-      } else {
-        setAllPatients(patients);
+    const fetchPatients = async () => {
+      setIsLoading(true);
+      try {
+        const res = await axios.get(`${API_BASE_URL}/api/patient`);
+        // แปลงข้อมูลทุกตัว
+        const mapped = res.data.map(mapPatientFromApi);
+        setAllPatients(mapped);
+      } catch {
+        alert('เกิดข้อผิดพลาดในการโหลดข้อมูลผู้ป่วย');
       }
+      setIsLoading(false);
     };
+    fetchPatients();
+  }, []);
 
-    loadPatients();
-  }, [debugManager]);
-
-  const handleSearch = () => {
+  // 1. เพิ่ม useEffect สำหรับ search-as-you-type
+  useEffect(() => {
     if (!searchTerm.trim()) {
       setSearchResults([]);
       return;
     }
-    
     setIsLoading(true);
-    
-    // จำลองการค้นหา
-    setTimeout(() => {
+    const timeout = setTimeout(() => {
       const results = allPatients.filter(patient => {
         const fullNameTh = `${patient.prefix} ${patient.firstNameTh} ${patient.lastNameTh}`;
-        const fullNameEn = patient.firstNameEn && patient.lastNameEn 
-          ? `${patient.firstNameEn} ${patient.lastNameEn}` 
+        const fullNameEn = patient.firstNameEn && patient.lastNameEn
+          ? `${patient.firstNameEn} ${patient.lastNameEn}`
           : '';
-        
         return (
           fullNameTh.toLowerCase().includes(searchTerm.toLowerCase()) ||
           fullNameEn.toLowerCase().includes(searchTerm.toLowerCase()) ||
           patient.phone.includes(searchTerm) ||
           patient.id.includes(searchTerm) ||
-          patient.nationalId.includes(searchTerm)
+          patient.nationalId?.includes(searchTerm)
         );
       });
-      
       setSearchResults(results);
       setIsLoading(false);
-    }, 500);
-  };
+    }, 200);
+    return () => clearTimeout(timeout);
+  }, [searchTerm, allPatients]);
 
   const handleViewPatient = (patient: Patient) => {
-    navigate('/member/patient/datapatient', { state: { patient } });
+    navigate(`/member/patient/dataPatient/${patient.id}`, { state: { patient } });
   };
 
   const handleAddPatient = () => {
@@ -229,6 +119,9 @@ const SearchPatient: React.FC = () => {
     
     return parts.join(', ');
   };
+
+  // เพิ่ม default image
+  const defaultImage = 'https://via.placeholder.com/64';
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
@@ -257,32 +150,11 @@ const SearchPatient: React.FC = () => {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="กรอกคำค้นหา..."
               />
             </div>
-            <button
-              onClick={handleSearch}
-              disabled={isLoading}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-            >
-              {isLoading ? (
-                <>
-                  <svg className="animate-spin w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  ค้นหา...
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  ค้นหา
-                </>
-              )}
-            </button>
+            {/* 2. ลบปุ่มค้นหาออกจาก UI (หรือคงไว้แต่ไม่จำเป็นต้องใช้) */}
           </div>
         </div>
 
@@ -317,19 +189,12 @@ const SearchPatient: React.FC = () => {
                 {/* Profile Image */}
                 <div className="flex-shrink-0">
                   <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-200">
-                    {patient.profileImage ? (
-                      <img
-                        src={patient.profileImage}
-                        alt={getFullName(patient)}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-blue-100">
-                        <svg className="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                      </div>
-                    )}
+                    {/* 3. เวลาสร้าง <img> ให้ใช้ URL เต็ม */}
+                    <img
+                      src={patient.profileImage ? getProfileImageUrl(patient.profileImage) : defaultImage}
+                      alt={getFullName(patient)}
+                      className="w-full h-full object-cover"
+                    />
                   </div>
                 </div>
 
@@ -409,5 +274,40 @@ const SearchPatient: React.FC = () => {
     </div>
   );
 };
+
+function mapPatientFromApi(apiPatient: unknown): Patient {
+  const p = apiPatient as Record<string, unknown>;
+  const addressObj = typeof p.address === 'object' && p.address !== null ? p.address as Record<string, unknown> : {};
+  return {
+    id: (p._id as string) || '',
+    prefix: (p.prefix as string) || '',
+    firstNameTh: (p.first_name_th as string) || '',
+    lastNameTh: (p.last_name_th as string) || '',
+    firstNameEn: (p.first_name_en as string) || '',
+    lastNameEn: (p.last_name_en as string) || '',
+    gender: (p.gender as string) || '',
+    birthDate: (p.birth_date as string) || '',
+    age: (p.age as number) || 0,
+    nationalId: (p.national_id as string) || '',
+    address: {
+      houseNumber: (addressObj.house_no as string) || '',
+      village: (addressObj.village as string) || '',
+      street: (addressObj.road as string) || '',
+      subDistrict: (addressObj.subdistrict as string) || '',
+      district: (addressObj.district as string) || '',
+      province: (addressObj.province as string) || '',
+      postalCode: (addressObj.zipcode as string) || '',
+    },
+    phone: (p.phone as string) || '',
+    email: (p.email as string) || '',
+    profileImage: (p.image_path as string) || '',
+    qrCode: (p.qr_code as string) || '',
+    bloodType: (p.blood_type as string) || '',
+    chronicDiseases: (p.chronic_diseases as string[]) || [],
+    allergies: (p.allergies as string[]) || [],
+    currentMedications: (p.current_medications as string[]) || [],
+    emergencyContact: (p.emergency_contact as { name: string; phone: string; relationship: string }) || { name: '', phone: '', relationship: '' },
+  };
+}
 
 export default SearchPatient;

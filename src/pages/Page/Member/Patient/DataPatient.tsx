@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import axios from 'axios';
 import { usePageDebug } from '../../../../hooks/usePageDebug';
 import { useDebugContext } from '../../../../contexts/DebugContext';
 import { TableSchema } from '../../../../types/Debug';
@@ -47,10 +49,12 @@ interface Patient {
 const DataPatient: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
   const { debugManager } = useDebugContext();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const API_BASE_URL = import.meta.env.VITE_API_URL;
 
   // Debug setup
   const requiredTables: TableSchema[] = useMemo(() => [
@@ -64,7 +68,7 @@ const DataPatient: React.FC = () => {
   const debugPageData = usePageDebug('ข้อมูลผู้ป่วย', requiredTables);
   console.log(debugPageData);
   useEffect(() => {
-    const loadPatientData = () => {
+    const loadPatientData = async () => {
       try {
         setIsLoading(true);
         
@@ -75,6 +79,51 @@ const DataPatient: React.FC = () => {
           setPatient(statePatient);
           setIsLoading(false);
           return;
+        }
+
+        // ถ้ามี id ใน url ให้ดึงจาก backend
+        if (id) {
+          try {
+            const res = await axios.get(`${API_BASE_URL}/api/patient/${id}`);
+            const data = res.data;
+            // แปลงข้อมูลให้ตรงกับ Patient interface ถ้าจำเป็น
+            setPatient({
+              id: data._id,
+              prefix: data.prefix,
+              firstNameTh: data.first_name_th,
+              lastNameTh: data.last_name_th,
+              firstNameEn: data.first_name_en,
+              lastNameEn: data.last_name_en,
+              gender: data.gender,
+              birthDate: data.birth_date,
+              age: Number(data.age),
+              nationalId: data.national_id,
+              address: {
+                houseNumber: data.address?.house_no || '',
+                village: data.address?.village || '',
+                street: data.address?.road || '',
+                subDistrict: data.address?.subdistrict || '',
+                district: data.address?.district || '',
+                province: data.address?.province || '',
+                postalCode: data.address?.zipcode || '',
+              },
+              phone: data.phone,
+              email: data.email,
+              profileImage: data.image_path,
+              qrCode: data.qr_code,
+              bloodType: data.blood_type,
+              chronicDiseases: data.chronic_diseases,
+              allergies: data.allergies,
+              currentMedications: data.current_medications,
+              emergencyContact: data.emergency_contact,
+            });
+            setIsLoading(false);
+            return;
+          } catch {
+            setError('ไม่พบข้อมูลผู้ป่วยหรือเกิดข้อผิดพลาด');
+            setIsLoading(false);
+            return;
+          }
         }
 
         // ถ้าไม่มีใน state ให้ดึงจาก debug data
@@ -132,14 +181,14 @@ const DataPatient: React.FC = () => {
     };
 
     loadPatientData();
-  }, [location.state, debugManager]);
+  }, [location.state, debugManager, id, API_BASE_URL]);
 
   // ถ้าไม่มีข้อมูลผู้ป่วย ให้กลับไปหน้าค้นหา
   useEffect(() => {
-    if (!isLoading && !patient && !error) {
+    if (!isLoading && !patient && !error && !id) {
       navigate('/member/patient/searchpatient');
     }
-  }, [patient, isLoading, error, navigate]);
+  }, [patient, isLoading, error, navigate, id]);
 
   const handleBack = () => {
     navigate('/member/patient/searchpatient');
@@ -176,6 +225,13 @@ const DataPatient: React.FC = () => {
       return `${patient.firstNameEn} ${patient.lastNameEn}`;
     }
     return null;
+  };
+
+  // Helper สำหรับสร้าง URL รูปโปรไฟล์
+  const getProfileImageUrl = (profileImage?: string) => {
+    if (!profileImage) return undefined;
+    // ถ้า profileImage มี uploads/ อยู่แล้ว
+    return `${API_BASE_URL}/api/patient/${profileImage}`;
   };
 
   // Loading state
@@ -225,7 +281,7 @@ const DataPatient: React.FC = () => {
                 <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-white shadow-lg">
                   {patient.profileImage ? (
                     <img
-                      src={patient.profileImage}
+                      src={getProfileImageUrl(patient.profileImage)}
                       alt={`รูปโปรไฟล์ของ ${getFullName(patient)}`}
                       className="w-full h-full object-cover"
                     />

@@ -53,7 +53,7 @@ import {
   Emergency as EmergencyIcon
 } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
-//import axios from 'axios';
+import axios from 'axios';
 import { getUserBranchId } from '../../utils/auth';
 
 interface PatientData {
@@ -73,6 +73,32 @@ interface PatientData {
   last_visit?: string;
   created_at: string;
 }
+
+// เพิ่ม type สำหรับข้อมูลที่ backend ส่งมา
+type RawPatient = {
+  _id: string;
+  national_id?: string;
+  first_name_th: string;
+  last_name_th: string;
+  age: string | number;
+  gender: string;
+  phone: string;
+  email?: string;
+  address?: {
+    house_no?: string;
+    village?: string;
+    road?: string;
+    subdistrict?: string;
+    district?: string;
+    province?: string;
+    zipcode?: string;
+  };
+  chronic_diseases?: string[];
+  priority_level?: string;
+  status?: string;
+  created_at?: string;
+  // ... เพิ่ม field อื่นๆ ตาม backend
+};
 
 const AllData: React.FC = () => {
   const [data, setData] = useState<PatientData[]>([]);
@@ -105,77 +131,61 @@ const AllData: React.FC = () => {
   // ดึง branchId ของ user ที่ login
   const userBranchId = getUserBranchId();
 
-  // Mock data for demonstration
   useEffect(() => {
-    const mockPatients: PatientData[] = [
-      {
-        id: '1',
-        patient_id: 'P001',
-        first_name: 'สมชาย',
-        last_name: 'ใจดี',
-        age: 45,
-        gender: 'ชาย',
-        phone: '081-234-5678',
-        email: 'somchai@email.com',
-        address: '123 ถนนสุขุมวิท กรุงเทพฯ',
-        medical_condition: 'เบาหวาน, ความดันโลหิตสูง',
-        priority_level: 'ปานกลาง',
-        status: 'รอตรวจ',
-        admission_date: '2024-01-15',
-        last_visit: '2024-01-10',
-        created_at: '2024-01-15T08:30:00Z'
-      },
-      {
-        id: '2',
-        patient_id: 'P002',
-        first_name: 'สมหญิง',
-        last_name: 'รักสุขภาพ',
-        age: 32,
-        gender: 'หญิง',
-        phone: '082-345-6789',
-        email: 'somying@email.com',
-        address: '456 ถนนพหลโยธิน กรุงเทพฯ',
-        medical_condition: 'ไมเกรน',
-        priority_level: 'เร่งด่วน',
-        status: 'กำลังรักษา',
-        admission_date: '2024-01-15',
-        last_visit: '2024-01-12',
-        created_at: '2024-01-15T09:15:00Z'
-      },
-      {
-        id: '3',
-        patient_id: 'P003',
-        first_name: 'วิชัย',
-        last_name: 'แข็งแรง',
-        age: 28,
-        gender: 'ชาย',
-        phone: '083-456-7890',
-        address: '789 ถนนรัชดาภิเษก กรุงเทพฯ',
-        medical_condition: 'หวัด',
-        priority_level: 'ไม่เร่งด่วน',
-        status: 'รักษาเสร็จ',
-        admission_date: '2024-01-14',
-        last_visit: '2024-01-14',
-        created_at: '2024-01-14T14:20:00Z'
+    const fetchPatients = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_URL;
+        const res = await axios.get(`${API_BASE_URL}/api/patient`);
+        // map ข้อมูลจาก backend ให้ตรงกับ PatientData
+        const patients: PatientData[] = (res.data as RawPatient[]).map((p) => ({
+          id: p._id,
+          patient_id: p.national_id || p._id,
+          first_name: p.first_name_th,
+          last_name: p.last_name_th,
+          age: Number(p.age),
+          gender: p.gender,
+          phone: p.phone,
+          email: p.email,
+          address: p.address ? [
+            p.address.house_no,
+            p.address.village,
+            p.address.road,
+            p.address.subdistrict,
+            p.address.district,
+            p.address.province,
+            p.address.zipcode
+          ].filter(Boolean).join(' ') : '',
+          medical_condition: (p.chronic_diseases || []).join(', '),
+          priority_level: p.priority_level || 'ไม่ระบุ',
+          status: p.status || 'รอตรวจ',
+          admission_date: p.created_at || '',
+          last_visit: '', // ถ้ามี field นี้
+          created_at: p.created_at || '',
+        }));
+        setData(patients);
+        setStatuses(['รอตรวจ', 'กำลังรักษา', 'รักษาเสร็จ', 'นัดติดตาม']);
+        setPriorities(['ฉุกเฉิน', 'เร่งด่วน', 'ปานกลาง', 'ไม่เร่งด่วน']);
+      } catch {
+        setError('เกิดข้อผิดพลาดในการโหลดข้อมูลผู้ป่วย');
       }
-    ];
+      setLoading(false);
+    };
 
-    setData(mockPatients);
-    setStatuses(['รอตรวจ', 'กำลังรักษา', 'รักษาเสร็จ', 'นัดติดตาม']);
-    setPriorities(['ฉุกเฉิน', 'เร่งด่วน', 'ปานกลาง', 'ไม่เร่งด่วน']);
-    setLoading(false);
+    fetchPatients();
   }, []);
 
   const handleDelete = async (id: string) => {
     try {
-      // Mock delete - in real app, call API
+      const API_BASE_URL = import.meta.env.VITE_API_URL;
+      await axios.delete(`${API_BASE_URL}/api/patient/delete/${id}`);
       setSnackbarMessage('ลบข้อมูลผู้ป่วยเรียบร้อยแล้ว');
       setOpenSnackbar(true);
-      
       setData(prevData => prevData.filter(item => item.id !== id));
       handleCloseMenu();
-    } catch (err) {
-      console.error('Error deleting patient:', err);
+    } catch (error) {
+      console.error('Error deleting patient:', error);
       setSnackbarMessage('ไม่สามารถลบข้อมูลผู้ป่วยได้');
       setOpenSnackbar(true);
     }
@@ -368,7 +378,7 @@ const AllData: React.FC = () => {
                   variant="contained" 
                   startIcon={<AddPatientIcon />}
                   component={Link}
-                  to="/patients/addnew"
+                  to="/member/patient/addpatient"
                   sx={{ 
                     borderRadius: '10px',
                     boxShadow: '0 4px 14px rgba(0, 0, 0, 0.1)',
@@ -744,7 +754,7 @@ const AllData: React.FC = () => {
                               <Tooltip title="ดูข้อมูล">
                                 <IconButton 
                                   color="info" 
-                                  onClick={() => navigate(`/patients/view/${patient.id}`)}
+                                  onClick={() => navigate(`/member/patient/dataPatient/${patient.id}`)}
                                   size="small"
                                   sx={{ 
                                     transition: 'all 0.2s',
