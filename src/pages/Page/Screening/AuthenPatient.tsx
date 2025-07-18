@@ -84,6 +84,12 @@ const AuthenPatient: React.FC = () => {
   // API Base URL
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+  // ฟังก์ชันแปลง image_path เป็น URL สำหรับแสดงรูปผู้ป่วย
+  const getProfileImageUrl = (profileImage?: string) => {
+    if (!profileImage) return undefined;
+    return `${API_BASE_URL}/api/patient/${profileImage}`;
+  };
+
   // ดึงข้อมูลผู้ป่วยจาก localStorage
   const getPatientData = (): PatientData[] => {
     const patients = debugManager.getData('patients');
@@ -213,14 +219,50 @@ const AuthenPatient: React.FC = () => {
       setScanResults(result);
       if (result.faces && result.faces.length > 0) {
         const recognizedFace = result.faces.find(face => face.name !== 'Unknown');
-        if (recognizedFace && recognizedFace.confidence > 0.7) {
-          const patientData: PatientData = {
-            id: recognizedFace.patient_id || 'P' + Math.random().toString().slice(2, 8),
-            name: recognizedFace.name,
-            nationalId: result.ocr?.id_card?.id_numbers?.[0] || '',
-            profileImage: undefined
-          };
-          setFoundPatient(patientData);
+        if (recognizedFace && recognizedFace.confidence > 0.65) {
+          // ดึงข้อมูลผู้ป่วยจาก backend ด้วย patient_id
+          if (recognizedFace.patient_id) {
+            try {
+              const response = await axios.get(`${API_BASE_URL}/api/patient/${recognizedFace.patient_id}`);
+              const patient = response.data;
+              setFoundPatient({
+                id: patient._id,
+                name: `${patient.prefix || ''} ${patient.first_name_th || ''} ${patient.last_name_th || ''}`.trim(),
+                nationalId: patient.national_id,
+                profileImage: getProfileImageUrl(patient.image_path),
+                faceData: patient.face_encoding
+              });
+            } catch {
+              // fallback เดิม
+              setFoundPatient({
+                id: recognizedFace.patient_id,
+                name: recognizedFace.name,
+                nationalId: result.ocr?.id_card?.id_numbers?.[0] || '',
+                profileImage: undefined
+              });
+            }
+          } else {
+            setFoundPatient({
+              id: recognizedFace.patient_id || 'P' + Math.random().toString().slice(2, 8),
+              name: recognizedFace.name,
+              nationalId: result.ocr?.id_card?.id_numbers?.[0] || '',
+              profileImage: undefined
+            });
+          }
+          // ขอ token จาก backend แล้วเก็บใน localStorage
+          if (recognizedFace.patient_id) {
+            try {
+              const tokenRes = await axios.post(`${API_BASE_URL}/api/queue/token`, { patient_id: recognizedFace.patient_id });
+              if (tokenRes.data.token) {
+                localStorage.setItem('patient_token', tokenRes.data.token);
+                console.log('[AUTH] Set patient_token:', tokenRes.data.token);
+              } else {
+                console.warn('[AUTH] No token received from /api/queue/token response:', tokenRes.data);
+              }
+            } catch (err) {
+              console.error('Cannot get patient token:', err);
+            }
+          }
           setCurrentStep('success');
           stopAutoScan();
           stopCamera();
@@ -308,14 +350,30 @@ const AuthenPatient: React.FC = () => {
     setErrorMessage('');
 
     try {
-      const patients = getPatientData();
-      const foundPatientById = patients.find(p => p.nationalId === nationalId);
-      
-      if (foundPatientById) {
-        setFoundPatient(foundPatientById);
-        setCurrentStep('success');
-      } else if (nationalId === mockPatientData.nationalId) {
-        setFoundPatient(mockPatientData);
+      const response = await axios.get(`${API_BASE_URL}/api/patient/by_national_id/${nationalId}`);
+      const patient = response.data;
+      if (patient) {
+        setFoundPatient({
+          id: patient._id,
+          name: `${patient.prefix || ''} ${patient.first_name_th || ''} ${patient.last_name_th || ''}`.trim(),
+          nationalId: patient.national_id,
+          profileImage: getProfileImageUrl(patient.image_path),
+          faceData: patient.face_encoding
+        });
+
+        // **เพิ่มตรงนี้**
+        try {
+          const tokenRes = await axios.post(`${API_BASE_URL}/api/queue/token`, { patient_id: patient._id });
+          if (tokenRes.data.token) {
+            localStorage.setItem('patient_token', tokenRes.data.token);
+            console.log('[AUTH] Set patient_token (by national id):', tokenRes.data.token);
+          } else {
+            console.warn('[AUTH] No token received from /api/queue/token response:', tokenRes.data);
+          }
+        } catch (err) {
+          console.error('Cannot get patient token (by national id):', err);
+        }
+
         setCurrentStep('success');
       } else {
         setErrorMessage('ไม่พบข้อมูลในระบบ กรุณาลงทะเบียนสมาชิกใหม่');
@@ -393,7 +451,7 @@ const AuthenPatient: React.FC = () => {
           // ถ้ารู้จักใบหน้า ให้ setFoundPatient และเปลี่ยน step
           if (response.data.faces && response.data.faces.length > 0) {
             const recognizedFace = response.data.faces.find((f: FaceRecognitionResult) => f.name !== 'Unknown');
-            if (recognizedFace && recognizedFace.confidence > 0.7) {
+            if (recognizedFace && recognizedFace.confidence > 0.65) {
               setFoundPatient({
                 id: recognizedFace.patient_id || '',
                 name: recognizedFace.name,
@@ -446,6 +504,22 @@ const AuthenPatient: React.FC = () => {
       stopAutoScan();
     };
   }, []);
+
+  // เพิ่ม useEffect สำหรับ stopCamera ตอนออกจากหน้า (unmount)
+  useEffect(() => {
+    return () => {
+      stopCamera();
+      console.log('[AuthenPatient] stopCamera called on unmount');
+    };
+  }, []);
+
+  // เพิ่ม useEffect สำหรับ stopCamera ตอนเปลี่ยน step ที่ไม่ใช่ face-scan
+  useEffect(() => {
+    if (currentStep !== 'face-scan') {
+      stopCamera();
+      console.log('[AuthenPatient] stopCamera called on step change:', currentStep);
+    }
+  }, [currentStep]);
 
   // หน้าสแกนใบหน้า
   if (currentStep === 'face-scan') {
@@ -500,13 +574,13 @@ const AuthenPatient: React.FC = () => {
             {/* Tesseract Status */}
             <div className="bg-blue-500/20 border border-blue-400/30 rounded-xl p-4">
               <div className="flex items-center space-x-2 mb-2">
-                <div className={`w-2 h-2 rounded-full ${scanResults?.ocr.tesseract_available ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                <div className={`w-2 h-2 rounded-full ${scanResults?.ocr?.tesseract_available ? 'bg-green-400' : 'bg-red-400'}`}></div>
                 <span className="text-blue-200 text-sm font-medium">
-                  OCR Status: {scanResults?.ocr.tesseract_available ? 'พร้อมใช้งาน' : 'ไม่พร้อมใช้งาน'}
+                  OCR Status: {scanResults?.ocr?.tesseract_available ? 'พร้อมใช้งาน' : 'ไม่พร้อมใช้งาน'}
                 </span>
               </div>
               <p className="text-blue-200 text-xs">
-                {scanResults?.ocr.tesseract_available 
+                {scanResults?.ocr?.tesseract_available 
                   ? 'ระบบสามารถอ่านข้อมูลจากบัตรประชาชนได้' 
                   : 'ระบบจะจับใบหน้าและบัตรประชาชนได้ แต่ไม่สามารถอ่านข้อมูลจากบัตรได้'
                 }
@@ -561,11 +635,11 @@ const AuthenPatient: React.FC = () => {
                 </div>
 
                 {/* OCR Results (only if card detected) */}
-                {scanResults.ocr.card_detected && (
+                {scanResults?.ocr?.card_detected ? (
                   <div className="mb-3">
                     <h5 className="text-white font-medium mb-1">ข้อมูลที่อ่านได้:</h5>
-                    {scanResults.ocr.tesseract_available ? (
-                      scanResults.ocr.id_card.id_numbers.length > 0 ? (
+                    {scanResults?.ocr?.tesseract_available ? (
+                      scanResults?.ocr?.id_card?.id_numbers?.length > 0 ? (
                         <div className="space-y-1 text-sm text-white/80">
                           {scanResults.ocr.id_card.id_numbers.map((id, index) => (
                             <div key={index}>
@@ -589,7 +663,7 @@ const AuthenPatient: React.FC = () => {
                       </div>
                     )}
                   </div>
-                )}
+                ) : null}
               </div>
             )}
           </div>
