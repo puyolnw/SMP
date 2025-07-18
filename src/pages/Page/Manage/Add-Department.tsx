@@ -8,7 +8,6 @@ import {
   Button,
   MenuItem,
   Grid,
-
   FormControl,
   InputLabel,
   Select,
@@ -26,9 +25,19 @@ import {
   LocalHospital as DepartmentIcon,
   Save as SaveIcon
 } from '@mui/icons-material';
-import { usePageDebug } from '../../../hooks/usePageDebug';
-import { TableSchema } from '../../../types/Debug';
-import { DebugManager } from '../../../utils/Debuger';
+import axios from 'axios';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+// ฟังก์ชัน generic ต้องอยู่นอก component!
+async function getWorkplaceItems<T>(type: string): Promise<T[]> {
+  const res = await axios.get(`${API_BASE_URL}/api/workplace/${type}`);
+  return res.data;
+}
+async function addWorkplaceItem<T extends object>(type: string, data: T) {
+  const res = await axios.post(`${API_BASE_URL}/api/workplace/${type}`, data);
+  return res.data;
+}
 
 // Define interfaces for our data structures
 interface Department {
@@ -69,37 +78,9 @@ interface Room {
 const AddDepartment: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const debugManager = DebugManager.getInstance();
   
   // Get type from location state
   const type = location.state?.type || 'department';
-  
-  // Define required tables for debug
-  const requiredTables: TableSchema[] = [
-    {
-      tableName: 'departments',
-      columns: ['id', 'name', 'description', 'color', 'isActive'],
-      description: 'แผนกต่างๆ ในโรงพยาบาล'
-    },
-    {
-      tableName: 'buildings',
-      columns: ['id', 'name', 'address', 'description', 'isActive'],
-      description: 'อาคารต่างๆ ในโรงพยาบาล'
-    },
-    {
-      tableName: 'floors',
-      columns: ['id', 'buildingId', 'number', 'name', 'description', 'isActive'],
-      description: 'ชั้นต่างๆ ในแต่ละอาคาร'
-    },
-    {
-      tableName: 'rooms',
-      columns: ['id', 'name', 'floorId', 'departmentId', 'capacity', 'description', 'isActive'],
-      description: 'ห้องต่างๆ ในแต่ละชั้น'
-    }
-  ];
-  
-  // Use debug hook
-  const { debugData, refreshData } = usePageDebug('เพิ่มข้อมูลแผนกและสถานที่', requiredTables);
   
   // States for data
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -145,21 +126,24 @@ const AddDepartment: React.FC = () => {
   // Form validation states
   const [errors, setErrors] = useState<{[key: string]: string}>({});
   const [success, setSuccess] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
   
-  // Load data from debug storage
+  // โหลดข้อมูล workplace ทุก type
   useEffect(() => {
+    const loadData = async () => {
+      try {
+        const depData = await getWorkplaceItems<Department>('department');
+        setDepartments(depData);
+        console.log('departments from backend:', depData);
+        setBuildings(await getWorkplaceItems<Building>('building'));
+        setFloors(await getWorkplaceItems<Floor>('floor'));
+      } catch (err) {
+        console.error('Error loading workplace data:', err);
+        setError('ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่');
+      }
+    };
     loadData();
-  }, [debugData]);
-  
-  const loadData = () => {
-    const departmentsData = debugManager.getData('departments') as Department[];
-    const buildingsData = debugManager.getData('buildings') as Building[];
-    const floorsData = debugManager.getData('floors') as Floor[];
-    
-    setDepartments(departmentsData || []);
-    setBuildings(buildingsData || []);
-    setFloors(floorsData || []);
-  };
+  }, []);
   
   // Generate page title based on type
   const getPageTitle = () => {
@@ -195,7 +179,7 @@ const AddDepartment: React.FC = () => {
   
   // Validate form based on type
   const validateForm = () => {
-    const newErrors: {[key: string]: string} = {};
+    const newErrors: { [key: string]: string } = {};
     
     switch (type) {
       case 'department':
@@ -207,7 +191,7 @@ const AddDepartment: React.FC = () => {
         break;
         
       case 'floor':
-                if (!floorForm.buildingId) newErrors.buildingId = 'กรุณาเลือกอาคาร';
+        if (!floorForm.buildingId) newErrors.buildingId = 'กรุณาเลือกอาคาร';
         if (!floorForm.name) newErrors.name = 'กรุณาระบุชื่อชั้น';
         break;
         
@@ -222,44 +206,30 @@ const AddDepartment: React.FC = () => {
     return Object.keys(newErrors).length === 0;
   };
   
-  // Handle form submission
-  const handleSubmit = (e: React.FormEvent) => {
+  // handleSubmit สำหรับแต่ละ type
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!validateForm()) return;
-    
     try {
-      switch (type) {
-        case 'department':
-          const departmentsData = debugManager.getData('departments') as Department[] || [];
-          debugManager.updateData('departments', [...departmentsData, departmentForm]);
-          break;
-          
-        case 'building':
-          const buildingsData = debugManager.getData('buildings') as Building[] || [];
-          debugManager.updateData('buildings', [...buildingsData, buildingForm]);
-          break;
-          
-        case 'floor':
-          const floorsData = debugManager.getData('floors') as Floor[] || [];
-          debugManager.updateData('floors', [...floorsData, floorForm]);
-          break;
-          
-        case 'room':
-          const roomsData = debugManager.getData('rooms') as Room[] || [];
-          debugManager.updateData('rooms', [...roomsData, roomForm]);
-          break;
+      if (type === 'department') {
+        await addWorkplaceItem('department', departmentForm);
+      } else if (type === 'building') {
+        await addWorkplaceItem('building', buildingForm);
+      } else if (type === 'floor') {
+        await addWorkplaceItem('floor', floorForm);
+      } else if (type === 'room') {
+        await addWorkplaceItem('room', roomForm);
       }
-      
+      // รีโหลดข้อมูลหลังบันทึกสำเร็จ
+      const updatedDepartments = await getWorkplaceItems<Department>('department');
+      setDepartments(updatedDepartments);
       setSuccess(true);
-      refreshData();
-      
-      // Reset form after successful submission
       setTimeout(() => {
         navigate('/manage/departments');
       }, 2000);
     } catch (error) {
       console.error('Error saving data:', error);
+      setError('ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่');
     }
   };
   
@@ -600,7 +570,7 @@ const AddDepartment: React.FC = () => {
                     onChange={(e) => setRoomForm({...roomForm, departmentId: e.target.value})}
                     label="แผนก"
                   >
-                                        {departments.map((department) => (
+                    {departments.map((department) => (
                       <MenuItem key={department.id} value={department.id}>
                         {department.name}
                       </MenuItem>
@@ -951,6 +921,13 @@ const AddDepartment: React.FC = () => {
         
         <Divider sx={{ mb: 3 }} />
         
+        {error && (
+          <Alert severity="error" sx={{ mb: 3 }}>
+            <AlertTitle>เกิดข้อผิดพลาด</AlertTitle>
+            {error}
+          </Alert>
+        )}
+        
         {success && (
           <Alert severity="success" sx={{ mb: 3 }}>
             <AlertTitle>บันทึกข้อมูลสำเร็จ</AlertTitle>
@@ -961,6 +938,43 @@ const AddDepartment: React.FC = () => {
         {renderForm()}
         {renderSummary()}
       </Paper>
+      {/* ตัวอย่าง UI แสดง department ทั้งหมด */}
+      {/* <div style={{ marginTop: 32 }}>
+        <h3>รายชื่อแผนกทั้งหมด</h3>
+        <ul>
+          {departments.map(dep => (
+            <li key={dep.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>{dep.name}</span>
+              <button
+                style={{ marginLeft: 8 }}
+                onClick={async () => {
+                  try {
+                    await addWorkplaceItem('department', { ...dep, name: dep.name + ' (แก้ไขแล้ว)' });
+                    const updatedDepartments = await getWorkplaceItems<Department>('department');
+                    setDepartments(updatedDepartments);
+                  } catch (err) {
+                    console.error('Error editing department:', err);
+                    setError('ไม่สามารถแก้ไขข้อมูลได้ กรุณาลองใหม่');
+                  }
+                }}
+              >Edit</button>
+              <button
+                style={{ marginLeft: 8 }}
+                onClick={async () => {
+                  try {
+                    await addWorkplaceItem('department', { ...dep, isActive: false }); // Soft delete
+                    const updatedDepartments = await getWorkplaceItems<Department>('department');
+                    setDepartments(updatedDepartments);
+                  } catch (err) {
+                    console.error('Error deleting department:', err);
+                    setError('ไม่สามารถลบข้อมูลได้ กรุณาลองใหม่');
+                  }
+                }}
+              >Delete</button>
+            </li>
+          ))}
+        </ul>
+      </div> */}
     </Box>
   );
 };

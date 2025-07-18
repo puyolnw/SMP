@@ -23,7 +23,7 @@
     "apexcharts": "^4.5.0",
     "axios": "^1.10.0",
     "date-fns": "^2.30.0",
-    "face-api.js": "^0.22.2",
+    "face-api.js": "^0.20.0",
     "html2pdf.js": "^0.10.3",
     "jspdf": "^3.0.1",
     "jspdf-autotable": "^5.0.2",
@@ -35,6 +35,7 @@
     "react-icons": "^5.4.0",
     "react-router-dom": "^7.1.1",
     "recharts": "^2.15.0",
+    "tesseract.js": "^6.0.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
@@ -44,6 +45,7 @@
     "@types/pdfmake": "^0.2.11",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
+    "@types/tesseract.js": "^0.0.2",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.2",

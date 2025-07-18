@@ -21,7 +21,9 @@ import {
   DialogTitle,
   TextField,
   MenuItem,
-  Chip
+  Chip,
+  Snackbar,
+  Alert
 } from '@mui/material';
 import { 
   Add as AddIcon, 
@@ -32,9 +34,24 @@ import {
   MeetingRoom as RoomIcon,
   LocalHospital as DepartmentIcon
 } from '@mui/icons-material';
-import { usePageDebug } from '../../../hooks/usePageDebug';
-import { TableSchema } from '../../../types/Debug';
-import { DebugManager } from '../../../utils/Debuger';
+// import { usePageDebug } from '../../../hooks/usePageDebug';
+// import { TableSchema } from '../../../types/Debug';
+// import { DebugManager } from '../../../utils/Debuger';
+import axios from 'axios';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+async function getWorkplaceItems<T>(type: string): Promise<T[]> {
+  const res = await axios.get(`${API_BASE_URL}/api/workplace/${type}`);
+  return res.data;
+}
+async function editWorkplaceItem<T extends object>(type: string, id: string, data: T) {
+  const res = await axios.put(`${API_BASE_URL}/api/workplace/${type}/${id}`, data);
+  return res.data;
+}
+async function deleteWorkplaceItem(type: string, id: string) {
+  const res = await axios.delete(`${API_BASE_URL}/api/workplace/${type}/${id}`);
+  return res.data;
+}
 
 // Define interfaces for our data structures
 interface Department {
@@ -101,34 +118,34 @@ function TabPanel(props: TabPanelProps) {
 
 const Departments: React.FC = () => {
   const navigate = useNavigate();
-  const debugManager = DebugManager.getInstance();
+  // const debugManager = DebugManager.getInstance();
   
   // Define required tables for debug
-  const requiredTables: TableSchema[] = [
-    {
-      tableName: 'departments',
-      columns: ['id', 'name', 'description', 'color', 'isActive'],
-      description: 'แผนกต่างๆ ในโรงพยาบาล'
-    },
-    {
-      tableName: 'buildings',
-      columns: ['id', 'name', 'address', 'description', 'isActive'],
-      description: 'อาคารต่างๆ ในโรงพยาบาล'
-    },
-    {
-      tableName: 'floors',
-      columns: ['id', 'buildingId', 'number', 'name', 'description', 'isActive'],
-      description: 'ชั้นต่างๆ ในแต่ละอาคาร'
-    },
-    {
-      tableName: 'rooms',
-      columns: ['id', 'name', 'floorId', 'departmentId', 'capacity', 'description', 'isActive'],
-      description: 'ห้องต่างๆ ในแต่ละชั้น'
-    }
-  ];
+  // const requiredTables: TableSchema[] = [
+  //   {
+  //     tableName: 'departments',
+  //     columns: ['id', 'name', 'description', 'color', 'isActive'],
+  //     description: 'แผนกต่างๆ ในโรงพยาบาล'
+  //   },
+  //   {
+  //     tableName: 'buildings',
+  //     columns: ['id', 'name', 'address', 'description', 'isActive'],
+  //     description: 'อาคารต่างๆ ในโรงพยาบาล'
+  //   },
+  //   {
+  //     tableName: 'floors',
+  //     columns: ['id', 'buildingId', 'number', 'name', 'description', 'isActive'],
+  //     description: 'ชั้นต่างๆ ในแต่ละอาคาร'
+  //   },
+  //   {
+  //     tableName: 'rooms',
+  //     columns: ['id', 'name', 'floorId', 'departmentId', 'capacity', 'description', 'isActive'],
+  //     description: 'ห้องต่างๆ ในแต่ละชั้น'
+  //   }
+  // ];
   
   // Use debug hook
-  const { debugData, refreshData } = usePageDebug('จัดการแผนกและสถานที่', requiredTables);
+  // const { debugData, refreshData } = usePageDebug('จัดการแผนกและสถานที่', requiredTables);
   
   // State for tab selection
   const [tabValue, setTabValue] = useState(0);
@@ -155,22 +172,19 @@ const Departments: React.FC = () => {
   const [editedFloor, setEditedFloor] = useState<Floor | null>(null);
   const [editedRoom, setEditedRoom] = useState<Room | null>(null);
   
+  // State for success message
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  
   // Load data from debug storage
   useEffect(() => {
+    const loadData = async () => {
+      setDepartments(await getWorkplaceItems<Department>('department'));
+      setBuildings(await getWorkplaceItems<Building>('building'));
+      setFloors(await getWorkplaceItems<Floor>('floor'));
+      setRooms(await getWorkplaceItems<Room>('room'));
+    };
     loadData();
-  }, [debugData]);
-  
-  const loadData = () => {
-    const departmentsData = debugManager.getData('departments') as Department[];
-    const buildingsData = debugManager.getData('buildings') as Building[];
-    const floorsData = debugManager.getData('floors') as Floor[];
-    const roomsData = debugManager.getData('rooms') as Room[];
-    
-    setDepartments(departmentsData || []);
-    setBuildings(buildingsData || []);
-    setFloors(floorsData || []);
-    setRooms(roomsData || []);
-  };
+  }, []);
   
   // Handle tab change
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
@@ -185,34 +199,38 @@ const Departments: React.FC = () => {
   // Handle edit item
   const handleEdit = (type: string, id: string) => {
     switch (type) {
-      case 'department':
+      case 'department': {
         const department = departments.find(d => d.id === id);
         if (department) {
           setEditedDepartment(department);
           setEditDepartmentDialog(true);
         }
         break;
-      case 'building':
+      }
+      case 'building': {
         const building = buildings.find(b => b.id === id);
         if (building) {
           setEditedBuilding(building);
           setEditBuildingDialog(true);
         }
         break;
-      case 'floor':
+      }
+      case 'floor': {
         const floor = floors.find(f => f.id === id);
         if (floor) {
           setEditedFloor(floor);
           setEditFloorDialog(true);
         }
         break;
-      case 'room':
+      }
+      case 'room': {
         const room = rooms.find(r => r.id === id);
         if (room) {
           setEditedRoom(room);
           setEditRoomDialog(true);
         }
         break;
+      }
     }
   };
   
@@ -223,115 +241,59 @@ const Departments: React.FC = () => {
   };
   
   // Confirm delete
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     const { type, id } = itemToDelete;
-    
-    switch (type) {
-      case 'department':
-        const updatedDepartments = departments.filter(d => d.id !== id);
-        debugManager.updateData('departments', updatedDepartments);
-        setDepartments(updatedDepartments);
-        
-        // Also update rooms that use this department
-        const roomsAfterDeptDelete = rooms.map(room => 
-          room.departmentId === id ? { ...room, departmentId: '' } : room
-        );
-        debugManager.updateData('rooms', roomsAfterDeptDelete);
-        setRooms(roomsAfterDeptDelete);
-        break;
-        
-      case 'building':
-        const updatedBuildings = buildings.filter(b => b.id !== id);
-        debugManager.updateData('buildings', updatedBuildings);
-        setBuildings(updatedBuildings);
-        
-        // Also delete floors in this building
-        const floorsToKeep = floors.filter(f => f.buildingId !== id);
-        debugManager.updateData('floors', floorsToKeep);
-        setFloors(floorsToKeep);
-        
-        // And rooms on those floors
-        const floorIds = floors.filter(f => f.buildingId === id).map(f => f.id);
-        const roomsToKeep = rooms.filter(r => !floorIds.includes(r.floorId));
-        debugManager.updateData('rooms', roomsToKeep);
-        setRooms(roomsToKeep);
-        break;
-        
-      case 'floor':
-        const updatedFloors = floors.filter(f => f.id !== id);
-        debugManager.updateData('floors', updatedFloors);
-        setFloors(updatedFloors);
-        
-        // Also delete rooms on this floor
-        const roomsAfterFloorDelete = rooms.filter(r => r.floorId !== id);
-        debugManager.updateData('rooms', roomsAfterFloorDelete);
-        setRooms(roomsAfterFloorDelete);
-        break;
-        
-      case 'room':
-        const updatedRooms = rooms.filter(r => r.id !== id);
-        debugManager.updateData('rooms', updatedRooms);
-        setRooms(updatedRooms);
-        break;
-    }
-    
+    await deleteWorkplaceItem(type, id);
+    // reload data
+    setDepartments(await getWorkplaceItems<Department>('department'));
+    setBuildings(await getWorkplaceItems<Building>('building'));
+    setFloors(await getWorkplaceItems<Floor>('floor'));
+    setRooms(await getWorkplaceItems<Room>('room'));
+    setSuccessMessage('ลบข้อมูลสำเร็จ');
     setDeleteDialogOpen(false);
-    refreshData();
   };
   
   // Save edited department
-  const saveEditedDepartment = () => {
+  const saveEditedDepartment = async () => {
     if (editedDepartment) {
-      const updatedDepartments = departments.map(dept => 
-        dept.id === editedDepartment.id ? editedDepartment : dept
-      );
-      debugManager.updateData('departments', updatedDepartments);
-      setDepartments(updatedDepartments);
+      await editWorkplaceItem('department', editedDepartment.id, editedDepartment);
+      setDepartments(await getWorkplaceItems<Department>('department'));
       setEditDepartmentDialog(false);
       setEditedDepartment(null);
-      refreshData();
+      setSuccessMessage('แก้ไขข้อมูลสำเร็จ');
     }
   };
   
   // Save edited building
-  const saveEditedBuilding = () => {
+  const saveEditedBuilding = async () => {
     if (editedBuilding) {
-      const updatedBuildings = buildings.map(building => 
-        building.id === editedBuilding.id ? editedBuilding : building
-      );
-      debugManager.updateData('buildings', updatedBuildings);
-      setBuildings(updatedBuildings);
+      await editWorkplaceItem('building', editedBuilding.id, editedBuilding);
+      setBuildings(await getWorkplaceItems<Building>('building'));
       setEditBuildingDialog(false);
       setEditedBuilding(null);
-      refreshData();
+      setSuccessMessage('แก้ไขข้อมูลสำเร็จ');
     }
   };
   
   // Save edited floor
-  const saveEditedFloor = () => {
+  const saveEditedFloor = async () => {
     if (editedFloor) {
-      const updatedFloors = floors.map(floor => 
-        floor.id === editedFloor.id ? editedFloor : floor
-      );
-      debugManager.updateData('floors', updatedFloors);
-      setFloors(updatedFloors);
+      await editWorkplaceItem('floor', editedFloor.id, editedFloor);
+      setFloors(await getWorkplaceItems<Floor>('floor'));
       setEditFloorDialog(false);
       setEditedFloor(null);
-      refreshData();
+      setSuccessMessage('แก้ไขข้อมูลสำเร็จ');
     }
   };
   
   // Save edited room
-  const saveEditedRoom = () => {
+  const saveEditedRoom = async () => {
     if (editedRoom) {
-      const updatedRooms = rooms.map(room => 
-        room.id === editedRoom.id ? editedRoom : room
-      );
-      debugManager.updateData('rooms', updatedRooms);
-      setRooms(updatedRooms);
+      await editWorkplaceItem('room', editedRoom.id, editedRoom);
+      setRooms(await getWorkplaceItems<Room>('room'));
       setEditRoomDialog(false);
       setEditedRoom(null);
-      refreshData();
+      setSuccessMessage('แก้ไขข้อมูลสำเร็จ');
     }
   };
   
@@ -974,6 +936,18 @@ const Departments: React.FC = () => {
           <Button onClick={saveEditedRoom} color="primary" variant="contained">บันทึก</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Success Message Snackbar */}
+      <Snackbar
+        open={!!successMessage}
+        autoHideDuration={2500}
+        onClose={() => setSuccessMessage(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert onClose={() => setSuccessMessage(null)} severity="success" sx={{ width: '100%' }}>
+          {successMessage}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };
