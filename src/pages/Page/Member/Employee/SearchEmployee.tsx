@@ -1,33 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DebugManager } from '../../../../utils/Debuger';
 import { usePageDebug } from '../../../../hooks/usePageDebug';
 import { TableSchema } from '../../../../types/Debug';
+import { DebugManager } from '../../../../utils/Debuger';
 import {
   Box,
   Paper,
   Typography,
   TextField,
   Button,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  IconButton,
-  InputAdornment,
+  Grid,
+  Card,
+  CardContent,
+  Avatar,
   Chip,
-  CircularProgress,
-  Alert,
-  Avatar
+  InputAdornment,
+  IconButton,
+  Tooltip,
+  Alert
 } from '@mui/material';
 import {
   Search as SearchIcon,
+  Add as AddIcon,
   Visibility as VisibilityIcon,
   Edit as EditIcon,
-  Add as AddIcon,
-  Clear as ClearIcon
+  Delete as DeleteIcon,
+  Person as PersonIcon,
+  Work as WorkIcon
 } from '@mui/icons-material';
 
 interface Employee {
@@ -37,12 +36,25 @@ interface Employee {
   lastNameTh: string;
   gender: string;
   phone: string;
-  email?: string;
+  nationalId: string;
   profileImage?: string;
   employeeType: 'doctor' | 'nurse' | 'staff';
   departmentId: string;
   position: string;
+  licenseNumber?: string;
+  specialties?: string[];
+  startDate: string;
   status: 'active' | 'inactive' | 'leave';
+  username: string;
+  password: string;
+  role: 'admin' | 'doctor' | 'nurse' | 'staff';
+  email?: string;
+  address?: string;
+  workingDays?: string[];
+  workingHours?: {
+    start: string;
+    end: string;
+  };
 }
 
 interface Department {
@@ -57,12 +69,18 @@ const SearchEmployee: React.FC = () => {
   const navigate = useNavigate();
   const debugManager = DebugManager.getInstance();
   
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState<Employee[]>([]);
+  const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
   // Debug setup
   const requiredTables: TableSchema[] = [
     {
       tableName: 'employees',
-      columns: ['id', 'prefix', 'firstNameTh', 'lastNameTh', 'gender', 'phone', 'email', 'profileImage', 'employeeType', 'departmentId', 'position', 'status'],
-      description: 'ข้อมูลพนักงานทั้งหมด (หมอ พยาบาล เจ้าหน้าที่)'
+      columns: ['id', 'prefix', 'firstNameTh', 'lastNameTh', 'gender', 'phone', 'nationalId', 'profileImage', 'employeeType', 'departmentId', 'position', 'licenseNumber', 'specialties', 'startDate', 'status', 'username', 'password', 'role', 'email', 'address', 'workingDays', 'workingHours'],
+      description: 'ข้อมูลพนักงานทั้งหมด'
     },
     {
       tableName: 'departments',
@@ -73,268 +91,402 @@ const SearchEmployee: React.FC = () => {
 
   usePageDebug('ค้นหาพนักงาน', requiredTables);
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [searchResults, setSearchResults] = useState<Employee[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // โหลดข้อมูลแผนก
+  // โหลดข้อมูลพนักงานและแผนก
   useEffect(() => {
-    const departmentsData = debugManager.getData('departments') as Department[];
-    setDepartments(departmentsData || []);
+    const loadData = () => {
+      setIsLoading(true);
+      try {
+        const employeesData = debugManager.getData('employees') as Employee[];
+        const departmentsData = debugManager.getData('departments') as Department[];
+        
+        setAllEmployees(employeesData || []);
+        setDepartments(departmentsData || []);
+      } catch (error) {
+        console.error('Error loading data:', error);
+      }
+      setIsLoading(false);
+    };
+
+    loadData();
   }, [debugManager]);
 
-  const handleSearch = () => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      // ดึงข้อมูลพนักงานจาก localStorage ผ่าน DebugManager
-      const allEmployees = debugManager.getData('employees') as Employee[];
-      
-      // จำลองการค้นหา
-      setTimeout(() => {
-        if (!allEmployees || allEmployees.length === 0) {
-          setSearchResults([]);
-          setHasSearched(true);
-          setIsLoading(false);
-          return;
-        }
-
-        const term = searchTerm.toLowerCase().trim();
-        
-        // ถ้าไม่มีคำค้นหา ให้แสดงทั้งหมด
-        if (!term) {
-          setSearchResults(allEmployees);
-          setHasSearched(true);
-          setIsLoading(false);
-          return;
-        }
-        
-        // ค้นหาตามเงื่อนไข
-        const results = allEmployees.filter(employee => 
-          employee.id.toLowerCase().includes(term) ||
-          employee.firstNameTh.toLowerCase().includes(term) ||
-          employee.lastNameTh.toLowerCase().includes(term) ||
-          employee.phone.includes(term) ||
-          (employee.email && employee.email.toLowerCase().includes(term))
-        );
-        
-        setSearchResults(results);
-        setHasSearched(true);
-        setIsLoading(false);
-      }, 500);
-    } catch (error) {
-      setError('เกิดข้อผิดพลาดในการค้นหาข้อมูล');
-      setIsLoading(false);
+  // ค้นหาแบบ real-time
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      setSearchResults([]);
+      return;
     }
-  };
 
-  const handleClearSearch = () => {
-    setSearchTerm('');
-    setSearchResults([]);
-    setHasSearched(false);
-  };
+    setIsLoading(true);
+    const timeout = setTimeout(() => {
+      const results = allEmployees.filter(employee => {
+        const fullName = `${employee.prefix} ${employee.firstNameTh} ${employee.lastNameTh}`;
+        const department = departments.find(d => d.id === employee.departmentId);
+        
+        return (
+          fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          employee.phone.includes(searchTerm) ||
+          employee.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          employee.nationalId?.includes(searchTerm) ||
+          employee.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          department?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          employee.username.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+      });
+      setSearchResults(results);
+      setIsLoading(false);
+    }, 300);
+
+    return () => clearTimeout(timeout);
+  }, [searchTerm, allEmployees, departments]);
 
   const handleViewEmployee = (employee: Employee) => {
-    navigate('/member/employee', { state: { employee } });
+    navigate(`/member/employee/dataemployee/${employee.id}`, { 
+      state: { employee } 
+    });
   };
 
   const handleEditEmployee = (employee: Employee) => {
-    navigate('/member/employee/addemployee', { state: { employee, isEdit: true } });
+    navigate('/member/employee/addemployee', { 
+      state: { 
+        isEdit: true, 
+        employee: employee 
+      } 
+    });
+  };
+
+  const handleDeleteEmployee = (employee: Employee) => {
+    if (window.confirm(`คุณต้องการลบข้อมูลพนักงาน "${employee.prefix} ${employee.firstNameTh} ${employee.lastNameTh}" ใช่หรือไม่?`)) {
+      const updatedEmployees = allEmployees.filter(emp => emp.id !== employee.id);
+      
+      // ลบข้อมูลเก่าและเพิ่มข้อมูลใหม่ - ใช้ addData แทน setData
+      localStorage.removeItem('debug_employees');
+      updatedEmployees.forEach(emp => {
+        debugManager.addData('employees', emp);
+      });
+      
+      setAllEmployees(updatedEmployees);
+      
+      // อัปเดตผลการค้นหาด้วย
+      if (searchTerm.trim()) {
+        const updatedResults = searchResults.filter(emp => emp.id !== employee.id);
+        setSearchResults(updatedResults);
+      }
+    }
   };
 
   const handleAddEmployee = () => {
     navigate('/member/employee/addemployee');
   };
 
-  // แปลงประเภทพนักงานเป็นภาษาไทย
-  const getEmployeeTypeText = (type: string): string => {
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active': return 'success';
+      case 'inactive': return 'warning';
+      case 'leave': return 'error';
+      default: return 'default';
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'active': return 'ทำงานปกติ';
+      case 'inactive': return 'พักงาน';
+      case 'leave': return 'ลาออก';
+      default: return 'ไม่ระบุ';
+    }
+  };
+
+  const getEmployeeTypeText = (type: string) => {
     switch (type) {
       case 'doctor': return 'แพทย์';
       case 'nurse': return 'พยาบาล';
       case 'staff': return 'เจ้าหน้าที่';
-      default: return type;
+      default: return 'ไม่ระบุ';
     }
   };
 
-  // แปลงสถานะเป็นภาษาไทยและกำหนดสี
-  const getStatusChip = (status: string) => {
-    let label = '';
-    let color: 'success' | 'error' | 'warning' | 'default' = 'default';
-    
-    switch (status) {
-      case 'active':
-        label = 'ทำงานปกติ';
-        color = 'success';
-        break;
-      case 'inactive':
-        label = 'พักงาน';
-        color = 'warning';
-        break;
-      case 'leave':
-        label = 'ลาออก';
-        color = 'error';
-        break;
-      default:
-        label = status;
-    }
-    
-    return <Chip label={label} color={color} size="small" />;
-  };
-
-  // หาชื่อแผนกจาก departmentId
-  const getDepartmentName = (departmentId: string): string => {
-    const department = departments.find(dept => dept.id === departmentId);
-    return department ? department.name : 'ไม่ระบุแผนก';
+  const getDepartmentName = (departmentId: string) => {
+    const department = departments.find(d => d.id === departmentId);
+    return department?.name || 'ไม่ระบุแผนก';
   };
 
   return (
-    <Paper sx={{ p: 3, maxWidth: 1200, mx: 'auto' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h5" component="h1">
-          ค้นหาพนักงาน
-        </Typography>
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<AddIcon />}
-          onClick={handleAddEmployee}
-        >
-          เพิ่มพนักงานใหม่
-        </Button>
-      </Box>
+    <Box sx={{ maxWidth: 1200, mx: 'auto', p: 3 }}>
+      <Paper elevation={3} sx={{ p: 4 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+          <Typography variant="h4" component="h1" fontWeight="bold">
+            ค้นหาพนักงาน
+          </Typography>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={handleAddEmployee}
+            size="large"
+          >
+            เพิ่มพนักงานใหม่
+          </Button>
+        </Box>
 
-      {/* Search Box */}
-      <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 2 }}>
+        {/* Search Box */}
+        <Box sx={{ mb: 4 }}>
           <TextField
-            label="ค้นหาด้วย รหัสพนักงาน, ชื่อ, เบอร์โทร หรืออีเมล"
-            variant="outlined"
             fullWidth
+            placeholder="ค้นหาด้วย ชื่อ-นามสกุล, เบอร์โทร, รหัสพนักงาน, เลขบัตรประชาชน, ตำแหน่ง, แผนก, ชื่อผู้ใช้..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
                   <SearchIcon />
                 </InputAdornment>
               ),
-              endAdornment: searchTerm && (
-                <InputAdornment position="end">
-                  <IconButton size="small" onClick={handleClearSearch}>
-                    <ClearIcon />
-                  </IconButton>
-                </InputAdornment>
-              )
             }}
           />
-          <Button
-            variant="contained"
-            onClick={handleSearch}
-            disabled={isLoading}
-            sx={{ minWidth: '120px', height: '56px' }}
-          >
-            {isLoading ? <CircularProgress size={24} /> : 'ค้นหา'}
-          </Button>
         </Box>
-      </Paper>
 
-      {/* Error Message */}
-      {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {error}
-        </Alert>
-      )}
-
-      {/* Results */}
-      {hasSearched && (
-        <>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6">
-              ผลการค้นหา
+        {/* Results */}
+        {isLoading ? (
+          <Box sx={{ textAlign: 'center', py: 4 }}>
+            <Typography>กำลังค้นหา...</Typography>
+          </Box>
+        ) : searchTerm.trim() === '' ? (
+          <Box sx={{ textAlign: 'center', py: 8 }}>
+            <PersonIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+            <Typography variant="h6" color="text.secondary" gutterBottom>
+              ค้นหาพนักงาน
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              พบ {searchResults.length} รายการ
+            <Typography variant="body1" color="text.secondary">
+              กรอกชื่อ หรือข้อมูลที่ต้องการค้นหาในช่องด้านบน
             </Typography>
           </Box>
-
-          {searchResults.length > 0 ? (
-            <TableContainer component={Paper} variant="outlined">
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>รหัส</TableCell>
-                    <TableCell>ชื่อ-นามสกุล</TableCell>
-                    <TableCell>ประเภท</TableCell>
-                    <TableCell>ตำแหน่ง</TableCell>
-                    <TableCell>แผนก</TableCell>
-                    <TableCell>สถานะ</TableCell>
-                    <TableCell align="center">จัดการ</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {searchResults.map((employee) => (
-                    <TableRow key={employee.id} hover>
-                      <TableCell>{employee.id}</TableCell>
-                      <TableCell>
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                          <Avatar 
-                            src={employee.profileImage} 
-                            sx={{ width: 32, height: 32, mr: 1 }}
-                          >
-                            {employee.firstNameTh.charAt(0)}
-                          </Avatar>
-                          {employee.prefix} {employee.firstNameTh} {employee.lastNameTh}
+                ) : searchResults.length === 0 ? (
+          <Box sx={{ textAlign: 'center', py: 8 }}>
+            <SearchIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+            <Typography variant="h6" color="text.secondary" gutterBottom>
+              ไม่พบข้อมูลพนักงาน
+            </Typography>
+            <Typography variant="body1" color="text.secondary">
+              ไม่พบพนักงานที่ตรงกับคำค้นหา "{searchTerm}"
+            </Typography>
+          </Box>
+        ) : (
+          <>
+            <Typography variant="h6" gutterBottom>
+              ผลการค้นหา ({searchResults.length} รายการ)
+            </Typography>
+            <Grid container spacing={3}>
+              {searchResults.map((employee) => (
+                <Grid item xs={12} sm={6} md={4} key={employee.id}>
+                  <Card 
+                    sx={{ 
+                      height: '100%',
+                      transition: 'all 0.2s',
+                      '&:hover': {
+                        transform: 'translateY(-2px)',
+                        boxShadow: 4
+                      }
+                    }}
+                  >
+                    <CardContent>
+                      {/* Header with Avatar and Status */}
+                      <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
+                        <Avatar
+                          src={employee.profileImage || undefined}
+                          sx={{ width: 56, height: 56, mr: 2 }}
+                        />
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="h6" noWrap>
+                            {employee.prefix} {employee.firstNameTh} {employee.lastNameTh}
+                          </Typography>
+                          <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5 }}>
+                            <Chip 
+                              label={getEmployeeTypeText(employee.employeeType)} 
+                              color="primary" 
+                              size="small"
+                            />
+                            <Chip 
+                              label={getStatusText(employee.status)} 
+                              color={getStatusColor(employee.status) as any}
+                              size="small"
+                            />
+                          </Box>
                         </Box>
-                      </TableCell>
-                      <TableCell>{getEmployeeTypeText(employee.employeeType)}</TableCell>
-                      <TableCell>{employee.position}</TableCell>
-                      <TableCell>{getDepartmentName(employee.departmentId)}</TableCell>
-                      <TableCell>{getStatusChip(employee.status)}</TableCell>
-                      <TableCell align="center">
-                        <IconButton 
-                          color="primary" 
-                          onClick={() => handleViewEmployee(employee)}
-                          title="ดูข้อมูล"
-                        >
-                          <VisibilityIcon />
-                        </IconButton>
-                        <IconButton 
-                          color="secondary" 
-                          onClick={() => handleEditEmployee(employee)}
-                          title="แก้ไข"
-                        >
-                          <EditIcon />
-                        </IconButton>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          ) : (
-            <Alert severity="info">
-              ไม่พบข้อมูลพนักงานที่ตรงกับคำค้นหา
-            </Alert>
-          )}
-        </>
-      )}
+                      </Box>
 
-      {/* No search yet */}
-      {!hasSearched && !isLoading && (
-        <Box sx={{ textAlign: 'center', py: 5 }}>
-          <SearchIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
-          <Typography variant="body1" color="text.secondary">
-            กรุณาป้อนคำค้นหาและกดปุ่มค้นหาเพื่อแสดงข้อมูลพนักงาน
-          </Typography>
-        </Box>
-      )}
-    </Paper>
+                      {/* Employee Details */}
+                      <Box sx={{ mb: 2 }}>
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                          <WorkIcon sx={{ fontSize: 16, mr: 0.5, verticalAlign: 'middle' }} />
+                          {employee.position}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                          🏥 {getDepartmentName(employee.departmentId)}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                          📞 {employee.phone}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          🆔 {employee.id}
+                        </Typography>
+                      </Box>
+
+                      {/* Specialties (for doctors) */}
+                      {employee.employeeType === 'doctor' && employee.specialties && employee.specialties.length > 0 && (
+                        <Box sx={{ mb: 2 }}>
+                          <Typography variant="caption" color="text.secondary" gutterBottom>
+                            ความเชี่ยวชาญ:
+                          </Typography>
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                            {employee.specialties.slice(0, 2).map((specialty, index) => (
+                              <Chip
+                                key={index}
+                                label={specialty}
+                                size="small"
+                                variant="outlined"
+                                color="secondary"
+                              />
+                            ))}
+                            {employee.specialties.length > 2 && (
+                              <Chip
+                                label={`+${employee.specialties.length - 2}`}
+                                size="small"
+                                variant="outlined"
+                                color="default"
+                              />
+                            )}
+                          </Box>
+                        </Box>
+                      )}
+
+                      {/* Action Buttons */}
+                      <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                        <Tooltip title="ดูข้อมูล">
+                          <IconButton 
+                            size="small" 
+                            color="primary"
+                            onClick={() => handleViewEmployee(employee)}
+                          >
+                            <VisibilityIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="แก้ไข">
+                          <IconButton 
+                            size="small" 
+                            color="warning"
+                            onClick={() => handleEditEmployee(employee)}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="ลบ">
+                          <IconButton 
+                            size="small" 
+                            color="error"
+                            onClick={() => handleDeleteEmployee(employee)}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          </>
+        )}
+
+        {/* Summary Info */}
+        {allEmployees.length > 0 && (
+          <Box sx={{ mt: 4, p: 3, bgcolor: '#f8f9fa', borderRadius: 2 }}>
+            <Typography variant="h6" gutterBottom>
+              สรุปข้อมูลพนักงาน
+            </Typography>
+            <Grid container spacing={2}>
+              <Grid item xs={6} sm={3}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h4" color="primary" fontWeight="bold">
+                    {allEmployees.length}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    พนักงานทั้งหมด
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={6} sm={3}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h4" color="success.main" fontWeight="bold">
+                    {allEmployees.filter(emp => emp.employeeType === 'doctor').length}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    แพทย์
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={6} sm={3}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h4" color="info.main" fontWeight="bold">
+                    {allEmployees.filter(emp => emp.employeeType === 'nurse').length}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    พยาบาล
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={6} sm={3}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h4" color="warning.main" fontWeight="bold">
+                    {allEmployees.filter(emp => emp.employeeType === 'staff').length}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    เจ้าหน้าที่
+                  </Typography>
+                </Box>
+              </Grid>
+            </Grid>
+          </Box>
+        )}
+
+        {/* No Data Alert */}
+        {allEmployees.length === 0 && !isLoading && (
+          <Alert severity="info" sx={{ mt: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              ยังไม่มีข้อมูลพนักงาน
+            </Typography>
+            <Typography>
+              คลิกปุ่ม "เพิ่มพนักงานใหม่" เพื่อเริ่มเพิ่มข้อมูลพนักงาน
+            </Typography>
+          </Alert>
+        )}
+
+        {/* Debug Info (Development Only) */}
+        {process.env.NODE_ENV === 'development' && (
+          <Box sx={{ mt: 4, pt: 3, borderTop: '1px dashed #ccc' }}>
+            <Typography variant="caption" color="text.secondary" gutterBottom>
+              Debug Info (Development Only)
+            </Typography>
+            <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1, maxHeight: 200, overflow: 'auto' }}>
+              <pre style={{ margin: 0, fontSize: '0.75rem' }}>
+                {JSON.stringify({
+                  totalEmployees: allEmployees.length,
+                  searchResults: searchResults.length,
+                  searchTerm,
+                  departments: departments.length,
+                  employeeTypes: {
+                    doctors: allEmployees.filter(emp => emp.employeeType === 'doctor').length,
+                    nurses: allEmployees.filter(emp => emp.employeeType === 'nurse').length,
+                    staff: allEmployees.filter(emp => emp.employeeType === 'staff').length
+                  }
+                }, null, 2)}
+              </pre>
+            </Box>
+          </Box>
+        )}
+      </Paper>
+    </Box>
   );
 };
 
 export default SearchEmployee;
+

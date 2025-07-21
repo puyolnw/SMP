@@ -6,16 +6,21 @@ import {
   Paper,
   TextField,
   Button,
-  MenuItem,
   Grid,
   FormControl,
   InputLabel,
   Select,
-  FormHelperText,
+  MenuItem,
   Alert,
   AlertTitle,
   Divider,
-  IconButton
+  IconButton,
+  Card,
+  CardContent,
+
+  Chip,
+  Avatar,
+
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
@@ -23,7 +28,10 @@ import {
   Layers as FloorIcon,
   MeetingRoom as RoomIcon,
   LocalHospital as DepartmentIcon,
-  Save as SaveIcon
+  Save as SaveIcon,
+
+  LocationOn as LocationIcon,
+  Info as InfoIcon
 } from '@mui/icons-material';
 import axios from 'axios';
 
@@ -86,6 +94,7 @@ const AddDepartment: React.FC = () => {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [floors, setFloors] = useState<Floor[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
   
   // States for form data
   const [departmentForm, setDepartmentForm] = useState<Department>({
@@ -127,6 +136,7 @@ const AddDepartment: React.FC = () => {
   const [errors, setErrors] = useState<{[key: string]: string}>({});
   const [success, setSuccess] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
   
   // โหลดข้อมูล workplace ทุก type
   useEffect(() => {
@@ -134,9 +144,9 @@ const AddDepartment: React.FC = () => {
       try {
         const depData = await getWorkplaceItems<Department>('department');
         setDepartments(depData);
-        console.log('departments from backend:', depData);
         setBuildings(await getWorkplaceItems<Building>('building'));
         setFloors(await getWorkplaceItems<Floor>('floor'));
+        setRooms(await getWorkplaceItems<Room>('room'));
       } catch (err) {
         console.error('Error loading workplace data:', err);
         setError('ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่');
@@ -148,32 +158,22 @@ const AddDepartment: React.FC = () => {
   // Generate page title based on type
   const getPageTitle = () => {
     switch (type) {
-      case 'department':
-        return 'เพิ่มแผนกใหม่';
-      case 'building':
-        return 'เพิ่มอาคารใหม่';
-      case 'floor':
-        return 'เพิ่มชั้นใหม่';
-      case 'room':
-        return 'เพิ่มห้องใหม่';
-      default:
-        return 'เพิ่มข้อมูลใหม่';
+      case 'department': return 'เพิ่มแผนกใหม่';
+      case 'building': return 'เพิ่มอาคารใหม่';
+      case 'floor': return 'เพิ่มชั้นใหม่';
+      case 'room': return 'เพิ่มห้องใหม่';
+      default: return 'เพิ่มข้อมูลใหม่';
     }
   };
   
   // Generate page icon based on type
   const getPageIcon = () => {
     switch (type) {
-      case 'department':
-        return <DepartmentIcon fontSize="large" />;
-      case 'building':
-        return <BuildingIcon fontSize="large" />;
-      case 'floor':
-        return <FloorIcon fontSize="large" />;
-      case 'room':
-        return <RoomIcon fontSize="large" />;
-      default:
-        return <DepartmentIcon fontSize="large" />;
+      case 'department': return <DepartmentIcon sx={{ fontSize: 40, color: '#2196f3' }} />;
+      case 'building': return <BuildingIcon sx={{ fontSize: 40, color: '#ff9800' }} />;
+      case 'floor': return <FloorIcon sx={{ fontSize: 40, color: '#4caf50' }} />;
+      case 'room': return <RoomIcon sx={{ fontSize: 40, color: '#9c27b0' }} />;
+      default: return <DepartmentIcon sx={{ fontSize: 40, color: '#2196f3' }} />;
     }
   };
   
@@ -185,16 +185,13 @@ const AddDepartment: React.FC = () => {
       case 'department':
         if (!departmentForm.name) newErrors.name = 'กรุณาระบุชื่อแผนก';
         break;
-        
       case 'building':
         if (!buildingForm.name) newErrors.name = 'กรุณาระบุชื่ออาคาร';
         break;
-        
       case 'floor':
         if (!floorForm.buildingId) newErrors.buildingId = 'กรุณาเลือกอาคาร';
         if (!floorForm.name) newErrors.name = 'กรุณาระบุชื่อชั้น';
         break;
-        
       case 'room':
         if (!roomForm.name) newErrors.name = 'กรุณาระบุชื่อห้อง';
         if (!roomForm.departmentId) newErrors.departmentId = 'กรุณาเลือกแผนก';
@@ -210,6 +207,7 @@ const AddDepartment: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
+    
     try {
       if (type === 'department') {
         await addWorkplaceItem('department', departmentForm);
@@ -220,9 +218,7 @@ const AddDepartment: React.FC = () => {
       } else if (type === 'room') {
         await addWorkplaceItem('room', roomForm);
       }
-      // รีโหลดข้อมูลหลังบันทึกสำเร็จ
-      const updatedDepartments = await getWorkplaceItems<Department>('department');
-      setDepartments(updatedDepartments);
+      
       setSuccess(true);
       setTimeout(() => {
         navigate('/manage/departments');
@@ -232,695 +228,587 @@ const AddDepartment: React.FC = () => {
       setError('ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่');
     }
   };
-  
-  // Helper function to get building name by ID
+
+  // Helper functions
   const getBuildingName = (buildingId: string) => {
     const building = buildings.find(b => b.id === buildingId);
     return building ? building.name : 'ไม่ระบุ';
   };
   
-  // Helper function to get floor name by ID
-  const getFloorName = (floorId: string) => {
-    const floor = floors.find(f => f.id === floorId);
-    return floor ? `${floor.name} (ชั้น ${floor.number})` : 'ไม่ระบุ';
+  // Get department statistics
+  const getDepartmentStats = (departmentId: string) => {
+    const departmentRooms = rooms.filter(r => r.departmentId === departmentId);
+    const floorIds = [...new Set(departmentRooms.map(r => r.floorId))];
+    const buildingIds = [...new Set(floors.filter(f => floorIds.includes(f.id)).map(f => f.buildingId))];
+    
+    return {
+      buildings: buildingIds.length,
+      floors: floorIds.length,
+      rooms: departmentRooms.length
+    };
   };
-  
-  // Helper function to get department name by ID
-  const getDepartmentName = (departmentId: string) => {
-    const department = departments.find(d => d.id === departmentId);
-    return department ? department.name : 'ไม่ระบุ';
-  };
-  
+
   // Render form based on type
   const renderForm = () => {
     switch (type) {
       case 'department':
         return (
-          <Box component="form" onSubmit={handleSubmit} noValidate>
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  label="รหัสแผนก"
-                  fullWidth
-                  value={departmentForm.id}
-                  onChange={(e) => setDepartmentForm({...departmentForm, id: e.target.value})}
-                  margin="normal"
-                  disabled
-                  helperText="รหัสจะถูกสร้างโดยอัตโนมัติ"
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  label="ชื่อแผนก"
-                  fullWidth
-                  value={departmentForm.name}
-                  onChange={(e) => setDepartmentForm({...departmentForm, name: e.target.value})}
-                  margin="normal"
-                  required
-                  error={!!errors.name}
-                  helperText={errors.name}
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  label="รายละเอียด"
-                  fullWidth
-                  multiline
-                  rows={3}
-                  value={departmentForm.description}
-                  onChange={(e) => setDepartmentForm({...departmentForm, description: e.target.value})}
-                  margin="normal"
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  label="สี (รหัสสี HTML)"
-                  fullWidth
-                  value={departmentForm.color}
-                  onChange={(e) => setDepartmentForm({...departmentForm, color: e.target.value})}
-                  margin="normal"
-                  placeholder="#RRGGBB"
-                  InputProps={{
-                    endAdornment: (
-                      <Box 
-                        sx={{ 
-                          width: 24, 
-                          height: 24, 
-                          borderRadius: '50%', 
-                          bgcolor: departmentForm.color || '#ccc',
-                          ml: 1,
-                          border: '1px solid #ccc'
-                        }} 
-                      />
-                    )
-                  }}
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  select
-                  label="สถานะ"
-                  fullWidth
-                  value={departmentForm.isActive ? 'active' : 'inactive'}
-                  onChange={(e) => setDepartmentForm({...departmentForm, isActive: e.target.value === 'active'})}
-                  margin="normal"
-                >
-                  <MenuItem value="active">เปิดใช้งาน</MenuItem>
-                  <MenuItem value="inactive">ปิดใช้งาน</MenuItem>
-                </TextField>
-              </Grid>
-            </Grid>
-            
-            <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end' }}>
-              <Button 
-                type="button" 
-                onClick={() => navigate('/manage/departments')}
-                sx={{ mr: 2 }}
-              >
-                ยกเลิก
-              </Button>
-              <Button 
-                type="submit" 
-                variant="contained" 
-                color="primary"
-                startIcon={<SaveIcon />}
-              >
-                บันทึกข้อมูล
-              </Button>
-            </Box>
-          </Box>
+          <Card elevation={2}>
+            <CardContent sx={{ p: 4 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                <Avatar sx={{ bgcolor: '#2196f3', mr: 2 }}>
+                  <DepartmentIcon />
+                </Avatar>
+                <Typography variant="h6">ข้อมูลแผนก</Typography>
+              </Box>
+              
+              <Box component="form" onSubmit={handleSubmit} noValidate>
+                <Grid container spacing={3}>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      label="รหัสแผนก"
+                      fullWidth
+                      value={departmentForm.id}
+                      disabled
+                      variant="outlined"
+                      helperText="รหัสจะถูกสร้างโดยอัตโนมัติ"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      label="ชื่อแผนก"
+                      fullWidth
+                      value={departmentForm.name}
+                      onChange={(e) => setDepartmentForm({...departmentForm, name: e.target.value})}
+                      required
+                      error={!!errors.name}
+                      helperText={errors.name}
+                      variant="outlined"
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <TextField
+                      label="รายละเอียด"
+                      fullWidth
+                      multiline
+                      rows={3}
+                      value={departmentForm.description}
+                      onChange={(e) => setDepartmentForm({...departmentForm, description: e.target.value})}
+                      variant="outlined"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      label="สี (รหัสสี HTML)"
+                      fullWidth
+                      value={departmentForm.color}
+                      onChange={(e) => setDepartmentForm({...departmentForm, color: e.target.value})}
+                      placeholder="#RRGGBB"
+                      variant="outlined"
+                      InputProps={{
+                        endAdornment: (
+                          <Box 
+                            sx={{ 
+                              width: 32, 
+                              height: 32, 
+                              borderRadius: 1, 
+                              bgcolor: departmentForm.color || '#ccc',
+                              ml: 1,
+                              border: '2px solid #e0e0e0'
+                            }} 
+                          />
+                        )
+                      }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <FormControl fullWidth variant="outlined">
+                      <InputLabel>สถานะ</InputLabel>
+                      <Select
+                        value={departmentForm.isActive ? 'active' : 'inactive'}
+                        onChange={(e) => setDepartmentForm({...departmentForm, isActive: e.target.value === 'active'})}
+                        label="สถานะ"
+                      >
+                        <MenuItem value="active">
+                          <Chip label="เปิดใช้งาน" color="success" size="small" />
+                        </MenuItem>
+                        <MenuItem value="inactive">
+                          <Chip label="ปิดใช้งาน" color="default" size="small" />
+                        </MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                </Grid>
+                
+                <Box sx={{ mt: 4, display: 'flex', justifyContent: 'space-between' }}>
+                  <Button 
+                    variant="outlined"
+                    onClick={() => navigate('/manage/departments')}
+                    size="large"
+                  >
+                    ยกเลิก
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    variant="contained" 
+                    color="primary"
+                    startIcon={<SaveIcon />}
+                    size="large"
+                  >
+                    บันทึกข้อมูล
+                  </Button>
+                </Box>
+              </Box>
+            </CardContent>
+          </Card>
         );
         
       case 'building':
         return (
-          <Box component="form" onSubmit={handleSubmit} noValidate>
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  label="รหัสอาคาร"
-                  fullWidth
-                  value={buildingForm.id}
-                  onChange={(e) => setBuildingForm({...buildingForm, id: e.target.value})}
-                  margin="normal"
-                  disabled
-                  helperText="รหัสจะถูกสร้างโดยอัตโนมัติ"
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  label="ชื่ออาคาร"
-                  fullWidth
-                  value={buildingForm.name}
-                  onChange={(e) => setBuildingForm({...buildingForm, name: e.target.value})}
-                  margin="normal"
-                  required
-                  error={!!errors.name}
-                  helperText={errors.name}
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  label="ที่อยู่"
-                  fullWidth
-                  value={buildingForm.address}
-                  onChange={(e) => setBuildingForm({...buildingForm, address: e.target.value})}
-                  margin="normal"
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  label="รายละเอียด"
-                  fullWidth
-                  multiline
-                  rows={3}
-                  value={buildingForm.description}
-                  onChange={(e) => setBuildingForm({...buildingForm, description: e.target.value})}
-                  margin="normal"
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  select
-                  label="สถานะ"
-                  fullWidth
-                  value={buildingForm.isActive ? 'active' : 'inactive'}
-                  onChange={(e) => setBuildingForm({...buildingForm, isActive: e.target.value === 'active'})}
-                  margin="normal"
-                >
-                  <MenuItem value="active">เปิดใช้งาน</MenuItem>
-                  <MenuItem value="inactive">ปิดใช้งาน</MenuItem>
-                </TextField>
-              </Grid>
-            </Grid>
-            
-            <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end' }}>
-              <Button 
-                type="button" 
-                onClick={() => navigate('/manage/departments')}
-                sx={{ mr: 2 }}
-              >
-                ยกเลิก
-              </Button>
-              <Button 
-                type="submit" 
-                variant="contained" 
-                color="primary"
-                startIcon={<SaveIcon />}
-              >
-                บันทึกข้อมูล
-              </Button>
-            </Box>
-          </Box>
+          <Card elevation={2}>
+            <CardContent sx={{ p: 4 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                            <Avatar sx={{ bgcolor: '#ff9800', mr: 2 }}>
+                  <BuildingIcon />
+                </Avatar>
+                <Typography variant="h6">ข้อมูลอาคาร</Typography>
+              </Box>
+              
+              <Box component="form" onSubmit={handleSubmit} noValidate>
+                <Grid container spacing={3}>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      label="รหัสอาคาร"
+                      fullWidth
+                      value={buildingForm.id}
+                      disabled
+                      variant="outlined"
+                      helperText="รหัสจะถูกสร้างโดยอัตโนมัติ"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      label="ชื่ออาคาร"
+                      fullWidth
+                      value={buildingForm.name}
+                      onChange={(e) => setBuildingForm({...buildingForm, name: e.target.value})}
+                      required
+                      error={!!errors.name}
+                      helperText={errors.name}
+                      variant="outlined"
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <TextField
+                      label="ที่อยู่"
+                      fullWidth
+                      value={buildingForm.address}
+                      onChange={(e) => setBuildingForm({...buildingForm, address: e.target.value})}
+                      variant="outlined"
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <TextField
+                      label="รายละเอียด"
+                      fullWidth
+                      multiline
+                      rows={3}
+                      value={buildingForm.description}
+                      onChange={(e) => setBuildingForm({...buildingForm, description: e.target.value})}
+                      variant="outlined"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <FormControl fullWidth variant="outlined">
+                      <InputLabel>สถานะ</InputLabel>
+                      <Select
+                        value={buildingForm.isActive ? 'active' : 'inactive'}
+                        onChange={(e) => setBuildingForm({...buildingForm, isActive: e.target.value === 'active'})}
+                        label="สถานะ"
+                      >
+                        <MenuItem value="active">
+                          <Chip label="เปิดใช้งาน" color="success" size="small" />
+                        </MenuItem>
+                        <MenuItem value="inactive">
+                          <Chip label="ปิดใช้งาน" color="default" size="small" />
+                        </MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                </Grid>
+                
+                <Box sx={{ mt: 4, display: 'flex', justifyContent: 'space-between' }}>
+                  <Button 
+                    variant="outlined"
+                    onClick={() => navigate('/manage/departments')}
+                    size="large"
+                  >
+                    ยกเลิก
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    variant="contained" 
+                    color="primary"
+                    startIcon={<SaveIcon />}
+                    size="large"
+                  >
+                    บันทึกข้อมูล
+                  </Button>
+                </Box>
+              </Box>
+            </CardContent>
+          </Card>
         );
         
       case 'floor':
         return (
-          <Box component="form" onSubmit={handleSubmit} noValidate>
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  label="รหัสชั้น"
-                  fullWidth
-                  value={floorForm.id}
-                  onChange={(e) => setFloorForm({...floorForm, id: e.target.value})}
-                  margin="normal"
-                  disabled
-                  helperText="รหัสจะถูกสร้างโดยอัตโนมัติ"
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <FormControl fullWidth margin="normal" error={!!errors.buildingId} required>
-                  <InputLabel>อาคาร</InputLabel>
-                  <Select
-                    value={floorForm.buildingId}
-                    onChange={(e) => setFloorForm({...floorForm, buildingId: e.target.value})}
-                    label="อาคาร"
+          <Card elevation={2}>
+            <CardContent sx={{ p: 4 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                <Avatar sx={{ bgcolor: '#4caf50', mr: 2 }}>
+                  <FloorIcon />
+                </Avatar>
+                <Typography variant="h6">ข้อมูลชั้น</Typography>
+              </Box>
+              
+              <Box component="form" onSubmit={handleSubmit} noValidate>
+                <Grid container spacing={3}>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      label="รหัสชั้น"
+                      fullWidth
+                      value={floorForm.id}
+                      disabled
+                      variant="outlined"
+                      helperText="รหัสจะถูกสร้างโดยอัตโนมัติ"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <FormControl fullWidth variant="outlined" error={!!errors.buildingId} required>
+                      <InputLabel>อาคาร</InputLabel>
+                      <Select
+                        value={floorForm.buildingId}
+                        onChange={(e) => setFloorForm({...floorForm, buildingId: e.target.value})}
+                        label="อาคาร"
+                      >
+                        {buildings.map((building) => (
+                          <MenuItem key={building.id} value={building.id}>
+                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                              <BuildingIcon sx={{ mr: 1, color: '#ff9800' }} />
+                              {building.name}
+                            </Box>
+                          </MenuItem>
+                        ))}
+                      </Select>
+                      {errors.buildingId && <Typography variant="caption" color="error">{errors.buildingId}</Typography>}
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      label="ชั้น"
+                      type="number"
+                      fullWidth
+                      value={floorForm.number}
+                      onChange={(e) => setFloorForm({...floorForm, number: parseInt(e.target.value)})}
+                      required
+                      InputProps={{ inputProps: { min: -10, max: 200 } }}
+                      variant="outlined"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      label="ชื่อชั้น"
+                      fullWidth
+                      value={floorForm.name}
+                      onChange={(e) => setFloorForm({...floorForm, name: e.target.value})}
+                      required
+                      error={!!errors.name}
+                      helperText={errors.name || 'เช่น ชั้นล็อบบี้, ชั้นผู้ป่วยใน, ชั้นผู้ป่วยนอก'}
+                      variant="outlined"
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <TextField
+                      label="รายละเอียด"
+                      fullWidth
+                      multiline
+                      rows={3}
+                      value={floorForm.description}
+                      onChange={(e) => setFloorForm({...floorForm, description: e.target.value})}
+                      variant="outlined"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <FormControl fullWidth variant="outlined">
+                      <InputLabel>สถานะ</InputLabel>
+                      <Select
+                        value={floorForm.isActive ? 'active' : 'inactive'}
+                        onChange={(e) => setFloorForm({...floorForm, isActive: e.target.value === 'active'})}
+                        label="สถานะ"
+                      >
+                        <MenuItem value="active">
+                          <Chip label="เปิดใช้งาน" color="success" size="small" />
+                        </MenuItem>
+                        <MenuItem value="inactive">
+                          <Chip label="ปิดใช้งาน" color="default" size="small" />
+                        </MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                </Grid>
+                
+                <Box sx={{ mt: 4, display: 'flex', justifyContent: 'space-between' }}>
+                  <Button 
+                    variant="outlined"
+                    onClick={() => navigate('/manage/departments')}
+                    size="large"
                   >
-                    {buildings.map((building) => (
-                      <MenuItem key={building.id} value={building.id}>
-                        {building.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                  {errors.buildingId && <FormHelperText>{errors.buildingId}</FormHelperText>}
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  label="ชั้น"
-                  type="number"
-                  fullWidth
-                  value={floorForm.number}
-                  onChange={(e) => setFloorForm({...floorForm, number: parseInt(e.target.value)})}
-                  margin="normal"
-                  required
-                  InputProps={{ inputProps: { min: -10, max: 200 } }}
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  label="ชื่อชั้น"
-                  fullWidth
-                  value={floorForm.name}
-                  onChange={(e) => setFloorForm({...floorForm, name: e.target.value})}
-                  margin="normal"
-                  required
-                  error={!!errors.name}
-                  helperText={errors.name || 'เช่น ชั้นล็อบบี้, ชั้นผู้ป่วยใน, ชั้นผู้ป่วยนอก'}
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  label="รายละเอียด"
-                  fullWidth
-                  multiline
-                  rows={3}
-                  value={floorForm.description}
-                  onChange={(e) => setFloorForm({...floorForm, description: e.target.value})}
-                  margin="normal"
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  select
-                  label="สถานะ"
-                  fullWidth
-                  value={floorForm.isActive ? 'active' : 'inactive'}
-                  onChange={(e) => setFloorForm({...floorForm, isActive: e.target.value === 'active'})}
-                  margin="normal"
-                >
-                  <MenuItem value="active">เปิดใช้งาน</MenuItem>
-                  <MenuItem value="inactive">ปิดใช้งาน</MenuItem>
-                </TextField>
-              </Grid>
-            </Grid>
-            
-            <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end' }}>
-              <Button 
-                type="button" 
-                onClick={() => navigate('/manage/departments')}
-                sx={{ mr: 2 }}
-              >
-                ยกเลิก
-              </Button>
-              <Button 
-                type="submit" 
-                variant="contained" 
-                color="primary"
-                startIcon={<SaveIcon />}
-              >
-                บันทึกข้อมูล
-              </Button>
-            </Box>
-          </Box>
+                    ยกเลิก
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    variant="contained" 
+                    color="primary"
+                    startIcon={<SaveIcon />}
+                    size="large"
+                  >
+                    บันทึกข้อมูล
+                  </Button>
+                </Box>
+              </Box>
+            </CardContent>
+          </Card>
         );
         
       case 'room':
         return (
-          <Box component="form" onSubmit={handleSubmit} noValidate>
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  label="รหัสห้อง"
-                  fullWidth
-                  value={roomForm.id}
-                  onChange={(e) => setRoomForm({...roomForm, id: e.target.value})}
-                  margin="normal"
-                  disabled
-                  helperText="รหัสจะถูกสร้างโดยอัตโนมัติ"
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  label="ชื่อห้อง"
-                  fullWidth
-                  value={roomForm.name}
-                  onChange={(e) => setRoomForm({...roomForm, name: e.target.value})}
-                  margin="normal"
-                  required
-                  error={!!errors.name}
-                  helperText={errors.name}
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <FormControl fullWidth margin="normal" error={!!errors.departmentId} required>
-                  <InputLabel>แผนก</InputLabel>
-                  <Select
-                    value={roomForm.departmentId}
-                    onChange={(e) => setRoomForm({...roomForm, departmentId: e.target.value})}
-                    label="แผนก"
+          <Card elevation={2}>
+            <CardContent sx={{ p: 4 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                <Avatar sx={{ bgcolor: '#9c27b0', mr: 2 }}>
+                  <RoomIcon />
+                </Avatar>
+                <Typography variant="h6">ข้อมูลห้อง</Typography>
+              </Box>
+              
+              <Box component="form" onSubmit={handleSubmit} noValidate>
+                <Grid container spacing={3}>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      label="รหัสห้อง"
+                      fullWidth
+                      value={roomForm.id}
+                      disabled
+                      variant="outlined"
+                      helperText="รหัสจะถูกสร้างโดยอัตโนมัติ"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      label="ชื่อห้อง"
+                      fullWidth
+                      value={roomForm.name}
+                      onChange={(e) => setRoomForm({...roomForm, name: e.target.value})}
+                      required
+                      error={!!errors.name}
+                      helperText={errors.name}
+                      variant="outlined"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <FormControl fullWidth variant="outlined" error={!!errors.departmentId} required>
+                      <InputLabel>แผนก</InputLabel>
+                      <Select
+                        value={roomForm.departmentId}
+                        onChange={(e) => setRoomForm({...roomForm, departmentId: e.target.value})}
+                        label="แผนก"
+                      >
+                        {departments.map((department) => (
+                          <MenuItem key={department.id} value={department.id}>
+                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                              <Box 
+                                sx={{ 
+                                  width: 16, 
+                                  height: 16, 
+                                  borderRadius: '50%', 
+                                  bgcolor: department.color || '#ccc',
+                                  mr: 1
+                                }} 
+                              />
+                              {department.name}
+                            </Box>
+                          </MenuItem>
+                        ))}
+                      </Select>
+                      {errors.departmentId && <Typography variant="caption" color="error">{errors.departmentId}</Typography>}
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <FormControl fullWidth variant="outlined" error={!!errors.floorId} required>
+                      <InputLabel>ชั้น</InputLabel>
+                      <Select
+                        value={roomForm.floorId}
+                        onChange={(e) => setRoomForm({...roomForm, floorId: e.target.value})}
+                        label="ชั้น"
+                      >
+                        {floors.map((floor) => (
+                          <MenuItem key={floor.id} value={floor.id}>
+                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                              <LocationIcon sx={{ mr: 1, color: '#4caf50' }} />
+                              {getBuildingName(floor.buildingId)} ชั้น {floor.number} ({floor.name})
+                            </Box>
+                          </MenuItem>
+                        ))}
+                      </Select>
+                      {errors.floorId && <Typography variant="caption" color="error">{errors.floorId}</Typography>}
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      label="ความจุ (คน)"
+                      type="number"
+                      fullWidth
+                      value={roomForm.capacity}
+                      onChange={(e) => setRoomForm({...roomForm, capacity: parseInt(e.target.value)})}
+                      InputProps={{ inputProps: { min: 0 } }}
+                      helperText="จำนวนคนที่รองรับได้ (ถ้ามี)"
+                      variant="outlined"
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <TextField
+                      label="รายละเอียด"
+                      fullWidth
+                      multiline
+                      rows={3}
+                      value={roomForm.description}
+                      onChange={(e) => setRoomForm({...roomForm, description: e.target.value})}
+                      variant="outlined"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <FormControl fullWidth variant="outlined">
+                      <InputLabel>สถานะ</InputLabel>
+                      <Select
+                        value={roomForm.isActive ? 'active' : 'inactive'}
+                        onChange={(e) => setRoomForm({...roomForm, isActive: e.target.value === 'active'})}
+                        label="สถานะ"
+                      >
+                        <MenuItem value="active">
+                          <Chip label="เปิดใช้งาน" color="success" size="small" />
+                        </MenuItem>
+                        <MenuItem value="inactive">
+                          <Chip label="ปิดใช้งาน" color="default" size="small" />
+                        </MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                </Grid>
+                
+                <Box sx={{ mt: 4, display: 'flex', justifyContent: 'space-between' }}>
+                  <Button 
+                    variant="outlined"
+                    onClick={() => navigate('/manage/departments')}
+                    size="large"
                   >
-                    {departments.map((department) => (
-                      <MenuItem key={department.id} value={department.id}>
-                        {department.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                  {errors.departmentId && <FormHelperText>{errors.departmentId}</FormHelperText>}
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <FormControl fullWidth margin="normal" error={!!errors.floorId} required>
-                  <InputLabel>ชั้น</InputLabel>
-                  <Select
-                    value={roomForm.floorId}
-                    onChange={(e) => setRoomForm({...roomForm, floorId: e.target.value})}
-                    label="ชั้น"
+                    ยกเลิก
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    variant="contained" 
+                    color="primary"
+                    startIcon={<SaveIcon />}
+                    size="large"
                   >
-                    {floors.map((floor) => (
-                      <MenuItem key={floor.id} value={floor.id}>
-                        {getBuildingName(floor.buildingId)} ชั้น {floor.number} ({floor.name})
-                      </MenuItem>
-                    ))}
-                  </Select>
-                  {errors.floorId && <FormHelperText>{errors.floorId}</FormHelperText>}
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  label="ความจุ (คน)"
-                  type="number"
-                  fullWidth
-                  value={roomForm.capacity}
-                  onChange={(e) => setRoomForm({...roomForm, capacity: parseInt(e.target.value)})}
-                  margin="normal"
-                  InputProps={{ inputProps: { min: 0 } }}
-                  helperText="จำนวนคนที่รองรับได้ (ถ้ามี)"
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  label="รายละเอียด"
-                  fullWidth
-                  multiline
-                  rows={3}
-                  value={roomForm.description}
-                  onChange={(e) => setRoomForm({...roomForm, description: e.target.value})}
-                  margin="normal"
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <TextField
-                  select
-                  label="สถานะ"
-                  fullWidth
-                  value={roomForm.isActive ? 'active' : 'inactive'}
-                  onChange={(e) => setRoomForm({...roomForm, isActive: e.target.value === 'active'})}
-                  margin="normal"
-                >
-                  <MenuItem value="active">เปิดใช้งาน</MenuItem>
-                  <MenuItem value="inactive">ปิดใช้งาน</MenuItem>
-                </TextField>
-              </Grid>
-            </Grid>
-            
-            <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end' }}>
-              <Button 
-                type="button" 
-                onClick={() => navigate('/manage/departments')}
-                sx={{ mr: 2 }}
-              >
-                ยกเลิก
-              </Button>
-              <Button 
-                type="submit" 
-                variant="contained" 
-                color="primary"
-                startIcon={<SaveIcon />}
-              >
-                บันทึกข้อมูล
-              </Button>
-            </Box>
-          </Box>
+                    บันทึกข้อมูล
+                  </Button>
+                </Box>
+              </Box>
+            </CardContent>
+          </Card>
         );
         
       default:
         return <Typography>ไม่พบแบบฟอร์มที่เลือก</Typography>;
     }
   };
-  
-  // Show summary of what will be added
-  const renderSummary = () => {
-    switch (type) {
-      case 'department':
-        if (!departmentForm.name) return null;
-        return (
-          <Box sx={{ mt: 4, p: 2, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid #e0e0e0' }}>
-            <Typography variant="subtitle1" gutterBottom>ข้อมูลที่จะเพิ่ม:</Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={4}>
-                <Typography variant="body2" color="text.secondary">รหัสแผนก:</Typography>
-              </Grid>
-              <Grid item xs={8}>
-                <Typography variant="body2">{departmentForm.id}</Typography>
-              </Grid>
-              
-              <Grid item xs={4}>
-                <Typography variant="body2" color="text.secondary">ชื่อแผนก:</Typography>
-              </Grid>
-              <Grid item xs={8}>
-                <Typography variant="body2">{departmentForm.name}</Typography>
-              </Grid>
-              
-              {departmentForm.description && (
-                <>
-                  <Grid item xs={4}>
-                    <Typography variant="body2" color="text.secondary">รายละเอียด:</Typography>
-                  </Grid>
-                  <Grid item xs={8}>
-                    <Typography variant="body2">{departmentForm.description}</Typography>
-                  </Grid>
-                </>
-              )}
-              
-              <Grid item xs={4}>
-                <Typography variant="body2" color="text.secondary">สี:</Typography>
-              </Grid>
-              <Grid item xs={8}>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <Box 
-                    sx={{ 
-                      width: 16, 
-                      height: 16, 
-                      borderRadius: '50%', 
-                      bgcolor: departmentForm.color || '#ccc',
-                      mr: 1,
-                      border: '1px solid #ccc'
-                    }} 
-                  />
-                  <Typography variant="body2">{departmentForm.color}</Typography>
-                </Box>
-              </Grid>
-              
-              <Grid item xs={4}>
-                <Typography variant="body2" color="text.secondary">สถานะ:</Typography>
-              </Grid>
-              <Grid item xs={8}>
-                <Typography variant="body2">{departmentForm.isActive ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}</Typography>
-              </Grid>
-            </Grid>
+
+  // Show preview of what will be added
+  const renderPreview = () => {
+    if (type !== 'department' || !departmentForm.name) return null;
+    
+    return (
+      <Card elevation={1} sx={{ mt: 3, bgcolor: '#f8f9fa' }}>
+        <CardContent>
+                    <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+            <InfoIcon sx={{ mr: 1, color: '#2196f3' }} />
+            ตัวอย่างข้อมูลที่จะเพิ่ม
+          </Typography>
+          <Divider sx={{ mb: 2 }} />
+          
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <Box 
+              sx={{ 
+                width: 40, 
+                height: 40, 
+                borderRadius: 1, 
+                bgcolor: departmentForm.color || '#ccc',
+                mr: 2,
+                border: '2px solid #e0e0e0'
+              }} 
+            />
+            <Box>
+              <Typography variant="h6">{departmentForm.name}</Typography>
+              <Typography variant="body2" color="text.secondary">
+                รหัส: {departmentForm.id}
+              </Typography>
+            </Box>
           </Box>
-        );
-        
-      case 'building':
-        if (!buildingForm.name) return null;
-        return (
-          <Box sx={{ mt: 4, p: 2, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid #e0e0e0' }}>
-            <Typography variant="subtitle1" gutterBottom>ข้อมูลที่จะเพิ่ม:</Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={4}>
-                <Typography variant="body2" color="text.secondary">รหัสอาคาร:</Typography>
-              </Grid>
-              <Grid item xs={8}>
-                <Typography variant="body2">{buildingForm.id}</Typography>
-              </Grid>
-              
-              <Grid item xs={4}>
-                <Typography variant="body2" color="text.secondary">ชื่ออาคาร:</Typography>
-              </Grid>
-              <Grid item xs={8}>
-                <Typography variant="body2">{buildingForm.name}</Typography>
-              </Grid>
-              
-              {buildingForm.address && (
-                <>
-                  <Grid item xs={4}>
-                    <Typography variant="body2" color="text.secondary">ที่อยู่:</Typography>
-                  </Grid>
-                  <Grid item xs={8}>
-                    <Typography variant="body2">{buildingForm.address}</Typography>
-                  </Grid>
-                </>
-              )}
-              
-              {buildingForm.description && (
-                <>
-                  <Grid item xs={4}>
-                    <Typography variant="body2" color="text.secondary">รายละเอียด:</Typography>
-                  </Grid>
-                  <Grid item xs={8}>
-                    <Typography variant="body2">{buildingForm.description}</Typography>
-                  </Grid>
-                </>
-              )}
-              
-              <Grid item xs={4}>
-                <Typography variant="body2" color="text.secondary">สถานะ:</Typography>
-              </Grid>
-              <Grid item xs={8}>
-                <Typography variant="body2">{buildingForm.isActive ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}</Typography>
-              </Grid>
-            </Grid>
-          </Box>
-        );
-        
-      case 'floor':
-        if (!floorForm.name || !floorForm.buildingId) return null;
-        return (
-          <Box sx={{ mt: 4, p: 2, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid #e0e0e0' }}>
-            <Typography variant="subtitle1" gutterBottom>ข้อมูลที่จะเพิ่ม:</Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={4}>
-                <Typography variant="body2" color="text.secondary">รหัสชั้น:</Typography>
-              </Grid>
-              <Grid item xs={8}>
-                <Typography variant="body2">{floorForm.id}</Typography>
-              </Grid>
-              
-              <Grid item xs={4}>
-                <Typography variant="body2" color="text.secondary">อาคาร:</Typography>
-              </Grid>
-              <Grid item xs={8}>
-                <Typography variant="body2">{getBuildingName(floorForm.buildingId)}</Typography>
-              </Grid>
-              
-              <Grid item xs={4}>
-                <Typography variant="body2" color="text.secondary">ชั้น:</Typography>
-              </Grid>
-              <Grid item xs={8}>
-                <Typography variant="body2">{floorForm.number}</Typography>
-              </Grid>
-              
-              <Grid item xs={4}>
-                <Typography variant="body2" color="text.secondary">ชื่อชั้น:</Typography>
-              </Grid>
-              <Grid item xs={8}>
-                <Typography variant="body2">{floorForm.name}</Typography>
-              </Grid>
-              
-              {floorForm.description && (
-                <>
-                  <Grid item xs={4}>
-                    <Typography variant="body2" color="text.secondary">รายละเอียด:</Typography>
-                  </Grid>
-                  <Grid item xs={8}>
-                    <Typography variant="body2">{floorForm.description}</Typography>
-                  </Grid>
-                </>
-              )}
-              
-              <Grid item xs={4}>
-                <Typography variant="body2" color="text.secondary">สถานะ:</Typography>
-              </Grid>
-              <Grid item xs={8}>
-                <Typography variant="body2">{floorForm.isActive ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}</Typography>
-              </Grid>
-            </Grid>
-          </Box>
-        );
-        
-      case 'room':
-        if (!roomForm.name || !roomForm.departmentId || !roomForm.floorId) return null;
-        return (
-          <Box sx={{ mt: 4, p: 2, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid #e0e0e0' }}>
-            <Typography variant="subtitle1" gutterBottom>ข้อมูลที่จะเพิ่ม:</Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={4}>
-                <Typography variant="body2" color="text.secondary">รหัสห้อง:</Typography>
-              </Grid>
-              <Grid item xs={8}>
-                <Typography variant="body2">{roomForm.id}</Typography>
-              </Grid>
-              
-              <Grid item xs={4}>
-                <Typography variant="body2" color="text.secondary">ชื่อห้อง:</Typography>
-              </Grid>
-              <Grid item xs={8}>
-                <Typography variant="body2">{roomForm.name}</Typography>
-              </Grid>
-              
-              <Grid item xs={4}>
-                <Typography variant="body2" color="text.secondary">แผนก:</Typography>
-              </Grid>
-              <Grid item xs={8}>
-                <Typography variant="body2">{getDepartmentName(roomForm.departmentId)}</Typography>
-              </Grid>
-              
-              <Grid item xs={4}>
-                <Typography variant="body2" color="text.secondary">ตำแหน่ง:</Typography>
-              </Grid>
-              <Grid item xs={8}>
-                <Typography variant="body2">{getFloorName(roomForm.floorId)}</Typography>
-              </Grid>
-              
-              {roomForm.capacity !== undefined && roomForm.capacity > 0 && (
-                <>
-                  <Grid item xs={4}>
-                    <Typography variant="body2" color="text.secondary">ความจุ:</Typography>
-                  </Grid>
-                  <Grid item xs={8}>
-                    <Typography variant="body2">{roomForm.capacity} คน</Typography>
-                  </Grid>
-                </>
-              )}
-              
-              {roomForm.description && (
-                <>
-                  <Grid item xs={4}>
-                    <Typography variant="body2" color="text.secondary">รายละเอียด:</Typography>
-                  </Grid>
-                  <Grid item xs={8}>
-                    <Typography variant="body2">{roomForm.description}</Typography>
-                  </Grid>
-                </>
-              )}
-              
-              <Grid item xs={4}>
-                <Typography variant="body2" color="text.secondary">สถานะ:</Typography>
-              </Grid>
-              <Grid item xs={8}>
-                <Typography variant="body2">{roomForm.isActive ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}</Typography>
-              </Grid>
-            </Grid>
-          </Box>
-        );
-        
-      default:
-        return null;
-    }
-  };
-  
-  return (
-    <Box sx={{ width: '100%' }}>
-      <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-          <IconButton 
-            color="primary" 
-            onClick={() => navigate('/manage/departments')}
-            sx={{ mr: 2 }}
-          >
-            <ArrowBackIcon />
-          </IconButton>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            {getPageIcon()}
-            <Typography variant="h5" component="h1" sx={{ ml: 2 }}>
-              {getPageTitle()}
+          
+          {departmentForm.description && (
+            <Typography variant="body2" sx={{ mb: 2 }}>
+              {departmentForm.description}
             </Typography>
+          )}
+          
+          <Chip 
+            label={departmentForm.isActive ? 'เปิดใช้งาน' : 'ปิดใช้งาน'} 
+            color={departmentForm.isActive ? 'success' : 'default'}
+            size="small"
+          />
+        </CardContent>
+      </Card>
+    );
+  };
+
+  return (
+    <Box sx={{ width: '100%', bgcolor: '#f5f5f5', minHeight: '100vh', py: 3 }}>
+      <Box sx={{ maxWidth: 1200, mx: 'auto', px: 3 }}>
+        {/* Header */}
+        <Paper elevation={1} sx={{ p: 3, mb: 3, bgcolor: 'white' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <IconButton 
+              color="primary" 
+              onClick={() => navigate('/manage/departments')}
+              sx={{ mr: 2, bgcolor: '#f0f0f0' }}
+            >
+              <ArrowBackIcon />
+            </IconButton>
+            <Box sx={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+              {getPageIcon()}
+              <Box sx={{ ml: 2 }}>
+                <Typography variant="h4" component="h1" fontWeight="bold">
+                  {getPageTitle()}
+                </Typography>
+                <Typography variant="body1" color="text.secondary">
+                  เพิ่มข้อมูลใหม่เข้าสู่ระบบจัดการโรงพยาบาล
+                </Typography>
+              </Box>
+            </Box>
           </Box>
-        </Box>
+        </Paper>
         
-        <Divider sx={{ mb: 3 }} />
-        
+        {/* Alerts */}
         {error && (
           <Alert severity="error" sx={{ mb: 3 }}>
             <AlertTitle>เกิดข้อผิดพลาด</AlertTitle>
@@ -935,48 +823,71 @@ const AddDepartment: React.FC = () => {
           </Alert>
         )}
         
+        {/* Main Form */}
         {renderForm()}
-        {renderSummary()}
-      </Paper>
-      {/* ตัวอย่าง UI แสดง department ทั้งหมด */}
-      {/* <div style={{ marginTop: 32 }}>
-        <h3>รายชื่อแผนกทั้งหมด</h3>
-        <ul>
-          {departments.map(dep => (
-            <li key={dep.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>{dep.name}</span>
-              <button
-                style={{ marginLeft: 8 }}
-                onClick={async () => {
-                  try {
-                    await addWorkplaceItem('department', { ...dep, name: dep.name + ' (แก้ไขแล้ว)' });
-                    const updatedDepartments = await getWorkplaceItems<Department>('department');
-                    setDepartments(updatedDepartments);
-                  } catch (err) {
-                    console.error('Error editing department:', err);
-                    setError('ไม่สามารถแก้ไขข้อมูลได้ กรุณาลองใหม่');
-                  }
-                }}
-              >Edit</button>
-              <button
-                style={{ marginLeft: 8 }}
-                onClick={async () => {
-                  try {
-                    await addWorkplaceItem('department', { ...dep, isActive: false }); // Soft delete
-                    const updatedDepartments = await getWorkplaceItems<Department>('department');
-                    setDepartments(updatedDepartments);
-                  } catch (err) {
-                    console.error('Error deleting department:', err);
-                    setError('ไม่สามารถลบข้อมูลได้ กรุณาลองใหม่');
-                  }
-                }}
-              >Delete</button>
-            </li>
-          ))}
-        </ul>
-      </div> */}
+        
+        {/* Preview */}
+        {renderPreview()}
+        
+        {/* Department Statistics (แสดงเฉพาะเมื่อเป็นแผนก) */}
+        {type === 'department' && departments.length > 0 && (
+          <Card elevation={1} sx={{ mt: 3 }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                สถิติแผนกในระบบ
+              </Typography>
+              <Grid container spacing={2}>
+                {departments.slice(0, 3).map((dept) => {
+                  const stats = getDepartmentStats(dept.id);
+                  return (
+                    <Grid item xs={12} md={4} key={dept.id}>
+                      <Card variant="outlined" sx={{ p: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                          <Box 
+                            sx={{ 
+                              width: 20, 
+                              height: 20, 
+                              borderRadius: '50%', 
+                              bgcolor: dept.color || '#ccc',
+                              mr: 1
+                            }} 
+                          />
+                          <Typography variant="subtitle2" noWrap>
+                            {dept.name}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                          <Box sx={{ textAlign: 'center' }}>
+                            <Typography variant="h6" color="primary">
+                              {stats.buildings}
+                            </Typography>
+                            <Typography variant="caption">อาคาร</Typography>
+                          </Box>
+                          <Box sx={{ textAlign: 'center' }}>
+                            <Typography variant="h6" color="secondary">
+                              {stats.floors}
+                            </Typography>
+                            <Typography variant="caption">ชั้น</Typography>
+                          </Box>
+                          <Box sx={{ textAlign: 'center' }}>
+                            <Typography variant="h6" color="success.main">
+                              {stats.rooms}
+                            </Typography>
+                            <Typography variant="caption">ห้อง</Typography>
+                          </Box>
+                        </Box>
+                      </Card>
+                    </Grid>
+                  );
+                })}
+              </Grid>
+            </CardContent>
+          </Card>
+        )}
+      </Box>
     </Box>
   );
 };
 
 export default AddDepartment;
+

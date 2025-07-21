@@ -5,14 +5,9 @@ import {
   Typography, 
   Button, 
   Paper, 
-  Tabs, 
-  Tab, 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableContainer, 
-  TableHead, 
-  TableRow,
+  Card,
+  CardContent,
+  Grid,
   IconButton,
   Dialog,
   DialogActions,
@@ -23,7 +18,20 @@ import {
   MenuItem,
   Chip,
   Snackbar,
-  Alert
+  Alert,
+  Avatar,
+ 
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon,
+  ListItemSecondaryAction,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Fab,
+  Tooltip,
+
 } from '@mui/material';
 import { 
   Add as AddIcon, 
@@ -32,12 +40,12 @@ import {
   Business as BuildingIcon,
   Layers as FloorIcon,
   MeetingRoom as RoomIcon,
-  LocalHospital as DepartmentIcon
+  LocalHospital as DepartmentIcon,
+  ExpandMore as ExpandMoreIcon,
+  LocationOn as LocationIcon,
 } from '@mui/icons-material';
-// import { usePageDebug } from '../../../hooks/usePageDebug';
-// import { TableSchema } from '../../../types/Debug';
-// import { DebugManager } from '../../../utils/Debuger';
 import axios from 'axios';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 async function getWorkplaceItems<T>(type: string): Promise<T[]> {
@@ -89,66 +97,8 @@ interface Room {
   isActive: boolean;
 }
 
-// Tab panel component
-interface TabPanelProps {
-  children?: React.ReactNode;
-  index: number;
-  value: number;
-}
-
-function TabPanel(props: TabPanelProps) {
-  const { children, value, index, ...other } = props;
-
-  return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`facility-tabpanel-${index}`}
-      aria-labelledby={`facility-tab-${index}`}
-      {...other}
-    >
-      {value === index && (
-        <Box sx={{ p: 3 }}>
-          {children}
-        </Box>
-      )}
-    </div>
-  );
-}
-
 const Departments: React.FC = () => {
   const navigate = useNavigate();
-  // const debugManager = DebugManager.getInstance();
-  
-  // Define required tables for debug
-  // const requiredTables: TableSchema[] = [
-  //   {
-  //     tableName: 'departments',
-  //     columns: ['id', 'name', 'description', 'color', 'isActive'],
-  //     description: 'แผนกต่างๆ ในโรงพยาบาล'
-  //   },
-  //   {
-  //     tableName: 'buildings',
-  //     columns: ['id', 'name', 'address', 'description', 'isActive'],
-  //     description: 'อาคารต่างๆ ในโรงพยาบาล'
-  //   },
-  //   {
-  //     tableName: 'floors',
-  //     columns: ['id', 'buildingId', 'number', 'name', 'description', 'isActive'],
-  //     description: 'ชั้นต่างๆ ในแต่ละอาคาร'
-  //   },
-  //   {
-  //     tableName: 'rooms',
-  //     columns: ['id', 'name', 'floorId', 'departmentId', 'capacity', 'description', 'isActive'],
-  //     description: 'ห้องต่างๆ ในแต่ละชั้น'
-  //   }
-  // ];
-  
-  // Use debug hook
-  // const { debugData, refreshData } = usePageDebug('จัดการแผนกและสถานที่', requiredTables);
-  
-  // State for tab selection
-  const [tabValue, setTabValue] = useState(0);
   
   // States for data
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -158,7 +108,7 @@ const Departments: React.FC = () => {
   
   // States for delete confirmation
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [itemToDelete, setItemToDelete] = useState<{type: string, id: string}>({type: '', id: ''});
+  const [itemToDelete, setItemToDelete] = useState<{type: string, id: string, name: string}>({type: '', id: '', name: ''});
   
   // States for edit dialogs
   const [editDepartmentDialog, setEditDepartmentDialog] = useState(false);
@@ -175,21 +125,20 @@ const Departments: React.FC = () => {
   // State for success message
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   
-  // Load data from debug storage
+  // Load data from API
   useEffect(() => {
     const loadData = async () => {
-      setDepartments(await getWorkplaceItems<Department>('department'));
-      setBuildings(await getWorkplaceItems<Building>('building'));
-      setFloors(await getWorkplaceItems<Floor>('floor'));
-      setRooms(await getWorkplaceItems<Room>('room'));
+      try {
+        setDepartments(await getWorkplaceItems<Department>('department'));
+        setBuildings(await getWorkplaceItems<Building>('building'));
+        setFloors(await getWorkplaceItems<Floor>('floor'));
+        setRooms(await getWorkplaceItems<Room>('room'));
+      } catch (error) {
+        console.error('Error loading data:', error);
+      }
     };
     loadData();
   }, []);
-  
-  // Handle tab change
-  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
-    setTabValue(newValue);
-  };
   
   // Navigate to add page
   const handleAddNew = (type: string) => {
@@ -235,65 +184,85 @@ const Departments: React.FC = () => {
   };
   
   // Handle delete item
-  const handleDelete = (type: string, id: string) => {
-    setItemToDelete({ type, id });
+  const handleDelete = (type: string, id: string, name: string) => {
+    setItemToDelete({ type, id, name });
     setDeleteDialogOpen(true);
   };
   
   // Confirm delete
   const confirmDelete = async () => {
     const { type, id } = itemToDelete;
-    await deleteWorkplaceItem(type, id);
-    // reload data
-    setDepartments(await getWorkplaceItems<Department>('department'));
-    setBuildings(await getWorkplaceItems<Building>('building'));
-    setFloors(await getWorkplaceItems<Floor>('floor'));
-    setRooms(await getWorkplaceItems<Room>('room'));
-    setSuccessMessage('ลบข้อมูลสำเร็จ');
-    setDeleteDialogOpen(false);
+    try {
+      await deleteWorkplaceItem(type, id);
+      // reload data
+      setDepartments(await getWorkplaceItems<Department>('department'));
+      setBuildings(await getWorkplaceItems<Building>('building'));
+      setFloors(await getWorkplaceItems<Floor>('floor'));
+      setRooms(await getWorkplaceItems<Room>('room'));
+      setSuccessMessage('ลบข้อมูลสำเร็จ');
+      setDeleteDialogOpen(false);
+    } catch (error) {
+      console.error('Error deleting item:', error);
+    }
   };
   
   // Save edited department
   const saveEditedDepartment = async () => {
     if (editedDepartment) {
-      await editWorkplaceItem('department', editedDepartment.id, editedDepartment);
-      setDepartments(await getWorkplaceItems<Department>('department'));
-      setEditDepartmentDialog(false);
-      setEditedDepartment(null);
-      setSuccessMessage('แก้ไขข้อมูลสำเร็จ');
+      try {
+        await editWorkplaceItem('department', editedDepartment.id, editedDepartment);
+        setDepartments(await getWorkplaceItems<Department>('department'));
+        setEditDepartmentDialog(false);
+        setEditedDepartment(null);
+        setSuccessMessage('แก้ไขข้อมูลสำเร็จ');
+      } catch (error) {
+        console.error('Error editing department:', error);
+      }
     }
   };
   
   // Save edited building
   const saveEditedBuilding = async () => {
     if (editedBuilding) {
-      await editWorkplaceItem('building', editedBuilding.id, editedBuilding);
-      setBuildings(await getWorkplaceItems<Building>('building'));
-      setEditBuildingDialog(false);
-      setEditedBuilding(null);
-      setSuccessMessage('แก้ไขข้อมูลสำเร็จ');
+      try {
+        await editWorkplaceItem('building', editedBuilding.id, editedBuilding);
+        setBuildings(await getWorkplaceItems<Building>('building'));
+        setEditBuildingDialog(false);
+        setEditedBuilding(null);
+        setSuccessMessage('แก้ไขข้อมูลสำเร็จ');
+      } catch (error) {
+        console.error('Error editing building:', error);
+      }
     }
   };
   
   // Save edited floor
   const saveEditedFloor = async () => {
     if (editedFloor) {
-      await editWorkplaceItem('floor', editedFloor.id, editedFloor);
-      setFloors(await getWorkplaceItems<Floor>('floor'));
-      setEditFloorDialog(false);
-      setEditedFloor(null);
-      setSuccessMessage('แก้ไขข้อมูลสำเร็จ');
+      try {
+        await editWorkplaceItem('floor', editedFloor.id, editedFloor);
+        setFloors(await getWorkplaceItems<Floor>('floor'));
+        setEditFloorDialog(false);
+        setEditedFloor(null);
+        setSuccessMessage('แก้ไขข้อมูลสำเร็จ');
+      } catch (error) {
+        console.error('Error editing floor:', error);
+      }
     }
   };
   
   // Save edited room
   const saveEditedRoom = async () => {
     if (editedRoom) {
-      await editWorkplaceItem('room', editedRoom.id, editedRoom);
-      setRooms(await getWorkplaceItems<Room>('room'));
-      setEditRoomDialog(false);
-      setEditedRoom(null);
-      setSuccessMessage('แก้ไขข้อมูลสำเร็จ');
+      try {
+              await editWorkplaceItem('room', editedRoom.id, editedRoom);
+        setRooms(await getWorkplaceItems<Room>('room'));
+        setEditRoomDialog(false);
+        setEditedRoom(null);
+        setSuccessMessage('แก้ไขข้อมูลสำเร็จ');
+      } catch (error) {
+        console.error('Error editing room:', error);
+      }
     }
   };
   
@@ -309,237 +278,434 @@ const Departments: React.FC = () => {
     return department ? department.name : 'ไม่ระบุ';
   };
   
-  // Helper function to get building and floor name for a room
-  const getRoomLocation = (floorId: string) => {
+  // Helper function to get floor name by ID
+  const getFloorName = (floorId: string) => {
     const floor = floors.find(f => f.id === floorId);
-    if (!floor) return 'ไม่ระบุ';
-    
-    const building = buildings.find(b => b.id === floor.buildingId);
-    return `${building?.name || 'ไม่ระบุ'} ชั้น ${floor.number} (${floor.name})`;
+    return floor ? `${floor.name} (ชั้น ${floor.number})` : 'ไม่ระบุ';
   };
-  
-  return (
-    <Box sx={{ width: '100%' }}>
-      <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h5" component="h1" gutterBottom>
-          จัดการแผนกและสถานที่
-        </Typography>
-        <Typography variant="body1" color="text.secondary" paragraph>
-          จัดการข้อมูลแผนก อาคาร ชั้น และห้องตรวจรักษาในโรงพยาบาล
-        </Typography>
-        
-        <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-          <Tabs value={tabValue} onChange={handleTabChange} aria-label="facility management tabs">
-            <Tab icon={<DepartmentIcon />} label="แผนก" />
-            <Tab icon={<BuildingIcon />} label="อาคาร" />
-            <Tab icon={<FloorIcon />} label="ชั้น" />
-            <Tab icon={<RoomIcon />} label="ห้องตรวจ" />
-          </Tabs>
-        </Box>
-        
-        {/* Departments Tab */}
-        <TabPanel value={tabValue} index={0}>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-            <Button 
-              variant="contained" 
-              startIcon={<AddIcon />}
-              onClick={() => handleAddNew('department')}
-            >
-              เพิ่มแผนกใหม่
-            </Button>
+
+  // Get department statistics with building, floor, and room info
+  const getDepartmentStats = (departmentId: string) => {
+    const departmentRooms = rooms.filter(r => r.departmentId === departmentId);
+    const floorIds = [...new Set(departmentRooms.map(r => r.floorId))];
+    const departmentFloors = floors.filter(f => floorIds.includes(f.id));
+    const buildingIds = [...new Set(departmentFloors.map(f => f.buildingId))];
+    const departmentBuildings = buildings.filter(b => buildingIds.includes(b.id));
+    
+    return {
+      buildings: departmentBuildings,
+      floors: departmentFloors,
+      rooms: departmentRooms,
+      totalCapacity: departmentRooms.reduce((sum, room) => sum + (room.capacity || 0), 0)
+    };
+  };
+
+  // Render department card with full info
+  const renderDepartmentCard = (department: Department) => {
+    const stats = getDepartmentStats(department.id);
+    
+    return (
+      <Card key={department.id} elevation={2} sx={{ mb: 2 }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <Avatar sx={{ bgcolor: department.color || '#2196f3', mr: 2 }}>
+                <DepartmentIcon />
+              </Avatar>
+              <Box>
+                <Typography variant="h6" fontWeight="bold">
+                  {department.name}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  รหัส: {department.id}
+                </Typography>
+              </Box>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Chip 
+                label={department.isActive ? 'เปิดใช้งาน' : 'ปิดใช้งาน'} 
+                color={department.isActive ? 'success' : 'default'}
+                size="small"
+              />
+              <IconButton 
+                size="small" 
+                color="primary"
+                onClick={() => handleEdit('department', department.id)}
+              >
+                <EditIcon fontSize="small" />
+              </IconButton>
+              <IconButton 
+                size="small" 
+                color="error"
+                onClick={() => handleDelete('department', department.id, department.name)}
+              >
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
           </Box>
-          
-          <TableContainer>
-            <Table>
-                              <TableHead>
-                  <TableRow>
-                    <TableCell>รหัส</TableCell>
-                    <TableCell>ชื่อแผนก</TableCell>
-                    <TableCell>รายละเอียด</TableCell>
-                    <TableCell>สี</TableCell>
-                    <TableCell>สถานะ</TableCell>
-                    <TableCell>จัดการ</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {departments.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} align="center">ไม่พบข้อมูลแผนก</TableCell>
-                    </TableRow>
-                  ) : (
-                    departments.map((department) => (
-                      <TableRow key={department.id}>
-                        <TableCell>{department.id}</TableCell>
-                        <TableCell>{department.name}</TableCell>
-                        <TableCell>{department.description || '-'}</TableCell>
-                        <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <Box 
-                              sx={{ 
-                                width: 16, 
-                                height: 16, 
-                                borderRadius: '50%', 
-                                bgcolor: department.color || '#ccc',
-                                mr: 1,
-                                border: '1px solid #ccc'
-                              }} 
-                            />
-                            {department.color || '-'}
-                          </Box>
-                        </TableCell>
-                        <TableCell>
-                          <Chip 
-                            label={department.isActive ? 'เปิดใช้งาน' : 'ปิดใช้งาน'} 
-                            color={department.isActive ? 'success' : 'default'}
-                            size="small"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <IconButton 
-                            size="small" 
-                            color="primary"
-                            onClick={() => handleEdit('department', department.id)}
-                          >
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                          <IconButton 
-                            size="small" 
-                            color="error"
-                            onClick={() => handleDelete('department', department.id)}
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </TabPanel>
-          
-          {/* Buildings Tab */}
-          <TabPanel value={tabValue} index={1}>
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-              <Button 
-                variant="contained" 
-                startIcon={<AddIcon />}
-                onClick={() => handleAddNew('building')}
-              >
-                เพิ่มอาคารใหม่
-              </Button>
+
+          {department.description && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              {department.description}
+            </Typography>
+          )}
+
+          {/* Statistics Summary */}
+          <Box sx={{ display: 'flex', gap: 3, mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <BuildingIcon sx={{ color: '#ff9800', mr: 1 }} />
+              <Typography variant="body2">
+                <strong>{stats.buildings.length}</strong> อาคาร
+              </Typography>
             </Box>
-            
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>รหัส</TableCell>
-                    <TableCell>ชื่ออาคาร</TableCell>
-                    <TableCell>ที่อยู่</TableCell>
-                    <TableCell>รายละเอียด</TableCell>
-                    <TableCell>สถานะ</TableCell>
-                    <TableCell>จัดการ</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {buildings.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} align="center">ไม่พบข้อมูลอาคาร</TableCell>
-                    </TableRow>
-                  ) : (
-                    buildings.map((building) => (
-                      <TableRow key={building.id}>
-                        <TableCell>{building.id}</TableCell>
-                        <TableCell>{building.name}</TableCell>
-                        <TableCell>{building.address || '-'}</TableCell>
-                        <TableCell>{building.description || '-'}</TableCell>
-                        <TableCell>
-                          <Chip 
-                            label={building.isActive ? 'เปิดใช้งาน' : 'ปิดใช้งาน'} 
-                            color={building.isActive ? 'success' : 'default'}
-                            size="small"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <IconButton 
-                            size="small" 
-                            color="primary"
-                            onClick={() => handleEdit('building', building.id)}
-                          >
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                          <IconButton 
-                            size="small" 
-                            color="error"
-                            onClick={() => handleDelete('building', building.id)}
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </TabPanel>
-          
-          {/* Floors Tab */}
-          <TabPanel value={tabValue} index={2}>
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-              <Button 
-                variant="contained" 
-                startIcon={<AddIcon />}
-                onClick={() => handleAddNew('floor')}
-                disabled={buildings.length === 0}
-              >
-                เพิ่มชั้นใหม่
-              </Button>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <FloorIcon sx={{ color: '#4caf50', mr: 1 }} />
+              <Typography variant="body2">
+                <strong>{stats.floors.length}</strong> ชั้น
+              </Typography>
             </Box>
-            
-            {buildings.length === 0 && (
-              <Box sx={{ textAlign: 'center', my: 3 }}>
-                <Typography color="text.secondary">
-                  กรุณาเพิ่มอาคารก่อนเพิ่มชั้น
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <RoomIcon sx={{ color: '#9c27b0', mr: 1 }} />
+              <Typography variant="body2">
+                <strong>{stats.rooms.length}</strong> ห้อง
+              </Typography>
+            </Box>
+            {stats.totalCapacity > 0 && (
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <Typography variant="body2" color="primary">
+                  ความจุรวม: <strong>{stats.totalCapacity}</strong> คน
                 </Typography>
               </Box>
             )}
-            
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>รหัส</TableCell>
-                    <TableCell>อาคาร</TableCell>
-                    <TableCell>ชั้น</TableCell>
-                    <TableCell>ชื่อชั้น</TableCell>
-                    <TableCell>รายละเอียด</TableCell>
-                    <TableCell>สถานะ</TableCell>
-                    <TableCell>จัดการ</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {floors.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} align="center">ไม่พบข้อมูลชั้น</TableCell>
-                    </TableRow>
-                  ) : (
-                    floors.map((floor) => (
-                      <TableRow key={floor.id}>
-                        <TableCell>{floor.id}</TableCell>
-                        <TableCell>{getBuildingName(floor.buildingId)}</TableCell>
-                        <TableCell>{floor.number}</TableCell>
-                        <TableCell>{floor.name}</TableCell>
-                        <TableCell>{floor.description || '-'}</TableCell>
-                        <TableCell>
-                          <Chip 
-                            label={floor.isActive ? 'เปิดใช้งาน' : 'ปิดใช้งาน'} 
-                            color={floor.isActive ? 'success' : 'default'}
-                            size="small"
-                          />
-                        </TableCell>
-                        <TableCell>
+          </Box>
+
+          {/* Detailed Location Info */}
+          {stats.buildings.length > 0 && (
+            <Accordion>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="subtitle2">
+                  รายละเอียดตำแหน่ง ({stats.buildings.length} อาคาร)
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                {stats.buildings.map((building) => {
+                  const buildingFloors = stats.floors.filter(f => f.buildingId === building.id);
+                  return (
+                    <Box key={building.id} sx={{ mb: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                        <BuildingIcon sx={{ color: '#ff9800', mr: 1 }} />
+                        <Typography variant="subtitle2" fontWeight="bold">
+                          {building.name}
+                        </Typography>
+                        {building.address && (
+                          <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                            ({building.address})
+                          </Typography>
+                        )}
+                      </Box>
+                      
+                      {buildingFloors.map((floor) => {
+                        const floorRooms = stats.rooms.filter(r => r.floorId === floor.id);
+                        return (
+                          <Box key={floor.id} sx={{ ml: 3, mb: 1 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                              <FloorIcon sx={{ color: '#4caf50', mr: 1, fontSize: 16 }} />
+                              <Typography variant="body2">
+                                ชั้น {floor.number} - {floor.name} ({floorRooms.length} ห้อง)
+                              </Typography>
+                            </Box>
+                            
+                            {floorRooms.length > 0 && (
+                              <Box sx={{ ml: 3, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                {floorRooms.map((room) => (
+                                  <Chip
+                                    key={room.id}
+                                    label={`${room.name}${room.capacity ? ` (${room.capacity})` : ''}`}
+                                    size="small"
+                                    variant="outlined"
+                                    icon={<RoomIcon />}
+                                  />
+                                ))}
+                              </Box>
+                            )}
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                  );
+                })}
+              </AccordionDetails>
+            </Accordion>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+
+  return (
+    <Box sx={{ width: '100%', bgcolor: '#f5f5f5', minHeight: '100vh', py: 3 }}>
+      <Box sx={{ maxWidth: 1200, mx: 'auto', px: 3 }}>
+        {/* Header */}
+        <Paper elevation={1} sx={{ p: 3, mb: 3, bgcolor: 'white' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+            <Box>
+              <Typography variant="h4" component="h1" fontWeight="bold" gutterBottom>
+                จัดการแผนกและสถานที่
+              </Typography>
+              <Typography variant="body1" color="text.secondary">
+                จัดการข้อมูลแผนก อาคาร ชั้น และห้องตรวจรักษาในโรงพยาบาล
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button 
+                variant="outlined" 
+                startIcon={<BuildingIcon />}
+                onClick={() => handleAddNew('building')}
+                size="large"
+              >
+                เพิ่มอาคาร
+              </Button>
+              <Button 
+                variant="contained" 
+                startIcon={<AddIcon />}
+                onClick={() => handleAddNew('department')}
+                size="large"
+              >
+                เพิ่มแผนก
+              </Button>
+            </Box>
+          </Box>
+
+          {/* Quick Stats */}
+          <Grid container spacing={2}>
+            <Grid item xs={6} md={3}>
+              <Card variant="outlined" sx={{ textAlign: 'center', p: 2 }}>
+                <DepartmentIcon sx={{ fontSize: 32, color: '#2196f3', mb: 1 }} />
+                <Typography variant="h4" color="primary" fontWeight="bold">
+                  {departments.length}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  แผนก
+                </Typography>
+              </Card>
+            </Grid>
+            <Grid item xs={6} md={3}>
+              <Card variant="outlined" sx={{ textAlign: 'center', p: 2 }}>
+                <BuildingIcon sx={{ fontSize: 32, color: '#ff9800', mb: 1 }} />
+                <Typography variant="h4" color="warning.main" fontWeight="bold">
+                  {buildings.length}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  อาคาร
+                </Typography>
+              </Card>
+            </Grid>
+            <Grid item xs={6} md={3}>
+              <Card variant="outlined" sx={{ textAlign: 'center', p: 2 }}>
+                <FloorIcon sx={{ fontSize: 32, color: '#4caf50', mb: 1 }} />
+                <Typography variant="h4" color="success.main" fontWeight="bold">
+                  {floors.length}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  ชั้น
+                </Typography>
+              </Card>
+            </Grid>
+            <Grid item xs={6} md={3}>
+              <Card variant="outlined" sx={{ textAlign: 'center', p: 2 }}>
+                <RoomIcon sx={{ fontSize: 32, color: '#9c27b0', mb: 1 }} />
+                <Typography variant="h4" color="secondary.main" fontWeight="bold">
+                  {rooms.length}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  ห้อง
+                </Typography>
+              </Card>
+            </Grid>
+          </Grid>
+        </Paper>
+
+        {/* Departments Section */}
+        <Paper elevation={1} sx={{ p: 3, mb: 3, bgcolor: 'white' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+            <Typography variant="h5" fontWeight="bold">
+              รายการแผนก
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {departments.length} แผนก
+            </Typography>
+          </Box>
+
+          {departments.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <DepartmentIcon sx={{ fontSize: 64, color: '#e0e0e0', mb: 2 }} />
+              <Typography variant="h6" color="text.secondary" gutterBottom>
+                ยังไม่มีแผนกในระบบ
+              </Typography>
+              <Button 
+                variant="contained" 
+                startIcon={<AddIcon />}
+                onClick={() => handleAddNew('department')}
+                sx={{ mt: 2 }}
+              >
+                เพิ่มแผนกแรก
+              </Button>
+            </Box>
+          ) : (
+            departments.map(renderDepartmentCard)
+          )}
+        </Paper>
+
+        {/* Buildings Section */}
+        <Paper elevation={1} sx={{ p: 3, mb: 3, bgcolor: 'white' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+            <Typography variant="h5" fontWeight="bold">
+              รายการอาคาร
+            </Typography>
+            <Button 
+              variant="outlined" 
+              startIcon={<AddIcon />}
+              onClick={() => handleAddNew('building')}
+            >
+              เพิ่มอาคาร
+            </Button>
+          </Box>
+
+          {buildings.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <BuildingIcon sx={{ fontSize: 64, color: '#e0e0e0', mb: 2 }} />
+              <Typography variant="h6" color="text.secondary">
+                ยังไม่มีอาคารในระบบ
+              </Typography>
+            </Box>
+          ) : (
+            <Grid container spacing={2}>
+              {buildings.map((building) => {
+                const buildingFloors = floors.filter(f => f.buildingId === building.id);
+                const buildingRooms = rooms.filter(r => buildingFloors.some(f => f.id === r.floorId));
+                
+                return (
+                  <Grid item xs={12} md={6} lg={4} key={building.id}>
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                        <Avatar sx={{ bgcolor: '#ff9800', mr: 2 }}>
+                              <BuildingIcon />
+                            </Avatar>
+                            <Box>
+                              <Typography variant="h6" fontWeight="bold">
+                                {building.name}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary">
+                                {building.id}
+                              </Typography>
+                            </Box>
+                          </Box>
+                          <Box sx={{ display: 'flex', gap: 0.5 }}>
+                            <IconButton 
+                              size="small" 
+                              color="primary"
+                              onClick={() => handleEdit('building', building.id)}
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton 
+                              size="small" 
+                              color="error"
+                              onClick={() => handleDelete('building', building.id, building.name)}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
+                        </Box>
+
+                        {building.address && (
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            <LocationIcon sx={{ fontSize: 16, mr: 0.5 }} />
+                            {building.address}
+                          </Typography>
+                        )}
+
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                          <Box sx={{ textAlign: 'center' }}>
+                            <Typography variant="h6" color="success.main">
+                              {buildingFloors.length}
+                            </Typography>
+                            <Typography variant="caption">ชั้น</Typography>
+                          </Box>
+                          <Box sx={{ textAlign: 'center' }}>
+                            <Typography variant="h6" color="secondary.main">
+                              {buildingRooms.length}
+                            </Typography>
+                            <Typography variant="caption">ห้อง</Typography>
+                          </Box>
+                          <Box sx={{ textAlign: 'center' }}>
+                            <Chip 
+                              label={building.isActive ? 'เปิด' : 'ปิด'} 
+                              color={building.isActive ? 'success' : 'default'}
+                              size="small"
+                            />
+                          </Box>
+                        </Box>
+
+                        {buildingFloors.length > 0 && (
+                          <Box>
+                            <Typography variant="caption" color="text.secondary">
+                              ชั้น: {buildingFloors.map(f => f.number).sort((a, b) => a - b).join(', ')}
+                            </Typography>
+                          </Box>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                );
+              })}
+            </Grid>
+          )}
+        </Paper>
+
+        {/* Floors and Rooms Section */}
+        <Grid container spacing={3}>
+          {/* Floors */}
+          <Grid item xs={12} md={6}>
+            <Paper elevation={1} sx={{ p: 3, bgcolor: 'white' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+                <Typography variant="h5" fontWeight="bold">
+                  รายการชั้น
+                </Typography>
+                <Button 
+                  variant="outlined" 
+                  startIcon={<AddIcon />}
+                  onClick={() => handleAddNew('floor')}
+                  disabled={buildings.length === 0}
+                  size="small"
+                >
+                  เพิ่มชั้น
+                </Button>
+              </Box>
+
+              {floors.length === 0 ? (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <FloorIcon sx={{ fontSize: 48, color: '#e0e0e0', mb: 2 }} />
+                  <Typography variant="body2" color="text.secondary">
+                    {buildings.length === 0 ? 'กรุณาเพิ่มอาคารก่อน' : 'ยังไม่มีชั้นในระบบ'}
+                  </Typography>
+                </Box>
+              ) : (
+                <List dense>
+                  {floors.map((floor) => {
+                    const floorRooms = rooms.filter(r => r.floorId === floor.id);
+                    return (
+                      <ListItem key={floor.id} divider>
+                        <ListItemIcon>
+                          <FloorIcon color="success" />
+                        </ListItemIcon>
+                        <ListItemText
+                          primary={`ชั้น ${floor.number} - ${floor.name}`}
+                          secondary={`${getBuildingName(floor.buildingId)} • ${floorRooms.length} ห้อง`}
+                        />
+                        <ListItemSecondaryAction>
                           <IconButton 
                             size="small" 
                             color="primary"
@@ -550,76 +716,83 @@ const Departments: React.FC = () => {
                           <IconButton 
                             size="small" 
                             color="error"
-                            onClick={() => handleDelete('floor', floor.id)}
+                            onClick={() => handleDelete('floor', floor.id, `ชั้น ${floor.number} - ${floor.name}`)}
                           >
                             <DeleteIcon fontSize="small" />
                           </IconButton>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </TabPanel>
-          
-          {/* Rooms Tab */}
-          <TabPanel value={tabValue} index={3}>
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-              <Button 
-                variant="contained" 
-                startIcon={<AddIcon />}
-                onClick={() => handleAddNew('room')}
-                disabled={departments.length === 0 || floors.length === 0}
-              >
-                เพิ่มห้องใหม่
-              </Button>
-            </Box>
-            
-            {(departments.length === 0 || floors.length === 0) && (
-              <Box sx={{ textAlign: 'center', my: 3 }}>
-                <Typography color="text.secondary">
-                  กรุณาเพิ่มแผนกและชั้นก่อนเพิ่มห้อง
+                        </ListItemSecondaryAction>
+                      </ListItem>
+                    );
+                  })}
+                </List>
+              )}
+            </Paper>
+          </Grid>
+
+          {/* Rooms */}
+          <Grid item xs={12} md={6}>
+            <Paper elevation={1} sx={{ p: 3, bgcolor: 'white' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+                <Typography variant="h5" fontWeight="bold">
+                  รายการห้อง
                 </Typography>
+                <Button 
+                  variant="outlined" 
+                  startIcon={<AddIcon />}
+                  onClick={() => handleAddNew('room')}
+                  disabled={departments.length === 0 || floors.length === 0}
+                  size="small"
+                >
+                  เพิ่มห้อง
+                </Button>
               </Box>
-            )}
-            
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>รหัส</TableCell>
-                    <TableCell>ชื่อห้อง</TableCell>
-                    <TableCell>แผนก</TableCell>
-                    <TableCell>ตำแหน่ง</TableCell>
-                    <TableCell>ความจุ</TableCell>
-                    <TableCell>รายละเอียด</TableCell>
-                    <TableCell>สถานะ</TableCell>
-                    <TableCell>จัดการ</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {rooms.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} align="center">ไม่พบข้อมูลห้อง</TableCell>
-                    </TableRow>
-                  ) : (
-                    rooms.map((room) => (
-                      <TableRow key={room.id}>
-                        <TableCell>{room.id}</TableCell>
-                        <TableCell>{room.name}</TableCell>
-                        <TableCell>{getDepartmentName(room.departmentId)}</TableCell>
-                        <TableCell>{getRoomLocation(room.floorId)}</TableCell>
-                        <TableCell>{room.capacity || '-'}</TableCell>
-                        <TableCell>{room.description || '-'}</TableCell>
-                        <TableCell>
-                          <Chip 
-                            label={room.isActive ? 'เปิดใช้งาน' : 'ปิดใช้งาน'} 
-                            color={room.isActive ? 'success' : 'default'}
-                            size="small"
-                          />
-                        </TableCell>
-                        <TableCell>
+
+              {rooms.length === 0 ? (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <RoomIcon sx={{ fontSize: 48, color: '#e0e0e0', mb: 2 }} />
+                  <Typography variant="body2" color="text.secondary">
+                    {(departments.length === 0 || floors.length === 0) 
+                      ? 'กรุณาเพิ่มแผนกและชั้นก่อน' 
+                      : 'ยังไม่มีห้องในระบบ'}
+                  </Typography>
+                </Box>
+              ) : (
+                <List dense>
+                  {rooms.slice(0, 10).map((room) => {
+                    const department = departments.find(d => d.id === room.departmentId);
+                    return (
+                      <ListItem key={room.id} divider>
+                        <ListItemIcon>
+                          <RoomIcon color="secondary" />
+                        </ListItemIcon>
+                        <ListItemText
+                          primary={
+                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                              {department && (
+                                <Box 
+                                  sx={{ 
+                                    width: 12, 
+                                    height: 12, 
+                                    borderRadius: '50%', 
+                                    bgcolor: department.color || '#ccc',
+                                    mr: 1
+                                  }} 
+                                />
+                              )}
+                              {room.name}
+                              {room.capacity && (
+                                <Chip 
+                                  label={`${room.capacity} คน`} 
+                                  size="small" 
+                                  variant="outlined"
+                                  sx={{ ml: 1 }}
+                                />
+                              )}
+                            </Box>
+                          }
+                          secondary={`${getDepartmentName(room.departmentId)} • ${getFloorName(room.floorId)}`}
+                        />
+                        <ListItemSecondaryAction>
                           <IconButton 
                             size="small" 
                             color="primary"
@@ -630,19 +803,72 @@ const Departments: React.FC = () => {
                           <IconButton 
                             size="small" 
                             color="error"
-                            onClick={() => handleDelete('room', room.id)}
+                            onClick={() => handleDelete('room', room.id, room.name)}
                           >
                             <DeleteIcon fontSize="small" />
                           </IconButton>
-                        </TableCell>
-                      </TableRow>
-                    ))
+                        </ListItemSecondaryAction>
+                      </ListItem>
+                    );
+                  })}
+                  {rooms.length > 10 && (
+                    <ListItem>
+                      <ListItemText 
+                        primary={
+                          <Typography variant="body2" color="text.secondary" align="center">
+                            และอีก {rooms.length - 10} ห้อง...
+                          </Typography>
+                        }
+                      />
+                    </ListItem>
                   )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </TabPanel>
-      </Paper>
+                </List>
+              )}
+            </Paper>
+          </Grid>
+        </Grid>
+
+        {/* Floating Action Buttons */}
+        <Box sx={{ position: 'fixed', bottom: 24, right: 24, display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Tooltip title="เพิ่มห้อง" placement="left">
+            <Fab 
+              color="secondary" 
+              size="small"
+              onClick={() => handleAddNew('room')}
+              disabled={departments.length === 0 || floors.length === 0}
+            >
+              <RoomIcon />
+            </Fab>
+          </Tooltip>
+          <Tooltip title="เพิ่มชั้น" placement="left">
+            <Fab 
+              color="success" 
+              size="small"
+              onClick={() => handleAddNew('floor')}
+              disabled={buildings.length === 0}
+            >
+              <FloorIcon />
+            </Fab>
+          </Tooltip>
+          <Tooltip title="เพิ่มอาคาร" placement="left">
+            <Fab 
+              color="warning" 
+              size="small"
+              onClick={() => handleAddNew('building')}
+            >
+              <BuildingIcon />
+            </Fab>
+          </Tooltip>
+          <Tooltip title="เพิ่มแผนก" placement="left">
+            <Fab 
+              color="primary"
+              onClick={() => handleAddNew('department')}
+            >
+              <AddIcon />
+            </Fab>
+          </Tooltip>
+        </Box>
+      </Box>
       
       {/* Delete Confirmation Dialog */}
       <Dialog
@@ -652,7 +878,8 @@ const Departments: React.FC = () => {
         <DialogTitle>ยืนยันการลบ</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            คุณต้องการลบรายการนี้ใช่หรือไม่? การดำเนินการนี้ไม่สามารถย้อนกลับได้
+            คุณต้องการลบ "{itemToDelete.name}" ใช่หรือไม่? 
+            การดำเนินการนี้ไม่สามารถย้อนกลับได้
           </DialogContentText>
         </DialogContent>
         <DialogActions>
@@ -732,7 +959,7 @@ const Departments: React.FC = () => {
       <Dialog
         open={editBuildingDialog}
         onClose={() => setEditBuildingDialog(false)}
-               maxWidth="sm"
+        maxWidth="sm"
         fullWidth
       >
         <DialogTitle>แก้ไขข้อมูลอาคาร</DialogTitle>
@@ -753,7 +980,7 @@ const Departments: React.FC = () => {
               value={editedBuilding?.address || ''}
               onChange={(e) => setEditedBuilding(prev => prev ? {...prev, address: e.target.value} : null)}
             />
-            <TextField
+                        <TextField
               label="รายละเอียด"
               fullWidth
               margin="normal"
@@ -881,7 +1108,18 @@ const Departments: React.FC = () => {
             >
               {departments.map((department) => (
                 <MenuItem key={department.id} value={department.id}>
-                  {department.name}
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <Box 
+                      sx={{ 
+                        width: 16, 
+                        height: 16, 
+                        borderRadius: '50%', 
+                        bgcolor: department.color || '#ccc',
+                        mr: 1
+                      }} 
+                    />
+                    {department.name}
+                  </Box>
                 </MenuItem>
               ))}
             </TextField>
@@ -940,7 +1178,7 @@ const Departments: React.FC = () => {
       {/* Success Message Snackbar */}
       <Snackbar
         open={!!successMessage}
-        autoHideDuration={2500}
+        autoHideDuration={3000}
         onClose={() => setSuccessMessage(null)}
         anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
       >

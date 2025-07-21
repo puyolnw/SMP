@@ -1,72 +1,70 @@
-import React, { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { DebugManager } from '../../../../utils/Debuger';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { usePageDebug } from '../../../../hooks/usePageDebug';
 import { TableSchema } from '../../../../types/Debug';
+import { DebugManager } from '../../../../utils/Debuger';
 import {
   Box,
   Paper,
   Typography,
   Button,
   Grid,
-  Divider,
-  Chip,
   Avatar,
+  Chip,
+  Card,
+  CardContent,
   List,
   ListItem,
   ListItemText,
-  Card,
-  CardContent,
-  Alert
+  ListItemIcon,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Alert,
+  IconButton,
+  Tooltip
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
   Edit as EditIcon,
+  Delete as DeleteIcon,
+  Person as PersonIcon,
+  Work as WorkIcon,
+  Security as SecurityIcon,
   Phone as PhoneIcon,
   Email as EmailIcon,
-  Work as WorkIcon,
-  School as SchoolIcon,
+  Badge as BadgeIcon,
   Schedule as ScheduleIcon,
-  LocalHospital as LocalHospitalIcon,
-  Badge as BadgeIcon
+  MedicalServices as MedicalIcon,
+  LocationOn as LocationIcon,
+  CalendarToday as CalendarIcon,
+  AccountCircle as AccountIcon
 } from '@mui/icons-material';
 
 interface Employee {
   id: string;
-  // ข้อมูลส่วนตัว
   prefix: string;
   firstNameTh: string;
   lastNameTh: string;
-  firstNameEn?: string;
-  lastNameEn?: string;
   gender: string;
-  birthDate: string;
-  age: number;
-  nationalId: string;
-  address: {
-    houseNumber: string;
-    village?: string;
-    street?: string;
-    subDistrict: string;
-    district: string;
-    province: string;
-    postalCode: string;
-  };
   phone: string;
-  email?: string;
+  nationalId: string;
   profileImage?: string;
-  
-  // ข้อมูลการทำงาน
   employeeType: 'doctor' | 'nurse' | 'staff';
   departmentId: string;
   position: string;
-  specialties?: string[];
   licenseNumber?: string;
-  education?: string[];
+  specialties?: string[];
   startDate: string;
   status: 'active' | 'inactive' | 'leave';
+  username: string;
+  password: string;
+  role: 'admin' | 'doctor' | 'nurse' | 'staff';
+  email?: string;
+  address?: string;
   workingDays?: string[];
-    workingHours?: {
+  workingHours?: {
     start: string;
     end: string;
   };
@@ -81,22 +79,23 @@ interface Department {
 }
 
 const DataEmployee: React.FC = () => {
-  const location = useLocation();
   const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const debugManager = DebugManager.getInstance();
   
-  // รับข้อมูลพนักงานจาก state หรือ localStorage
-  const employeeFromState = location.state?.employee as Employee | undefined;
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [department, setDepartment] = useState<Department | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  
+  const [isLoading, setIsLoading] = useState(true);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [success, setSuccess] = useState(false);
+
   // Debug setup
   const requiredTables: TableSchema[] = [
     {
       tableName: 'employees',
-      columns: ['id', 'prefix', 'firstNameTh', 'lastNameTh', 'firstNameEn', 'lastNameEn', 'gender', 'birthDate', 'age', 'nationalId', 'address', 'phone', 'email', 'profileImage', 'employeeType', 'departmentId', 'position', 'specialties', 'licenseNumber', 'education', 'startDate', 'status', 'workingDays', 'workingHours'],
-      description: 'ข้อมูลพนักงานทั้งหมด (หมอ พยาบาล เจ้าหน้าที่)'
+      columns: ['id', 'prefix', 'firstNameTh', 'lastNameTh', 'gender', 'phone', 'nationalId', 'profileImage', 'employeeType', 'departmentId', 'position', 'licenseNumber', 'specialties', 'startDate', 'status', 'username', 'password', 'role', 'email', 'address', 'workingDays', 'workingHours'],
+      description: 'ข้อมูลพนักงานทั้งหมด'
     },
     {
       tableName: 'departments',
@@ -108,387 +107,356 @@ const DataEmployee: React.FC = () => {
   usePageDebug('ข้อมูลพนักงาน', requiredTables);
 
   useEffect(() => {
-    // ถ้ามีข้อมูลจาก state ให้ใช้ข้อมูลนั้น
-    if (employeeFromState) {
-      setEmployee(employeeFromState);
-      
-      // ดึงข้อมูลแผนก
-      const departmentsData = debugManager.getData('departments') as Department[];
-      const dept = departmentsData.find(d => d.id === employeeFromState.departmentId) || null;
-      setDepartment(dept);
-      return;
-    }
-    
-    // ถ้าไม่มีข้อมูลจาก state ให้ดึงจาก URL parameter
-    const urlParams = new URLSearchParams(location.search);
-    const employeeId = urlParams.get('id');
-    
-    if (employeeId) {
-      // ดึงข้อมูลพนักงานจาก localStorage
-      const employeesData = debugManager.getData('employees') as Employee[];
-      const foundEmployee = employeesData.find(e => e.id === employeeId) || null;
-      
-      if (foundEmployee) {
-        setEmployee(foundEmployee);
+    const loadEmployeeData = () => {
+      try {
+        setIsLoading(true);
         
-        // ดึงข้อมูลแผนก
-        const departmentsData = debugManager.getData('departments') as Department[];
-        const dept = departmentsData.find(d => d.id === foundEmployee.departmentId) || null;
-        setDepartment(dept);
-      } else {
-        setNotFound(true);
-      }
-    } else {
-      setNotFound(true);
-    }
-  }, [location, employeeFromState, debugManager]);
+        // ลองดึงข้อมูลจาก location state ก่อน
+        const stateEmployee = location.state?.employee as Employee;
+        
+        if (stateEmployee) {
+          setEmployee(stateEmployee);
+          loadDepartmentData(stateEmployee.departmentId);
+          setIsLoading(false);
+          return;
+        }
 
-  const handleBack = () => {
-    navigate('/member/employee/searchemployee');
-  };
+        // ถ้ามี id ใน url ให้ดึงจาก localStorage
+        if (id) {
+          const employees = debugManager.getData('employees') as Employee[];
+          const foundEmployee = employees.find(emp => emp.id === id);
+          
+          if (foundEmployee) {
+            setEmployee(foundEmployee);
+            loadDepartmentData(foundEmployee.departmentId);
+          } else {
+            // ไม่พบข้อมูล
+            setEmployee(null);
+          }
+        }
+        
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Error loading employee data:', error);
+        setIsLoading(false);
+      }
+    };
+
+    const loadDepartmentData = (departmentId: string) => {
+      const departments = debugManager.getData('departments') as Department[];
+      const foundDepartment = departments.find(dept => dept.id === departmentId);
+      setDepartment(foundDepartment || null);
+    };
+
+    loadEmployeeData();
+  }, [id, location.state, debugManager]);
 
   const handleEdit = () => {
+    navigate('/member/employee/addemployee', { 
+      state: { 
+        isEdit: true, 
+        employee: employee 
+      } 
+    });
+  };
+
+  const handleDelete = () => {
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
     if (employee) {
-      navigate('/member/employee/addemployee', { state: { employee, isEdit: true } });
+      // ลบข้อมูลจาก localStorage - ใช้ addData แทน setData
+      const employees = debugManager.getData('employees') as Employee[];
+      const updatedEmployees = employees.filter(emp => emp.id !== employee.id);
+      
+      // ลบข้อมูลเก่าและเพิ่มข้อมูลใหม่
+      localStorage.removeItem('debug_employees');
+      updatedEmployees.forEach(emp => {
+        debugManager.addData('employees', emp);
+      });
+      
+      setSuccess(true);
+      setDeleteDialogOpen(false);
+      
+      // กลับไปหน้าค้นหาหลังจาก 2 วินาที
+      setTimeout(() => {
+        navigate('/member/employee/searchemployee');
+      }, 2000);
+    }
+  };
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active': return 'success';
+      case 'inactive': return 'warning';
+      case 'leave': return 'error';
+      default: return 'default';
     }
   };
 
-  // แปลงประเภทพนักงานเป็นภาษาไทย
-  const getEmployeeTypeText = (type: string): string => {
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'active': return 'ทำงานปกติ';
+      case 'inactive': return 'พักงาน';
+      case 'leave': return 'ลาออก';
+      default: return 'ไม่ระบุ';
+    }
+  };
+
+  const getEmployeeTypeText = (type: string) => {
     switch (type) {
       case 'doctor': return 'แพทย์';
       case 'nurse': return 'พยาบาล';
       case 'staff': return 'เจ้าหน้าที่';
-      default: return type;
+      default: return 'ไม่ระบุ';
     }
   };
 
-  // แปลงสถานะเป็นภาษาไทยและกำหนดสี
-  const getStatusChip = (status: string) => {
-    let label = '';
-    let color: 'success' | 'error' | 'warning' | 'default' = 'default';
-    
-    switch (status) {
-      case 'active':
-        label = 'ทำงานปกติ';
-        color = 'success';
-        break;
-      case 'inactive':
-        label = 'พักงาน';
-        color = 'warning';
-        break;
-      case 'leave':
-        label = 'ลาออก';
-        color = 'error';
-        break;
-      default:
-        label = status;
-    }
-    
-    return <Chip label={label} color={color} />;
-  };
-
-  // แปลงวันที่เป็นรูปแบบไทย
-  const formatThaiDate = (dateString: string): string => {
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString('th-TH', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
-    } catch (error) {
-      return dateString;
+  const getRoleText = (role: string) => {
+    switch (role) {
+      case 'admin': return 'ผู้ดูแลระบบ';
+      case 'doctor': return 'แพทย์';
+      case 'nurse': return 'พยาบาล';
+      case 'staff': return 'เจ้าหน้าที่';
+      default: return 'ไม่ระบุ';
     }
   };
 
-  // คำนวณอายุงาน
-  const calculateWorkDuration = (startDate: string): string => {
-    try {
-      const start = new Date(startDate);
-      const now = new Date();
-      
-      const yearDiff = now.getFullYear() - start.getFullYear();
-      const monthDiff = now.getMonth() - start.getMonth();
-      
-      if (monthDiff < 0) {
-        return `${yearDiff - 1} ปี ${monthDiff + 12} เดือน`;
-      } else {
-        return `${yearDiff} ปี ${monthDiff} เดือน`;
-      }
-    } catch (error) {
-      return 'ไม่สามารถคำนวณได้';
-    }
-  };
-
-  // สร้างที่อยู่เต็มรูปแบบ
-  const getFullAddress = (address: any): string => {
-    if (!address) return 'ไม่ระบุที่อยู่';
-    
-    const parts = [
-      address.houseNumber,
-      address.village,
-      address.street,
-      `ต.${address.subDistrict}`,
-      `อ.${address.district}`,
-      `จ.${address.province}`,
-      address.postalCode
-    ];
-    
-    return parts.filter(Boolean).join(' ');
-  };
-
-  if (notFound) {
+  if (isLoading) {
     return (
-      <Paper sx={{ p: 3, maxWidth: 1200, mx: 'auto' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h5" component="h1">
-            ข้อมูลพนักงาน
-          </Typography>
-          <Button
-            startIcon={<ArrowBackIcon />}
-            onClick={handleBack}
-          >
-            กลับ
-          </Button>
-        </Box>
-        
-        <Alert severity="error">
-          ไม่พบข้อมูลพนักงาน
-        </Alert>
-      </Paper>
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+        <Typography>กำลังโหลดข้อมูล...</Typography>
+      </Box>
     );
   }
 
   if (!employee) {
     return (
-      <Paper sx={{ p: 3, maxWidth: 1200, mx: 'auto', textAlign: 'center' }}>
-        <Typography>กำลังโหลดข้อมูล...</Typography>
-      </Paper>
+      <Box sx={{ maxWidth: 800, mx: 'auto', p: 3 }}>
+        <Paper elevation={3} sx={{ p: 4, textAlign: 'center' }}>
+          <Typography variant="h6" color="error" gutterBottom>
+            ไม่พบข้อมูลพนักงาน
+          </Typography>
+          <Typography variant="body1" color="text.secondary" paragraph>
+            ไม่สามารถค้นหาข้อมูลพนักงานที่ระบุได้
+          </Typography>
+          <Button
+            variant="contained"
+            startIcon={<ArrowBackIcon />}
+            onClick={() => navigate('/member/employee/searchemployee')}
+          >
+            กลับไปหน้าค้นหา
+          </Button>
+        </Paper>
+      </Box>
     );
   }
 
   return (
-    <Paper sx={{ p: 3, maxWidth: 1200, mx: 'auto' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h5" component="h1">
-          ข้อมูลพนักงาน
-        </Typography>
-        <Box>
-          <Button
-            startIcon={<ArrowBackIcon />}
-            onClick={handleBack}
-            sx={{ mr: 1 }}
-          >
-            กลับ
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<EditIcon />}
-            onClick={handleEdit}
-          >
-            แก้ไขข้อมูล
-          </Button>
-        </Box>
-      </Box>
+    <Box sx={{ maxWidth: 1000, mx: 'auto', p: 3 }}>
+      {success && (
+        <Alert severity="success" sx={{ mb: 3 }}>
+          ลบข้อมูลพนักงานเรียบร้อยแล้ว กำลังกลับไปหน้าค้นหา...
+        </Alert>
+      )}
 
-      {/* Employee Header */}
-      <Paper 
-        elevation={0} 
-        sx={{ 
-          p: 3, 
-          mb: 3, 
-          bgcolor: department?.color || '#f5f5f5',
-          color: '#fff',
-          position: 'relative',
-          overflow: 'hidden'
-        }}
-      >
-        <Box sx={{ position: 'relative', zIndex: 1 }}>
-          <Grid container spacing={2} alignItems="center">
-            <Grid item>
-              <Avatar
-                src={employee.profileImage}
-                sx={{ width: 100, height: 100, border: '3px solid #fff' }}
-              >
-                {employee.firstNameTh.charAt(0)}
-              </Avatar>
-            </Grid>
-            <Grid item xs>
-              <Typography variant="h4" gutterBottom>
+      {/* Header */}
+      <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <IconButton
+              onClick={() => navigate('/member/employee/searchemployee')}
+              sx={{ mr: 2 }}
+            >
+              <ArrowBackIcon />
+            </IconButton>
+            <Avatar
+              src={employee.profileImage || undefined}
+              sx={{ width: 80, height: 80, mr: 3, border: '2px solid #e0e0e0' }}
+            />
+            <Box>
+              <Typography variant="h4" fontWeight="bold" gutterBottom>
                 {employee.prefix} {employee.firstNameTh} {employee.lastNameTh}
               </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+              <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
                 <Chip 
-                  icon={<BadgeIcon />} 
-                  label={employee.id} 
-                  variant="outlined" 
-                  sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'inherit' }} 
-                />
-                <Chip 
-                  icon={<WorkIcon />} 
-                  label={employee.position} 
-                  variant="outlined" 
-                  sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'inherit' }} 
-                />
-                <Chip 
-                  icon={<LocalHospitalIcon />} 
                   label={getEmployeeTypeText(employee.employeeType)} 
-                  variant="outlined" 
-                  sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'inherit' }} 
+                  color="primary" 
+                  size="small"
                 />
-                {department && (
-                  <Chip 
-                    label={department.name} 
-                    variant="outlined" 
-                    sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'inherit' }} 
-                  />
-                )}
-                {getStatusChip(employee.status)}
+                <Chip 
+                  label={getStatusText(employee.status)} 
+                  color={getStatusColor(employee.status) as any}
+                  size="small"
+                />
               </Box>
-            </Grid>
-          </Grid>
+              <Typography variant="body1" color="text.secondary">
+                {employee.position} • {department?.name || 'ไม่ระบุแผนก'}
+              </Typography>
+            </Box>
+          </Box>
+          
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Tooltip title="แก้ไขข้อมูล">
+              <IconButton color="primary" onClick={handleEdit}>
+                <EditIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="ลบข้อมูล">
+              <IconButton color="error" onClick={handleDelete}>
+                <DeleteIcon />
+              </IconButton>
+            </Tooltip>
+          </Box>
         </Box>
-        {/* Background overlay */}
-        <Box sx={{ 
-          position: 'absolute', 
-          top: 0, 
-          left: 0, 
-          right: 0, 
-          bottom: 0, 
-          bgcolor: 'rgba(0,0,0,0.3)', 
-          zIndex: 0 
-        }} />
       </Paper>
 
       <Grid container spacing={3}>
-        {/* Personal Information */}
+        {/* ข้อมูลส่วนตัว */}
         <Grid item xs={12} md={6}>
-          <Card variant="outlined" sx={{ height: '100%' }}>
+          <Card>
             <CardContent>
-              <Typography variant="h6" gutterBottom>
-                ข้อมูลส่วนตัว
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              
-              <List disablePadding>
-                <ListItem divider>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                <PersonIcon sx={{ mr: 1, color: 'primary.main' }} />
+                <Typography variant="h6" fontWeight="bold">
+                  ข้อมูลส่วนตัว
+                </Typography>
+              </Box>
+              <List dense>
+                <ListItem>
+                  <ListItemIcon>
+                    <BadgeIcon fontSize="small" />
+                  </ListItemIcon>
                   <ListItemText 
-                    primary="ชื่อ-นามสกุล (ไทย)" 
-                    secondary={`${employee.prefix} ${employee.firstNameTh} ${employee.lastNameTh}`} 
+                    primary="รหัสพนักงาน" 
+                    secondary={employee.id}
                   />
                 </ListItem>
-                {(employee.firstNameEn || employee.lastNameEn) && (
-                  <ListItem divider>
+                <ListItem>
+                  <ListItemIcon>
+                    <PersonIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary="เพศ" 
+                    secondary={employee.gender}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemIcon>
+                    <PhoneIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary="เบอร์โทรศัพท์" 
+                    secondary={employee.phone}
+                  />
+                </ListItem>
+                {employee.email && (
+                  <ListItem>
+                    <ListItemIcon>
+                      <EmailIcon fontSize="small" />
+                    </ListItemIcon>
                     <ListItemText 
-                      primary="ชื่อ-นามสกุล (อังกฤษ)" 
-                      secondary={`${employee.firstNameEn || ''} ${employee.lastNameEn || ''}`} 
+                      primary="อีเมล" 
+                      secondary={employee.email}
                     />
                   </ListItem>
                 )}
-                <ListItem divider>
-                  <ListItemText 
-                    primary="เพศ" 
-                    secondary={employee.gender} 
-                  />
-                </ListItem>
-                <ListItem divider>
-                  <ListItemText 
-                    primary="วันเกิด" 
-                    secondary={`${formatThaiDate(employee.birthDate)} (อายุ ${employee.age} ปี)`} 
-                  />
-                </ListItem>
-                <ListItem divider>
-                  <ListItemText 
-                    primary="เลขบัตรประชาชน" 
-                    secondary={employee.nationalId} 
-                  />
-                </ListItem>
                 <ListItem>
+                  <ListItemIcon>
+                    <BadgeIcon fontSize="small" />
+                  </ListItemIcon>
                   <ListItemText 
-                    primary="ที่อยู่" 
-                    secondary={getFullAddress(employee.address)} 
+                    primary="หมายเลขบัตรประชาชน" 
+                    secondary={employee.nationalId}
                   />
                 </ListItem>
+                {employee.address && (
+                  <ListItem>
+                    <ListItemIcon>
+                      <LocationIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText 
+                      primary="ที่อยู่" 
+                      secondary={employee.address}
+                    />
+                  </ListItem>
+                )}
               </List>
             </CardContent>
           </Card>
         </Grid>
 
-        {/* Contact Information */}
+        {/* ข้อมูลการทำงาน */}
         <Grid item xs={12} md={6}>
-          <Card variant="outlined" sx={{ mb: 3 }}>
+          <Card>
             <CardContent>
-              <Typography variant="h6" gutterBottom>
-                ข้อมูลติดต่อ
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <PhoneIcon sx={{ mr: 2, color: 'primary.main' }} />
-                <Typography variant="body1">
-                  {employee.phone}
+                <WorkIcon sx={{ mr: 1, color: 'primary.main' }} />
+                <Typography variant="h6" fontWeight="bold">
+                  ข้อมูลการทำงาน
                 </Typography>
               </Box>
-              
-              {employee.email && (
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <EmailIcon sx={{ mr: 2, color: 'primary.main' }} />
-                  <Typography variant="body1">
-                    {employee.email}
-                  </Typography>
-                </Box>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Work Information */}
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                ข้อมูลการทำงาน
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              
-              <List disablePadding>
-                <ListItem divider>
-                  <ListItemText 
-                    primary="วันที่เริ่มงาน" 
-                    secondary={formatThaiDate(employee.startDate)} 
-                  />
-                </ListItem>
-                                <ListItem divider>
-                  <ListItemText 
-                    primary="อายุงาน" 
-                    secondary={calculateWorkDuration(employee.startDate)} 
-                  />
-                </ListItem>
-                <ListItem divider>
-                  <ListItemText 
-                    primary="ตำแหน่ง" 
-                    secondary={employee.position} 
-                  />
-                </ListItem>
-                <ListItem divider>
+              <List dense>
+                <ListItem>
+                  <ListItemIcon>
+                    <WorkIcon fontSize="small" />
+                  </ListItemIcon>
                   <ListItemText 
                     primary="ประเภทพนักงาน" 
-                    secondary={getEmployeeTypeText(employee.employeeType)} 
-                  />
-                </ListItem>
-                <ListItem divider>
-                  <ListItemText 
-                    primary="แผนก" 
-                    secondary={department?.name || 'ไม่ระบุแผนก'} 
+                    secondary={getEmployeeTypeText(employee.employeeType)}
                   />
                 </ListItem>
                 <ListItem>
+                  <ListItemIcon>
+                    <MedicalIcon fontSize="small" />
+                  </ListItemIcon>
                   <ListItemText 
-                    primary="สถานะ" 
+                    primary="แผนก" 
                     secondary={
-                      <Box sx={{ mt: 0.5 }}>
-                        {getStatusChip(employee.status)}
+                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        {department?.color && (
+                          <Box 
+                            sx={{ 
+                              width: 12, 
+                              height: 12, 
+                              borderRadius: '50%', 
+                              bgcolor: department.color,
+                              mr: 1
+                            }} 
+                          />
+                        )}
+                        {department?.name || 'ไม่ระบุ'}
                       </Box>
-                    } 
+                    }
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemIcon>
+                    <BadgeIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary="ตำแหน่ง" 
+                    secondary={employee.position}
+                  />
+                </ListItem>
+                {employee.licenseNumber && (
+                  <ListItem>
+                    <ListItemIcon>
+                      <MedicalIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText 
+                      primary="เลขที่ใบอนุญาต" 
+                      secondary={employee.licenseNumber}
+                    />
+                  </ListItem>
+                )}
+                <ListItem>
+                  <ListItemIcon>
+                    <CalendarIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary="วันที่เริ่มงาน" 
+                    secondary={new Date(employee.startDate).toLocaleDateString('th-TH')}
                   />
                 </ListItem>
               </List>
@@ -496,150 +464,199 @@ const DataEmployee: React.FC = () => {
           </Card>
         </Grid>
 
-        {/* Professional Information */}
-        <Grid item xs={12}>
-          <Card variant="outlined">
+        {/* ข้อมูลระบบ */}
+        <Grid item xs={12} md={6}>
+          <Card>
             <CardContent>
-              <Typography variant="h6" gutterBottom>
-                ข้อมูลวิชาชีพ
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              
-              <Grid container spacing={3}>
-                {/* License Number */}
-                {employee.licenseNumber && (
-                  <Grid item xs={12} md={6}>
-                    <Card variant="outlined" sx={{ bgcolor: '#f9f9f9' }}>
-                      <CardContent>
-                        <Typography variant="subtitle1" color="primary" gutterBottom>
-                          เลขที่ใบอนุญาตประกอบวิชาชีพ
-                        </Typography>
-                        <Typography variant="body1">
-                          {employee.licenseNumber}
-                        </Typography>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                )}
-
-                {/* Specialties */}
-                {employee.specialties && employee.specialties.length > 0 && (
-                  <Grid item xs={12} md={6}>
-                    <Card variant="outlined" sx={{ bgcolor: '#f9f9f9' }}>
-                      <CardContent>
-                        <Typography variant="subtitle1" color="primary" gutterBottom>
-                          ความเชี่ยวชาญพิเศษ
-                        </Typography>
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
-                          {employee.specialties.map((specialty, index) => (
-                            <Chip 
-                              key={index} 
-                              label={specialty} 
-                              color="primary" 
-                              variant="outlined" 
-                              size="small" 
-                            />
-                          ))}
-                        </Box>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                )}
-
-                {/* Education */}
-                {employee.education && employee.education.length > 0 && (
-                  <Grid item xs={12}>
-                    <Card variant="outlined" sx={{ bgcolor: '#f9f9f9' }}>
-                      <CardContent>
-                        <Typography variant="subtitle1" color="primary" gutterBottom>
-                          ประวัติการศึกษา
-                        </Typography>
-                        <List disablePadding>
-                          {employee.education.map((edu, index) => (
-                            <ListItem 
-                              key={index} 
-                              divider={index < employee.education!.length - 1}
-                              sx={{ py: 1 }}
-                            >
-                              <SchoolIcon sx={{ mr: 2, color: 'primary.main' }} />
-                              <ListItemText primary={edu} />
-                            </ListItem>
-                          ))}
-                        </List>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                )}
-              </Grid>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                <SecurityIcon sx={{ mr: 1, color: 'primary.main' }} />
+                <Typography variant="h6" fontWeight="bold">
+                  ข้อมูลระบบ
+                </Typography>
+              </Box>
+              <List dense>
+                <ListItem>
+                  <ListItemIcon>
+                    <AccountIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary="ชื่อผู้ใช้" 
+                    secondary={employee.username}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemIcon>
+                    <SecurityIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary="บทบาทในระบบ" 
+                    secondary={getRoleText(employee.role)}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemIcon>
+                    <BadgeIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary="สถานะการทำงาน" 
+                    secondary={
+                      <Chip 
+                        label={getStatusText(employee.status)} 
+                        color={getStatusColor(employee.status) as any}
+                        size="small"
+                      />
+                    }
+                  />
+                </ListItem>
+              </List>
             </CardContent>
           </Card>
         </Grid>
 
-        {/* Working Schedule */}
-        <Grid item xs={12}>
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                ตารางการทำงาน
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              
-              <Grid container spacing={3}>
-                {/* Working Days */}
-                <Grid item xs={12} md={6}>
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
-                    <ScheduleIcon sx={{ mr: 2, color: 'primary.main', mt: 0.5 }} />
-                    <Box>
-                      <Typography variant="subtitle1" gutterBottom>
-                        วันทำงาน
-                      </Typography>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                        {employee.workingDays && employee.workingDays.length > 0 ? (
-                          employee.workingDays.map((day, index) => (
-                            <Chip 
-                              key={index} 
-                              label={day} 
-                              color="primary" 
-                              variant="outlined" 
-                              size="small" 
-                            />
-                          ))
-                        ) : (
-                          <Typography variant="body2" color="text.secondary">
-                            ไม่ระบุวันทำงาน
-                          </Typography>
-                        )}
-                      </Box>
-                    </Box>
-                  </Box>
-                </Grid>
+        {/* ความเชี่ยวชาญ (สำหรับแพทย์) */}
+        {employee.employeeType === 'doctor' && employee.specialties && employee.specialties.length > 0 && (
+          <Grid item xs={12} md={6}>
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <MedicalIcon sx={{ mr: 1, color: 'primary.main' }} />
+                                    <Typography variant="h6" fontWeight="bold">
+                    ความเชี่ยวชาญพิเศษ
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {employee.specialties.map((specialty, index) => (
+                    <Chip
+                      key={index}
+                      label={specialty}
+                      color="primary"
+                      variant="outlined"
+                      size="small"
+                    />
+                  ))}
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
 
-                {/* Working Hours */}
-                <Grid item xs={12} md={6}>
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
-                    <ScheduleIcon sx={{ mr: 2, color: 'primary.main', mt: 0.5 }} />
-                    <Box>
-                      <Typography variant="subtitle1" gutterBottom>
-                        เวลาทำงาน
-                      </Typography>
-                      {employee.workingHours ? (
-                        <Typography variant="body1">
-                          {employee.workingHours.start} - {employee.workingHours.end} น.
-                        </Typography>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary">
-                          ไม่ระบุเวลาทำงาน
-                        </Typography>
-                      )}
+        {/* ตารางการทำงาน */}
+        {employee.workingDays && employee.workingDays.length > 0 && (
+          <Grid item xs={12}>
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <ScheduleIcon sx={{ mr: 1, color: 'primary.main' }} />
+                  <Typography variant="h6" fontWeight="bold">
+                    ตารางการทำงาน
+                  </Typography>
+                </Box>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} sm={6}>
+                    <Typography variant="subtitle2" gutterBottom>
+                      วันทำงาน:
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {employee.workingDays.map((day, index) => (
+                        <Chip
+                          key={index}
+                          label={day}
+                          color="primary"
+                          variant="filled"
+                          size="small"
+                        />
+                      ))}
                     </Box>
-                  </Box>
+                  </Grid>
+                  {employee.workingHours && (
+                    <Grid item xs={12} sm={6}>
+                      <Typography variant="subtitle2" gutterBottom>
+                        เวลาทำงาน:
+                      </Typography>
+                      <Typography variant="body1">
+                        {employee.workingHours.start} - {employee.workingHours.end} น.
+                      </Typography>
+                    </Grid>
+                  )}
                 </Grid>
-              </Grid>
-            </CardContent>
-          </Card>
-        </Grid>
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
       </Grid>
-    </Paper>
+
+      {/* Action Buttons */}
+      <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, mt: 4 }}>
+        <Button
+          variant="outlined"
+          startIcon={<ArrowBackIcon />}
+          onClick={() => navigate('/member/employee/searchemployee')}
+          size="large"
+        >
+          กลับไปหน้าค้นหา
+        </Button>
+        <Button
+          variant="contained"
+          startIcon={<EditIcon />}
+          onClick={handleEdit}
+          size="large"
+        >
+          แก้ไขข้อมูล
+        </Button>
+      </Box>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          ยืนยันการลบข้อมูล
+        </DialogTitle>
+        <DialogContent>
+          <Typography>
+            คุณต้องการลบข้อมูลพนักงาน "{employee.prefix} {employee.firstNameTh} {employee.lastNameTh}" ใช่หรือไม่?
+          </Typography>
+          <Typography variant="body2" color="error" sx={{ mt: 2 }}>
+            การดำเนินการนี้ไม่สามารถย้อนกลับได้
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => setDeleteDialogOpen(false)}
+            variant="outlined"
+          >
+            ยกเลิก
+          </Button>
+          <Button 
+            onClick={confirmDelete}
+            color="error"
+            variant="contained"
+          >
+            ลบข้อมูล
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Debug Info (Development Only) */}
+      {process.env.NODE_ENV === 'development' && (
+        <Box sx={{ mt: 4, pt: 3, borderTop: '1px dashed #ccc' }}>
+          <Typography variant="caption" color="text.secondary" gutterBottom>
+            Debug Info (Development Only)
+          </Typography>
+          <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1, maxHeight: 300, overflow: 'auto' }}>
+            <pre style={{ margin: 0, fontSize: '0.75rem' }}>
+              {JSON.stringify({
+                employee,
+                department
+              }, null, 2)}
+            </pre>
+          </Box>
+        </Box>
+      )}
+    </Box>
   );
 };
 
