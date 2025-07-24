@@ -63,6 +63,9 @@ const AuthenPatient: React.FC = () => {
       description: 'ข้อมูลคิวการคัดกรอง'
     }
   ];
+ const [autoScanTimeLeft, setAutoScanTimeLeft] = useState<number>(60);
+  const [isAutoScanActive, setIsAutoScanActive] = useState<boolean>(false);
+  const [autoScanTimer, setAutoScanTimer] = useState<number | null>(null);
 
   const [currentStep, setCurrentStep] = useState<VerificationStep>('face-scan');
   const [isScanning, setIsScanning] = useState(false);
@@ -270,8 +273,7 @@ const AuthenPatient: React.FC = () => {
     debugManager.updateData('screeningQueue', [...currentQueue, screeningQueue]);
   };
 
-  // Optimized performScan function
-  const performScan = useCallback(async () => {
+ const performScan = useCallback(async () => {
     if (isScanning || !stream || !videoRef.current || videoRef.current.paused) {
       return;
     }
@@ -323,7 +325,7 @@ const AuthenPatient: React.FC = () => {
           }
 
           setCurrentStep('success');
-          stopAutoScan();
+          stopAutoScan(); // หยุดการสแกนเมื่อพบข้อมูล
           stopCamera();
           return;
         }
@@ -337,56 +339,114 @@ const AuthenPatient: React.FC = () => {
         if (foundPatientById) {
           setFoundPatient(foundPatientById);
           setCurrentStep('success');
-          stopAutoScan();
+          stopAutoScan(); // หยุดการสแกนเมื่อพบข้อมูล
           stopCamera();
           return;
         }
       }
 
-      if (scanCount >= maxScanAttempts) {
-        setErrorMessage(`สแกนครบ ${maxScanAttempts} ครั้ง ไม่พบข้อมูล กรุณากรอกเลขบัตรประชาชน`);
-        setCurrentStep('id-input');
-        stopAutoScan();
-        stopCamera();
+      // แสดงสถานะการสแกน
+      const faceFound = result.faces?.length > 0;
+      const faceRecognized = result.faces?.some(f => f.name !== 'Unknown');
+      
+      if (!faceFound) {
+        setErrorMessage(`กำลังค้นหาใบหน้า... (${autoScanTimeLeft} วินาที)`);
+      } else if (!faceRecognized) {
+        setErrorMessage(`พบใบหน้าแต่ไม่รู้จัก กำลังค้นหาต่อ... (${autoScanTimeLeft} วินาที)`);
       } else {
-        const faceFound = result.faces?.length > 0;
-        const faceRecognized = result.faces?.some(f => f.name !== 'Unknown');
-        setErrorMessage(
-          !faceFound
-            ? `ไม่พบใบหน้าในภาพ (สแกนครั้งที่ ${scanCount + 1}/${maxScanAttempts})`
-            : !faceRecognized
-            ? `พบใบหน้าแต่ไม่รู้จัก (สแกนครั้งที่ ${scanCount + 1}/${maxScanAttempts})`
-            : `ไม่พบข้อมูลในระบบ (สแกนครั้งที่ ${scanCount + 1}/${maxScanAttempts})`
-        );
+        setErrorMessage(`กำลังตรวจสอบข้อมูล... (${autoScanTimeLeft} วินาที)`);
       }
+
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'เกิดข้อผิดพลาดในการสแกน');
+      setErrorMessage(`เกิดข้อผิดพลาด: ${error instanceof Error ? error.message : 'ไม่ทราบสาเหตุ'} (${autoScanTimeLeft} วินาที)`);
     } finally {
       setIsScanning(false);
     }
-  }, [isScanning, stream, scanCount, maxScanAttempts]);
+  }, [isScanning, stream, autoScanTimeLeft]);
 
+
+useEffect(() => {
+  if (currentStep === 'face-scan') {
+    if (!stream && !isCameraStarting) {
+      startCamera().then(() => {
+        // เริ่มสแกนอัตโนมัติทันทีเมื่อกล้องพร้อม
+        setTimeout(() => {
+          startAutoScan();
+        }, 1000);
+      });
+    } else if (stream && !isAutoScanActive && autoScanTimeLeft > 0) {
+      startAutoScan();
+    }
+  }
+  return () => {
+    stopAutoScan();
+    stopCamera();
+  };
+}, [currentStep]); // เอา stream ออกจาก dependency array
+useEffect(() => {
+  if (currentStep === 'face-scan' && stream && !isAutoScanActive && autoScanTimeLeft > 0) {
+    // รอให้ video element พร้อมก่อนเริ่มสแกน
+    const timer = setTimeout(() => {
+      startAutoScan();
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }
+}, [stream, currentStep, isAutoScanActive, autoScanTimeLeft]);
   // Auto-scan with adaptive interval
   const startAutoScan = useCallback(() => {
     if (autoScanInterval || !stream) {
       return;
     }
+    
+    setIsAutoScanActive(true);
+    setAutoScanTimeLeft(60);
     resetScanCount();
-    const interval = window.setInterval(() => {
+    
+    // เริ่มสแกนทันที
+    performScan();
+    
+    // ตั้งเวลาสแกนทุก 3 วินาที
+    const scanInterval = window.setInterval(() => {
       if (currentStep === 'face-scan' && stream && !isScanning) {
         performScan();
       }
-    }, 5000);
-    setAutoScanInterval(interval);
+    }, 3000);
+    setAutoScanInterval(scanInterval);
+    
+    // ตั้งเวลานับถอยหลัง
+    const countdownTimer = window.setInterval(() => {
+      setAutoScanTimeLeft(prev => {
+        if (prev <= 1) {
+          // หมดเวลา 60 วินาที
+          clearInterval(scanInterval);
+          clearInterval(countdownTimer);
+          setAutoScanInterval(null);
+          setAutoScanTimer(null);
+          setIsAutoScanActive(false);
+          setErrorMessage('หมดเวลาการสแกนอัตโนมัติ กรุณากดปุ่ม "เริ่มสแกนใหม่" หรือใช้เลขบัตรประชาชน');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    setAutoScanTimer(countdownTimer);
+    
   }, [autoScanInterval, currentStep, stream, performScan]);
+
 
   const stopAutoScan = useCallback(() => {
     if (autoScanInterval) {
       clearInterval(autoScanInterval);
       setAutoScanInterval(null);
     }
-  }, [autoScanInterval]);
-
+    if (autoScanTimer) {
+      clearInterval(autoScanTimer);
+      setAutoScanTimer(null);
+    }
+    setIsAutoScanActive(false);
+    setAutoScanTimeLeft(60);
+  }, [autoScanInterval, autoScanTimer]);
   const resetScanCount = useCallback(() => {
     setScanCount(0);
     setErrorMessage('');
@@ -481,29 +541,30 @@ const AuthenPatient: React.FC = () => {
     };
   }, []);
 
+
   if (currentStep === 'face-scan') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900 flex">
-        <div className="w-1/3 bg-white/10 backdrop-blur-sm p-8 flex flex-col justify-center">
-          <div className="text-center mb-8">
-            <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center shadow-2xl mb-6">
-              <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="w-1/4 bg-white/10 backdrop-blur-sm p-6 flex flex-col justify-center">
+          <div className="text-center mb-6">
+            <div className="w-16 h-16 mx-auto bg-white rounded-full flex items-center justify-center shadow-2xl mb-4">
+              <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
             </div>
-            <h1 className="text-3xl font-bold text-white mb-4">ยืนยันตัวตน</h1>
-            <p className="text-white/80 text-lg">สแกนใบหน้าเพื่อยืนยันตัวตน</p>
+            <h1 className="text-2xl font-bold text-white mb-3">ยืนยันตัวตน</h1>
+            <p className="text-white/80 text-base">สแกนใบหน้าเพื่อยืนยันตัวตน</p>
           </div>
 
-          <div className="space-y-6">
-            <div className="bg-white/20 rounded-xl p-6">
-              <h3 className="text-white font-semibold mb-4 flex items-center">
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="space-y-4">
+            <div className="bg-white/20 rounded-xl p-4">
+              <h3 className="text-white font-semibold mb-3 flex items-center text-sm">
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 วิธีการใช้งาน
               </h3>
-              <ul className="space-y-3 text-white/80">
+              <ul className="space-y-2 text-white/80 text-sm">
                 <li className="flex items-start">
                   <span className="text-green-400 mr-2">1.</span>
                   วางใบหน้าให้อยู่ในกรอบสี่เหลี่ยม
@@ -523,16 +584,16 @@ const AuthenPatient: React.FC = () => {
               </ul>
             </div>
 
-            <div className="bg-yellow-500/20 border border-yellow-400/30 rounded-xl p-4">
-              <p className="text-yellow-200 text-sm">
+            <div className="bg-yellow-500/20 border border-yellow-400/30 rounded-xl p-3">
+              <p className="text-yellow-200 text-xs">
                 <strong>หมายเหตุ:</strong> หากไม่พบข้อมูลใบหน้าในระบบ คุณสามารถยืนยันตัวตนด้วยเลขบัตรประชาชนได้
               </p>
             </div>
 
-            <div className="bg-blue-500/20 border border-blue-400/30 rounded-xl p-4">
-              <div className="flex items-center space-x-2 mb-2">
+            <div className="bg-blue-500/20 border border-blue-400/30 rounded-xl p-3">
+              <div className="flex items-center space-x-2 mb-1">
                 <div className={`w-2 h-2 rounded-full ${scanResults?.ocr?.tesseract_available ? 'bg-green-400' : 'bg-red-400'}`}></div>
-                <span className="text-blue-200 text-sm font-medium">
+                <span className="text-blue-200 text-xs font-medium">
                   OCR Status: {scanResults?.ocr?.tesseract_available ? 'พร้อมใช้งาน' : 'ไม่พร้อมใช้งาน'}
                 </span>
               </div>
@@ -545,14 +606,14 @@ const AuthenPatient: React.FC = () => {
             </div>
 
             {scanResults && (
-              <div className="bg-white/20 rounded-xl p-4">
-                <h4 className="text-white font-semibold mb-2">ผลการสแกน:</h4>
-                <div className="mb-3">
-                  <h5 className="text-white font-medium mb-1">ใบหน้า:</h5>
+              <div className="bg-white/20 rounded-xl p-3 max-h-64 overflow-y-auto">
+                <h4 className="text-white font-semibold mb-2 text-sm">ผลการสแกน:</h4>
+                <div className="mb-2">
+                  <h5 className="text-white font-medium mb-1 text-xs">ใบหน้า:</h5>
                   {scanResults.faces.length > 0 ? (
                     <div className="space-y-1">
                       {scanResults.faces.map((face, index) => (
-                        <div key={index} className="text-sm text-white/80">
+                        <div key={index} className="text-xs text-white/80">
                           <span className={`font-medium ${face.name === 'Unknown' ? 'text-yellow-300' : 'text-green-300'}`}>
                             {face.name}
                           </span>
@@ -561,34 +622,34 @@ const AuthenPatient: React.FC = () => {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-sm text-red-300">ไม่พบใบหน้า</p>
+                    <p className="text-xs text-red-300">ไม่พบใบหน้า</p>
                   )}
                   {scanResults.scan_status && (
-                    <div className="mt-2 text-xs text-blue-300">
+                    <div className="mt-1 text-xs text-blue-300">
                       พบใบหน้า: {scanResults.scan_status.faces_found} | 
                       รู้จัก: {scanResults.scan_status.faces_recognized} | 
                       บัตร: {scanResults.scan_status.id_cards_found}
                     </div>
                   )}
                 </div>
-                <div className="mb-3">
-                  <h5 className="text-white font-medium mb-1">บัตรประชาชน:</h5>
+                <div className="mb-2">
+                  <h5 className="text-white font-medium mb-1 text-xs">บัตรประชาชน:</h5>
                   {scanResults.id_card_areas && scanResults.id_card_areas.length > 0 ? (
-                    <div className="text-sm text-green-300">
+                    <div className="text-xs text-green-300">
                       ✓ พบบัตรประชาชน ({scanResults.id_card_areas.length} แผ่น)
                     </div>
                   ) : (
-                    <div className="text-sm text-yellow-300">
+                    <div className="text-xs text-yellow-300">
                       ⚠ ไม่พบบัตรประชาชน
                     </div>
                   )}
                 </div>
                 {scanResults?.ocr?.card_detected ? (
-                  <div className="mb-3">
-                    <h5 className="text-white font-medium mb-1">ข้อมูลที่อ่านได้:</h5>
+                  <div className="mb-2">
+                    <h5 className="text-white font-medium mb-1 text-xs">ข้อมูลที่อ่านได้:</h5>
                     {scanResults?.ocr?.tesseract_available ? (
                       scanResults?.ocr?.id_card?.id_numbers?.length > 0 ? (
-                        <div className="space-y-1 text-sm text-white/80">
+                        <div className="space-y-1 text-xs text-white/80">
                           {scanResults.ocr.id_card.id_numbers.map((id, index) => (
                             <div key={index}>
                               <span className="font-medium">เลขบัตร:</span> {id}
@@ -601,12 +662,12 @@ const AuthenPatient: React.FC = () => {
                           ))}
                         </div>
                       ) : (
-                        <div className="text-sm text-yellow-300">
+                        <div className="text-xs text-yellow-300">
                           ⚠ พบบัตรประชาชนแต่ไม่สามารถอ่านข้อมูลได้
                         </div>
                       )
                     ) : (
-                      <div className="text-sm text-orange-300">
+                      <div className="text-xs text-orange-300">
                         ⚠ Tesseract ไม่พร้อมใช้งาน (OCR ไม่ทำงาน)
                       </div>
                     )}
@@ -617,34 +678,60 @@ const AuthenPatient: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center p-8">
-          <div className="w-full max-w-md">
-            <div className="bg-white/95 backdrop-blur-sm rounded-3xl p-8 shadow-2xl">
-              <div className="relative mb-6 rounded-xl overflow-hidden bg-black aspect-[4/3]">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                />
-                <canvas
-                  ref={canvasRef}
-                  className="hidden"
-                />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-3/4 h-3/4 border-2 border-dashed border-white/70 rounded-xl"></div>
-                </div>
-                {isScanning && (
-                  <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center">
-                    <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                    <p className="text-white font-medium">กำลังสแกน...</p>
+        <div className="flex-1 flex flex-col items-center justify-center p-4">
+          <div className="w-full h-full flex flex-col">
+            {/* Camera Section - ขยายให้ใหญ่สุด */}
+            <div className="flex-1 flex items-center justify-center">
+              <div className="w-full h-full max-w-6xl max-h-[80vh] bg-white/95 backdrop-blur-sm rounded-3xl p-6 shadow-2xl">
+                <div className="relative w-full h-full rounded-2xl overflow-hidden bg-black">
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                  />
+                  <canvas
+                    ref={canvasRef}
+                    className="hidden"
+                  />
+                  {/* Face Detection Frame */}
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-4/5 h-4/5 border-4 border-dashed border-white/70 rounded-2xl flex items-center justify-center">
+                      <div className="w-3/4 h-3/4 border-2 border-solid border-green-400/80 rounded-xl"></div>
+                    </div>
                   </div>
-                )}
+                  {/* Corner Guides */}
+                  <div className="absolute top-8 left-8 w-12 h-12 border-l-4 border-t-4 border-white/80 rounded-tl-lg"></div>
+                  <div className="absolute top-8 right-8 w-12 h-12 border-r-4 border-t-4 border-white/80 rounded-tr-lg"></div>
+                  <div className="absolute bottom-8 left-8 w-12 h-12 border-l-4 border-b-4 border-white/80 rounded-bl-lg"></div>
+                  <div className="absolute bottom-8 right-8 w-12 h-12 border-r-4 border-b-4 border-white/80 rounded-br-lg"></div>
+                  
+                  {/* Scanning Overlay */}
+                  {isScanning && (
+                    <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center">
+                      <div className="w-20 h-20 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+                      <p className="text-white font-medium text-xl">กำลังสแกน...</p>
+                      <div className="mt-4 w-64 h-2 bg-white/20 rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-500 rounded-full animate-pulse"></div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Instructions Overlay */}
+                  {!isScanning && (
+                    <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-6 py-3 rounded-full">
+                      <p className="text-center text-lg font-medium">วางใบหน้าให้อยู่ในกรอบสีเขียว</p>
+                    </div>
+                  )}
+                </div>
               </div>
+            </div>
 
+            {/* Controls Section */}
+            <div className="mt-4 flex flex-col items-center space-y-4">
               {errorMessage && (
-                <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4">
+                <div className="w-full max-w-2xl bg-red-50 border border-red-200 rounded-xl p-4">
                   <div className="flex items-center">
                     <svg className="w-5 h-5 text-red-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -654,59 +741,76 @@ const AuthenPatient: React.FC = () => {
                 </div>
               )}
 
-              <button
-                onClick={handleFaceScan}
-                disabled={isScanning || isCameraStarting || !stream}
-                className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold py-4 px-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 flex items-center justify-center space-x-2"
-              >
-                {isScanning ? (
-                  <>
-                    <svg className="animate-spin w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    <span>กำลังสแกน...</span>
-                  </>
-                ) : isCameraStarting ? (
-                  <>
-                    <svg className="animate-spin w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    <span>กำลังเริ่มกล้อง...</span>
-                  </>
-                ) : !stream ? (
-                  <>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>รอการเริ่มกล้อง...</span>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                    </svg>
-                    <span>สแกนใบหน้าเพื่อยืนยันตัวตน</span>
-                  </>
-                )}
-              </button>
-
-              <div className="mt-6 text-center">
+              <div className="flex space-x-4">
                 <button
-                  onClick={() => {
-                    stopCamera();
-                    setCurrentStep('id-input');
-                  }}
-                  className="text-blue-600 hover:text-blue-800 font-medium"
+                  onClick={handleFaceScan}
+                  disabled={isScanning || isCameraStarting || !stream}
+                  className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold py-4 px-8 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 flex items-center justify-center space-x-2 text-lg"
                 >
-                  หรือยืนยันตัวตนด้วยเลขบัตรประชาชน
+                  {isScanning ? (
+                    <>
+                      <svg className="animate-spin w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      <span>กำลังสแกน...</span>
+                    </>
+                     ) : isCameraStarting ? (
+                    <>
+                      <svg className="animate-pulse w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      <span>กำลังเปิดกล้อง...</span>
+                    </>
+                  ) : !stream ? (
+                    <>
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      <span>เปิดกล้อง</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      <span>เริ่มสแกน</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setCurrentStep('id-input')}
+                  className="bg-gradient-to-r from-gray-500 to-gray-600 text-white font-bold py-4 px-8 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center space-x-2 text-lg"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
+                  </svg>
+                  <span>ใช้เลขบัตรประชาชน</span>
                 </button>
               </div>
+
+              {/* Scan Progress */}
+              {scanCount > 0 && scanCount < maxScanAttempts && (
+                <div className="w-full max-w-2xl bg-white/90 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-700">ความคืบหน้าการสแกน</span>
+                    <span className="text-sm text-gray-500">{scanCount}/{maxScanAttempts}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${(scanCount / maxScanAttempts) * 100}%` }}
+                    ></div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </div>
     );
   }
+
 
   if (currentStep === 'id-input') {
     return (
@@ -928,7 +1032,8 @@ const AuthenPatient: React.FC = () => {
 
   if (currentStep === 'success') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900 flex">
+
+<div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900 flex p-8">
         <div className="w-1/3 bg-white/10 backdrop-blur-sm p-8 flex flex-col justify-center">
           <div className="text-center mb-8">
             <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center shadow-2xl mb-6">
