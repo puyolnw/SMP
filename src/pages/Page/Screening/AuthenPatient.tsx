@@ -508,7 +508,7 @@ useEffect(() => {
   const handleContinue = () => {
     const patientToPass = foundPatient || mockPatientData;
     saveAuthenticatedPatient(patientToPass);
-    navigate('/screening/patient', { state: { patient: patientToPass } });
+    navigate('/screening/patient2', { state: { patient: patientToPass } });
   };
 
   const handleBackToFaceScan = () => {
