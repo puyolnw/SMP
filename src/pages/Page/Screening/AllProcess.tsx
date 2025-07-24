@@ -4,7 +4,6 @@ import { QRCodeSVG } from 'qrcode.react';
 import { usePageDebug } from '../../../hooks/usePageDebug';
 import { TableSchema } from '../../../types/Debug';
 import axios from 'axios';
-import Tesseract from 'tesseract.js';
 
 interface PatientData {
   id: string;
@@ -26,6 +25,19 @@ type ProcessStep = 'weight' | 'height' | 'systolic' | 'diastolic' | 'pulse' | 's
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+const handleTestOcrFile = async (file: File) => {
+  try {
+    const formData = new FormData();
+    formData.append('image', file);
+    const res = await axios.post(`${API_BASE_URL}/api/realtime/ocr/scan`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    alert('OCR Result: ' + JSON.stringify(res.data.text));
+  } catch (err) {
+    console.error('OCR Error: ' + (err as Error).message);
+  }
+};
+
 const AllProcess: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -34,9 +46,9 @@ const AllProcess: React.FC = () => {
     weight: null, height: null, bmi: null, systolic: null, diastolic: null, pulse: null
   });
   const [errorMessage, setErrorMessage] = useState('');
-  const [patientToken] = useState<string | null>(null);
+  const [patientToken] = useState<string | null>(localStorage.getItem('patient_token'));
   
-  // เพิ่ม state สำหรับการบันทึกเสียง
+  // Audio recording states
   const [isRecording, setIsRecording] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -44,8 +56,10 @@ const AllProcess: React.FC = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const [mainStream, setMainStream] = useState<MediaStream | null>(null);
+  const [bpStream, setBpStream] = useState<MediaStream | null>(null);
   
-  // Debug mode detection
+  // Debug mode
   const isDebugMode = process.env.NODE_ENV === 'development';
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   
@@ -67,11 +81,139 @@ const AllProcess: React.FC = () => {
       description: 'ข้อมูลอาการของผู้ป่วย'
     }
   ];
-  // Use debug hook
   const { debugData } = usePageDebug('คัดกรองสัญญาณชีพ', requiredTables);
-  console.log('debugData:', debugData);
 
-  // เพิ่มฟังก์ชันสำหรับการบันทึกเสียง
+  const [queueInfo, setQueueInfo] = useState<any>(null);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [scanCount, setScanCount] = useState(0);
+  const [manualInputMode, setManualInputMode] = useState(false);
+  const scanIntervalId = useRef<NodeJS.Timeout | null>(null);
+
+  // Camera management
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [mainCameraId, setMainCameraId] = useState<string | null>(null);
+  const [bpCameraId, setBpCameraId] = useState<string | null>(null);
+  const mainVideoRef = useRef<HTMLVideoElement>(null);
+  const bpVideoRef = useRef<HTMLVideoElement>(null);
+
+  // --- state สำหรับกล้องแยกน้ำหนัก/ส่วนสูง ---
+  const [mainCameraIdWeight, setMainCameraIdWeight] = useState<string | null>(null);
+  const [mainCameraIdHeight, setMainCameraIdHeight] = useState<string | null>(null);
+
+  const [showCameraSettings, setShowCameraSettings] = useState(false);
+
+  useEffect(() => {
+    navigator.mediaDevices.enumerateDevices().then(devices => {
+      const videoInputs = devices.filter(device => device.kind === 'videoinput');
+      setVideoDevices(videoInputs);
+      if (videoInputs.length > 0) {
+        setMainCameraIdWeight(videoInputs[0]?.deviceId || null);
+        setMainCameraIdHeight(videoInputs[0]?.deviceId || null);
+        setBpCameraId(videoInputs[1]?.deviceId || videoInputs[0]?.deviceId || null);
+      }
+    });
+  }, []);
+
+  // Patient data
+  const getPatientData = (): PatientData => {
+    if (location.state?.patient) {
+      return location.state.patient;
+    }
+    const storedPatient = localStorage.getItem('authenticatedPatient');
+    if (storedPatient) {
+      return JSON.parse(storedPatient);
+    }
+    return {
+      id: 'P001234',
+      name: 'นายสมชาย ใจดี',
+      nationalId: '1234567890123'
+    };
+  };
+  
+  const [patientData] = useState<PatientData>(getPatientData());
+
+  // Debug input states
+  const [debugWeight, setDebugWeight] = useState('');
+  const [debugHeight, setDebugHeight] = useState('');
+  const [debugSystolic, setDebugSystolic] = useState('');
+  const [debugDiastolic, setDebugDiastolic] = useState('');
+  const [debugPulse, setDebugPulse] = useState('');
+
+  // Manual input states
+  const [manualWeight, setManualWeight] = useState('');
+  const [manualHeight, setManualHeight] = useState('');
+  const [manualSystolic, setManualSystolic] = useState('');
+  const [manualDiastolic, setManualDiastolic] = useState('');
+  const [manualPulse, setManualPulse] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const calculateBMI = (weight: number, height: number): number => {
+    const heightInMeters = height / 100;
+    return Math.round((weight / (heightInMeters * heightInMeters)) * 10) / 10;
+  };
+
+  useEffect(() => {
+    if (vitalSigns.weight && vitalSigns.height && vitalSigns.weight > 0 && vitalSigns.height > 0) {
+      const bmi = calculateBMI(vitalSigns.weight, vitalSigns.height);
+      if (vitalSigns.bmi !== bmi) {
+        setVitalSigns(prev => ({ ...prev, bmi }));
+      }
+    }
+  }, [vitalSigns.weight, vitalSigns.height]);
+
+  const processDebugWeightHeight = async () => {
+    const weight = parseFloat(debugWeight);
+    const height = parseFloat(debugHeight);
+    if (!weight || !height || weight < 20 || weight > 200 || height < 100 || height > 250) {
+      setErrorMessage('กรุณากรอกน้ำหนัก (20-200 กก.) และส่วนสูง (100-250 ซม.) ให้ถูกต้อง');
+      return false;
+    }
+    
+    const bmi = calculateBMI(weight, height);
+    
+    setVitalSigns(prev => ({
+      ...prev,
+      weight,
+      height,
+      bmi
+    }));
+    
+    setErrorMessage('');
+    setCurrentStep('systolic');
+    await saveAndSendVitalSigns();
+    return true;
+  };
+
+  const processDebugBloodPressure = async () => {
+    const systolic = parseInt(debugSystolic);
+    const diastolic = parseInt(debugDiastolic);
+    const pulse = parseInt(debugPulse);
+    
+    if (!systolic || !diastolic || !pulse || 
+        systolic < 80 || systolic > 200 || 
+        diastolic < 50 || diastolic > 120 || 
+        pulse < 40 || pulse > 150) {
+      setErrorMessage('กรุณากรอกค่าความดันและชีพจรให้ถูกต้อง');
+      return false;
+    }
+    
+    if (systolic > 160 || diastolic > 100) {
+      setErrorMessage('ความดันสูงเกินไป กรุณาตรวจสอบค่าอีกครั้ง');
+    }
+    
+    setVitalSigns(prev => ({
+      ...prev,
+      systolic,
+      diastolic,
+      pulse
+    }));
+    
+    setErrorMessage('');
+    setCurrentStep('summary');
+    await saveAndSendVitalSigns();
+    return true;
+  };
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -95,7 +237,6 @@ const AllProcess: React.FC = () => {
       setIsRecording(true);
       setRecordingTime(0);
       
-      // เริ่มนับเวลา
       recordingTimerRef.current = setInterval(() => {
         setRecordingTime(prev => prev + 1);
       }, 1000);
@@ -132,11 +273,9 @@ const AllProcess: React.FC = () => {
     setSymptomsText('');
   };
 
-  // ฟังก์ชันส่งข้อมูลอาการไปยัง backend
   const submitSymptoms = async () => {
     try {
-      const token = localStorage.getItem('patient_token');
-      if (!token) {
+      if (!patientToken) {
         setErrorMessage('ไม่พบ token กรุณายืนยันตัวตนใหม่');
         return;
       }
@@ -154,7 +293,7 @@ const AllProcess: React.FC = () => {
         formData,
         {
           headers: {
-            'Authorization': `Bearer ${token}`,
+            'Authorization': `Bearer ${patientToken}`,
             'Content-Type': 'multipart/form-data'
           }
         }
@@ -167,214 +306,147 @@ const AllProcess: React.FC = () => {
     }
   };
 
-  // ฟังก์ชันแปลงเวลาเป็นรูปแบบ mm:ss
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Get patient data from previous page or localStorage
-  const getPatientData = (): PatientData => {
-    // Try to get from location state first (from AuthenPatient.tsx)
-    if (location.state?.patient) {
-      return location.state.patient;
-    }
-    
-    // If not available, try to get from localStorage (set by AuthenPatient.tsx)
-    const storedPatient = localStorage.getItem('authenticatedPatient');
-    if (storedPatient) {
-      return JSON.parse(storedPatient);
-    }
-    
-    // Fallback to mock data
-    return {
-      id: 'P001234',
-      name: 'นายสมชาย ใจดี',
-      nationalId: '1234567890123'
-    };
-  };
-  
-  // Initialize patient data
-  const [patientData, setPatientData] = useState<PatientData>(getPatientData());
-   console.log('patientData:', setPatientData);
-
-  // Debug input states
-  const [debugWeight, setDebugWeight] = useState('');
-  const [debugHeight, setDebugHeight] = useState('');
-  const [debugSystolic, setDebugSystolic] = useState('');
-  const [debugDiastolic, setDebugDiastolic] = useState('');
-  const [debugPulse, setDebugPulse] = useState('');
-
-  // Calculate BMI
-  const calculateBMI = (weight: number, height: number): number => {
-    const heightInMeters = height / 100;
-    return Math.round((weight / (heightInMeters * heightInMeters)) * 10) / 10;
-  };
-
-  // Process debug input for weight and height
-  const processDebugWeightHeight = async () => {
-    const weight = parseFloat(debugWeight);
-    const height = parseFloat(debugHeight);
-    
-    if (!weight || !height || weight < 20 || weight > 200 || height < 100 || height > 250) {
-      setErrorMessage('กรุณากรอกน้ำหนัก (20-200 กก.) และส่วนสูง (100-250 ซม.) ให้ถูกต้อง');
-      return false;
-    }
-    
-    const bmi = calculateBMI(weight, height);
-    
-    setVitalSigns(prev => ({
-      ...prev,
-      weight,
-      height,
-      bmi
-    }));
-    
-    setErrorMessage('');
-    setCurrentStep('systolic');
-    await saveAndSendVitalSigns();
-    return true;
-  };
-
-  // Process debug input for blood pressure
-  const processDebugBloodPressure = async () => {
-    const systolic = parseInt(debugSystolic);
-    const diastolic = parseInt(debugDiastolic);
-    const pulse = parseInt(debugPulse);
-    
-    if (!systolic || !diastolic || !pulse || 
-        systolic < 80 || systolic > 200 || 
-        diastolic < 50 || diastolic > 120 || 
-        pulse < 40 || pulse > 150) {
-      setErrorMessage('กรุณากรอกค่าความดันและชีพจรให้ถูกต้อง');
-      return false;
-    }
-    
-    // Check if blood pressure is too high - ถ้าความดันสูงเกินไป ให้แจ้งเตือน
-    if (systolic > 160 || diastolic > 100) {
-      setErrorMessage('ความดันสูงเกินไป กรุณาตรวจสอบค่าอีกครั้ง');
-      // ในโหมด debug ไม่บังคับให้วัดใหม่ แต่แสดงคำเตือน
-    }
-    
-    setVitalSigns(prev => ({
-      ...prev,
-      systolic,
-      diastolic,
-      pulse
-    }));
-    
-    setErrorMessage('');
-    setCurrentStep('summary');
-    await saveAndSendVitalSigns();
-    return true;
-  };
-
-  // Generate QR Code data
   const generateQRData = () => {
-    const qrData = {
-      patientId: patientData.id,
-      name: patientData.name,
-      vitalSigns,
-      symptoms: {
-        hasAudio: !!audioBlob,
-        text: symptomsText
-      },
-      timestamp: new Date().toISOString(),
-      redirectUrl: '/screening/welcome'
-    };
-    return JSON.stringify(qrData);
+    const token = patientToken || '';
+    const queueId = queueInfo?._id || '';
+    const baseUrl = import.meta.env.PROD
+      ? 'https://yourdomain.com/welcome'
+      : 'http://localhost:5173/welcome';
+    return `${baseUrl}?token=${encodeURIComponent(token)}&queue_id=${encodeURIComponent(queueId)}`;
   };
 
-  // 1. ดึงรายชื่อกล้องทั้งหมด
-  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  // --- อัปเดต videoDevices แล้ว set default id ---
   useEffect(() => {
     navigator.mediaDevices.enumerateDevices().then(devices => {
-      setVideoDevices(devices.filter(device => device.kind === 'videoinput'));
+      const videoInputs = devices.filter(device => device.kind === 'videoinput');
+      setVideoDevices(videoInputs);
+      if (videoInputs.length > 0) {
+        setMainCameraIdWeight(videoInputs[0]?.deviceId || null);
+        setMainCameraIdHeight(videoInputs[0]?.deviceId || null);
+        setBpCameraId(videoInputs[1]?.deviceId || videoInputs[0]?.deviceId || null);
+      }
     });
   }, []);
 
-  // 2. state สำหรับ deviceId ของแต่ละกล้อง
-  const [mainCameraId, setMainCameraId] = useState<string | null>(null); // น้ำหนัก/ส่วนสูง
-  const [bpCameraId, setBpCameraId] = useState<string | null>(null);     // ความดัน/ชีพจร
-
-  // 3. auto เลือก 2 ตัวแรก
-  useEffect(() => {
-    if (videoDevices.length > 0) {
-      setMainCameraId(videoDevices[0]?.deviceId || null);
-      setBpCameraId(videoDevices[1]?.deviceId || videoDevices[0]?.deviceId || null);
-    }
-  }, [videoDevices]);
-
-  // 4. videoRef แยกกัน
-  const mainVideoRef = useRef<HTMLVideoElement>(null);
-  const bpVideoRef = useRef<HTMLVideoElement>(null);
-
-  // useEffect สำหรับ mainCamera (weight/height)
+  // --- useEffect เปิดกล้อง (mainCamera) ---
   useEffect(() => {
     let stream: MediaStream;
-    if (currentStep === 'weight' || currentStep === 'height') {
-      if (mainCameraId) {
-        const deviceInfo = videoDevices.find(d => d.deviceId === mainCameraId);
-        console.log(`[Camera] Try open mainCameraId: ${mainCameraId} | label: ${deviceInfo?.label}`);
-        navigator.mediaDevices.getUserMedia({
-          video: {
-            deviceId: { exact: mainCameraId },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
-          }
+    let cancelled = false;
+    let deviceId: string | null = null;
+    if (currentStep === 'weight') deviceId = mainCameraIdWeight;
+    else if (currentStep === 'height') deviceId = mainCameraIdHeight;
+    if ((currentStep === 'weight' || currentStep === 'height') && deviceId) {
+      setIsCameraOpen(false);
+      navigator.mediaDevices.getUserMedia({
+        video: { deviceId: deviceId ? { exact: deviceId } : undefined }
+      })
+        .then(s => {
+          if (cancelled) return;
+          stream = s;
+          setMainStream(s);
+          if (mainVideoRef.current) mainVideoRef.current.srcObject = s;
+          setIsCameraOpen(true);
         })
-          .then(s => {
-            stream = s;
-            if (mainVideoRef.current) mainVideoRef.current.srcObject = stream;
-            console.log('[Camera] mainCamera opened successfully');
-          })
-          .catch(err => {
-            setErrorMessage('ไม่สามารถเปิดกล้องได้: ' + err.name);
-            console.log('[Camera] mainCamera error:', err);
-          });
-      }
+        .catch(err => {
+          setErrorMessage('ไม่สามารถเปิดกล้องได้: ' + err.name);
+          console.error('[Camera] mainCamera error:', err);
+        });
     }
     return () => {
+      cancelled = true;
       if (stream) stream.getTracks().forEach(track => track.stop());
       if (mainVideoRef.current) mainVideoRef.current.srcObject = null;
+      setMainStream(null);
+      setIsCameraOpen(false);
     };
-  }, [currentStep, mainCameraId, videoDevices]);
+  }, [currentStep, mainCameraIdWeight, mainCameraIdHeight]);
 
-  // useEffect สำหรับ bpCamera (blood-pressure)
+  // --- ปรับ useEffect เปิดกล้อง (bpCamera) ---
   useEffect(() => {
     let stream: MediaStream;
-    if (["systolic", "diastolic", "pulse"].includes(currentStep)) {
-      if (bpCameraId) {
-        const deviceInfo = videoDevices.find(d => d.deviceId === bpCameraId);
-        console.log(`[Camera] Try open bpCameraId: ${bpCameraId} | label: ${deviceInfo?.label}`);
-        navigator.mediaDevices.getUserMedia({
-          video: {
-            deviceId: { exact: bpCameraId },
-            width: { ideal: 1920 },
-                       height: { ideal: 1080 }
-          }
+    let cancelled = false;
+    if (["systolic", "diastolic", "pulse"].includes(currentStep) && bpCameraId) {
+      setIsCameraOpen(false);
+      navigator.mediaDevices.getUserMedia({
+        video: { deviceId: bpCameraId ? { exact: bpCameraId } : undefined }
+      })
+        .then(s => {
+          if (cancelled) return;
+          stream = s;
+          setBpStream(s);
+          if (bpVideoRef.current) bpVideoRef.current.srcObject = s;
+          setIsCameraOpen(true);
         })
-          .then(s => {
-            stream = s;
-            if (bpVideoRef.current) bpVideoRef.current.srcObject = stream;
-            console.log('[Camera] bpCamera opened successfully');
-          })
-          .catch(err => {
-            setErrorMessage('ไม่สามารถเปิดกล้องได้: ' + err.name);
-            console.log('[Camera] bpCamera error:', err);
-          });
-      }
+        .catch(err => {
+          setErrorMessage('ไม่สามารถเปิดกล้องได้: ' + err.name);
+          console.error('[Camera] bpCamera error:', err);
+        });
     }
     return () => {
+      cancelled = true;
       if (stream) stream.getTracks().forEach(track => track.stop());
       if (bpVideoRef.current) bpVideoRef.current.srcObject = null;
+      setBpStream(null);
+      setIsCameraOpen(false);
     };
-  }, [currentStep, bpCameraId, videoDevices]);
+  }, [currentStep, bpCameraId]);
 
-  // 6. ปรับ captureAndOcrFront ให้รับ videoRef
+  // main camera
+  useEffect(() => {
+    if (mainStream && mainVideoRef.current) {
+      mainVideoRef.current.srcObject = mainStream;
+    }
+    return () => {
+      if (mainVideoRef.current) mainVideoRef.current.srcObject = null;
+    };
+  }, [mainStream]);
+
+  // bp camera
+  useEffect(() => {
+    if (bpStream && bpVideoRef.current) {
+      bpVideoRef.current.srcObject = bpStream;
+    }
+    return () => {
+      if (bpVideoRef.current) bpVideoRef.current.srcObject = null;
+    };
+  }, [bpStream]);
+
+  useEffect(() => {
+    return () => {
+      // ปิด mainStream
+      if (mainStream) {
+        mainStream.getTracks().forEach(track => track.stop());
+      }
+      // ปิด mainVideoRef
+      if (mainVideoRef.current && mainVideoRef.current.srcObject) {
+        const s = mainVideoRef.current.srcObject as MediaStream;
+        s.getTracks().forEach(track => {
+          if (track.readyState === 'live') track.stop();
+        });
+        mainVideoRef.current.srcObject = null;
+      }
+      // ปิด bpStream
+      if (bpStream) {
+        bpStream.getTracks().forEach(track => track.stop());
+      }
+      // ปิด bpVideoRef
+      if (bpVideoRef.current && bpVideoRef.current.srcObject) {
+        const s = bpVideoRef.current.srcObject as MediaStream;
+        s.getTracks().forEach(track => {
+          if (track.readyState === 'live') track.stop();
+        });
+        bpVideoRef.current.srcObject = null;
+      }
+    };
+  }, []);
+
   const captureAndOcrFront = async (field: keyof VitalSigns, videoRef: React.RefObject<HTMLVideoElement>) => {
-    console.log('[captureAndOcrFront] called', field, videoRef.current);
     if (!videoRef.current) return;
     const canvas = document.createElement('canvas');
     canvas.width = videoRef.current.videoWidth;
@@ -384,12 +456,11 @@ const AllProcess: React.FC = () => {
     if (field === 'weight' || field === 'height') {
       ctx.filter = 'grayscale(1) contrast(3)';
       ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-      // Invert สี
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       for (let i = 0; i < imageData.data.length; i += 4) {
-        imageData.data[i] = 255 - imageData.data[i];     // R
-        imageData.data[i+1] = 255 - imageData.data[i+1]; // G
-        imageData.data[i+2] = 255 - imageData.data[i+2]; // B
+        imageData.data[i] = 255 - imageData.data[i];
+        imageData.data[i+1] = 255 - imageData.data[i+1];
+        imageData.data[i+2] = 255 - imageData.data[i+2];
       }
       ctx.putImageData(imageData, 0, 0);
     } else {
@@ -400,79 +471,243 @@ const AllProcess: React.FC = () => {
       if (!blob) return;
       setErrorMessage('กำลังประมวลผล OCR...');
       try {
-        // ใช้ภาษา eng เฉพาะ weight/height/blood-pressure
         const isEngOnly = (field === 'weight' || field === 'height' || field === 'systolic' || field === 'diastolic' || field === 'pulse');
         const lang = isEngOnly ? 'eng' : 'eng+tha';
-        const ocrText = await ocrImageBlob(blob, lang);
-        const numberPattern = /\d{2,3}(\.\d{1,2})?/g;
+        const ocrTexts = await ocrImageBlob(blob, lang);
+        const ocrText = ocrTexts.join(' ');
+        const numberPattern = /\d{1,3}(\.\d+)?/g;
         const matches = ocrText.match(numberPattern);
-        console.log(`[OCR] Field: ${field} | Raw OCR text:`, ocrText);
-        console.log(`[OCR] Field: ${field} | Matched numbers:`, matches);
+        let value: string | null = null;
         if (matches && matches.length > 0) {
-          console.log(`[OCR] Field: ${field} | Using value:`, matches[0]);
+          value = matches.find(m => m.includes('.')) || matches[0];
           setVitalSigns(prev => ({
             ...prev,
-            [field]: Number(matches[0])
+            [field]: Number(value)
           }));
           setErrorMessage('');
-          // เพิ่ม delay ก่อนเปลี่ยน step
           setTimeout(() => {
             if (field === 'weight') setCurrentStep('height');
             else if (field === 'height') setCurrentStep('systolic');
             else if (field === 'systolic') setCurrentStep('diastolic');
             else if (field === 'diastolic') setCurrentStep('pulse');
             else if (field === 'pulse') setCurrentStep('summary');
-          }, 1200); // 1.2 วินาที
+          }, 1200);
         } else {
           setErrorMessage('OCR ไม่พบข้อมูล');
-          console.log(`[OCR] Field: ${field} | No number found`);
         }
       } catch (err) {
         setErrorMessage('เกิดข้อผิดพลาดในการ OCR');
-        console.log(`[OCR] Field: ${field} | OCR error:`, err);
+        console.error(`[OCR] Field: ${field} | OCR error:`, err);
       }
     }, 'image/jpeg', 0.8);
   };
 
-  // ปรับ ocrImageBlob ให้รับ lang
-  const ocrImageBlob = async (blob: Blob, lang: string = 'eng+tha'): Promise<string> => {
-    const { data: { text } } = await Tesseract.recognize(blob, lang);
-    return text;
+  const ocrImageBlob = async (blob: Blob, lang: string = 'eng'): Promise<string[]> => {
+    const formData = new FormData();
+    formData.append('image', blob, 'ocr.jpg');
+    formData.append('lang', lang);
+    const res = await axios.post(`${API_BASE_URL}/api/realtime/ocr/scan`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return res.data.text;
   };
 
-  // ตัวอย่างฟังก์ชันบันทึก vital signs และส่งไป backend
   const saveAndSendVitalSigns = async () => {
     if (!patientToken) {
       setErrorMessage('ไม่พบ token กรุณายืนยันตัวตนใหม่');
       return;
     }
     try {
-      // POST ข้อมูล vital_signs ไป backend
-      await axios.post(
+      const res = await axios.post(
         `${API_BASE_URL}/api/queue/queue`,
         {
-          vital_signs: {
-            weight: vitalSigns.weight,
-            height: vitalSigns.height,
-            bmi: vitalSigns.bmi,
-            systolic: vitalSigns.systolic,
-            diastolic: vitalSigns.diastolic,
-            pulse: vitalSigns.pulse
-          }
+          vital_signs: vitalSigns,
+          symptoms: symptomsText
         },
         { headers: { Authorization: `Bearer ${patientToken}` } }
       );
-      // POST สำเร็จแล้ว GET ข้อมูลคิวกลับมา
-      await axios.get(
+      const queueResponse = await axios.get(
         `${API_BASE_URL}/api/queue/queue/with_patient`,
         { headers: { Authorization: `Bearer ${patientToken}` } }
       );
+      setQueueInfo(queueResponse.data);
     } catch {
       setErrorMessage('บันทึกข้อมูลหรือดึงคิวล้มเหลว');
     }
   };
 
-  // Debug Panel Component
+  const sendAudioToBackend = async (audioBlob: Blob) => {
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'audio.wav');
+    const res = await axios.post(`${API_BASE_URL}/api/speaktotext/`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return res.data.text;
+  };
+
+  useEffect(() => {
+    if (audioBlob) {
+      setErrorMessage('กำลังแปลงเสียงเป็นข้อความ...');
+      sendAudioToBackend(audioBlob)
+        .then(text => {
+          setSymptomsText(text);
+          setErrorMessage('');
+        })
+        .catch(err => {
+          setErrorMessage('เกิดข้อผิดพลาดในการแปลงเสียงเป็นข้อความ');
+          console.error('Speech-to-text error:', err);
+        });
+    }
+  }, [audioBlob]);
+
+  const openCamera = async () => {
+    if ((currentStep === 'weight' || currentStep === 'height') && mainStream) return;
+    if (['systolic', 'diastolic', 'pulse'].includes(currentStep) && bpStream) return;
+    try {
+      const videoConstraints = {
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      };
+      if (currentStep === 'weight' || currentStep === 'height') {
+        const s = await navigator.mediaDevices.getUserMedia({
+          video: { ...videoConstraints, deviceId: mainCameraId ? { exact: mainCameraId } : undefined }
+        });
+        setMainStream(s);
+        if (mainVideoRef.current) mainVideoRef.current.srcObject = s;
+      } else if (["systolic", "diastolic", "pulse"].includes(currentStep)) {
+        const s = await navigator.mediaDevices.getUserMedia({
+          video: { ...videoConstraints, deviceId: bpCameraId ? { exact: bpCameraId } : undefined }
+        });
+        setBpStream(s);
+        if (bpVideoRef.current) bpVideoRef.current.srcObject = s;
+      }
+      setIsCameraOpen(true);
+    } catch (err) {
+      setErrorMessage('ไม่สามารถเปิดกล้องได้');
+      console.error('Camera error:', err);
+    }
+  };
+
+  const closeCamera = () => {
+    if (mainStream) {
+      mainStream.getTracks().forEach(track => track.stop());
+      setMainStream(null);
+      if (mainVideoRef.current) mainVideoRef.current.srcObject = null;
+    }
+    if (bpStream) {
+      bpStream.getTracks().forEach(track => track.stop());
+      setBpStream(null);
+      if (bpVideoRef.current) bpVideoRef.current.srcObject = null;
+    }
+    setIsCameraOpen(false);
+    if (scanIntervalId.current) clearInterval(scanIntervalId.current);
+  };
+
+  const scan = async (field: keyof VitalSigns) => {
+    const videoRef = (field === 'weight' || field === 'height') ? mainVideoRef : bpVideoRef;
+    if (!videoRef.current) return;
+    if (videoRef.current.videoWidth === 0 || videoRef.current.videoHeight === 0) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    if (field === 'weight' || field === 'height') {
+      ctx.filter = 'grayscale(1) contrast(3)';
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < imageData.data.length; i += 4) {
+        imageData.data[i] = 255 - imageData.data[i];
+        imageData.data[i+1] = 255 - imageData.data[i+1];
+        imageData.data[i+2] = 255 - imageData.data[i+2];
+      }
+      ctx.putImageData(imageData, 0, 0);
+    } else {
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    }
+    canvas.toBlob(async (blob) => {
+      if (!blob) return;
+      setErrorMessage('กำลังประมวลผล OCR...');
+      try {
+        const isEngOnly = (field === 'weight' || field === 'height' || field === 'systolic' || field === 'diastolic' || field === 'pulse');
+        const lang = isEngOnly ? 'eng' : 'eng+tha';
+        const ocrTexts = await ocrImageBlob(blob, lang);
+        const ocrText = ocrTexts.join(' ');
+        const numberPattern = /\d{1,3}(\.\d+)?/g;
+        const matches = ocrText.match(numberPattern);
+        let value: string | null = null;
+        if (matches && matches.length > 0) {
+          if (field === 'height') {
+            // เลือกค่าที่มากที่สุด
+            const nums = matches.map(Number).filter(n => !isNaN(n));
+            const highest = Math.max(...nums);
+            value = highest.toString();
+          } else {
+            value = matches.find(m => m.includes('.')) || matches[0];
+          }
+          let num = Number(value);
+          let valid = true;
+          if (field === 'weight' && (num < 20 || num > 200)) valid = false;
+          if (field === 'height' && (num < 100 || num > 250)) valid = false;
+          if (field === 'systolic' && (num < 80 || num > 200)) valid = false;
+          if (field === 'diastolic' && (num < 50 || num > 120)) valid = false;
+          if (field === 'pulse' && (num < 40 || num > 150)) valid = false;
+          if (!valid) {
+            setErrorMessage('OCR พบเลขไม่สมเหตุสมผล: ' + value);
+            setScanCount(c => c + 1);
+            return;
+          }
+          setVitalSigns(prev => ({ ...prev, [field]: num }));
+          setErrorMessage('');
+          setScanCount(0);
+          setIsCameraOpen(false);
+          closeCamera();
+          setManualInputMode(false);
+          setTimeout(() => {
+            if (field === 'weight') setCurrentStep('height');
+            else if (field === 'height') setCurrentStep('systolic');
+            else if (field === 'systolic') setCurrentStep('diastolic');
+            else if (field === 'diastolic') setCurrentStep('pulse');
+            else if (field === 'pulse') setCurrentStep('symptoms');
+          }, 1200);
+        } else {
+          setScanCount(c => c + 1);
+          setErrorMessage('OCR ไม่พบข้อมูล');
+        }
+      } catch (err) {
+        setScanCount(c => c + 1);
+        setErrorMessage('เกิดข้อผิดพลาดในการ OCR');
+        console.error(`[OCR] Field: ${field} | OCR error:`, err);
+      }
+    }, 'image/jpeg', 0.8);
+  };
+
+  useEffect(() => {
+    if (isCameraOpen) {
+      let field: keyof VitalSigns;
+      if (currentStep === 'weight') field = 'weight';
+      else if (currentStep === 'height') field = 'height';
+      else if (currentStep === 'systolic') field = 'systolic';
+      else if (currentStep === 'diastolic') field = 'diastolic';
+      else if (currentStep === 'pulse') field = 'pulse';
+      else return;
+      scan(field);
+      scanIntervalId.current = setInterval(() => scan(field), 8000);
+    }
+    return () => {
+      if (scanIntervalId.current) clearInterval(scanIntervalId.current);
+    };
+  }, [isCameraOpen, currentStep]);
+
+  useEffect(() => {
+    if (scanCount >= 5) setManualInputMode(true);
+  }, [scanCount]);
+
+  useEffect(() => {
+    setScanCount(0);
+    setManualInputMode(false);
+  }, [currentStep]);
+
   const DebugPanel = () => (
     <div className="fixed top-4 right-4 bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-lg z-50 w-80">
       <div className="flex justify-between items-center mb-2">
@@ -595,10 +830,10 @@ const AllProcess: React.FC = () => {
             className="w-full p-2 border rounded h-20"
           />
           <button
-            onClick={() => setCurrentStep('qr-code')}
+            onClick={submitSymptoms}
             className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
           >
-            ข้ามไปขั้นตอนถัดไป
+            ยืนยันและดำเนินการต่อ
           </button>
         </div>
       ) : (
@@ -612,7 +847,6 @@ const AllProcess: React.FC = () => {
     </div>
   );
 
-  // Debug Button Component
   const DebugButton = () => (
     isDebugMode && !showDebugPanel && (
       <button
@@ -625,70 +859,66 @@ const AllProcess: React.FC = () => {
     )
   );
 
-  // เพิ่ม UI dropdown สำหรับเลือกกล้อง
   const CameraSelector = () => (
-    <div className="flex flex-col md:flex-row gap-4 mb-6">
-      <div>
-        <label className="block font-medium mb-1 text-white">เลือกกล้องสำหรับน้ำหนัก/ส่วนสูง</label>
-        <select
-          value={mainCameraId || ''}
-          onChange={e => setMainCameraId(e.target.value)}
-          className="p-2 border rounded w-full"
-        >
-          {videoDevices.map((device, idx) => (
-            <option key={device.deviceId} value={device.deviceId}>
-              {device.label || `Camera ${idx + 1} (${device.deviceId.slice(-4)})`}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div>
-        <label className="block font-medium mb-1 text-white">เลือกกล้องสำหรับความดัน/ชีพจร</label>
-        <select
-          value={bpCameraId || ''}
-          onChange={e => setBpCameraId(e.target.value)}
-          className="p-2 border rounded w-full"
-        >
-          {videoDevices.map((device, idx) => (
-            <option key={device.deviceId} value={device.deviceId}>
-              {device.label || `Camera ${idx + 1} (${device.deviceId.slice(-4)})`}
-            </option>
-          ))}
-        </select>
-      </div>
-    </div>
+    <>
+      <button
+        className="fixed bottom-4 right-4 z-50 bg-gray-700 text-white px-4 py-2 rounded shadow-lg hover:bg-gray-800"
+        onClick={() => setShowCameraSettings(v => !v)}
+      >
+        {showCameraSettings ? 'ปิดการตั้งค่ากล้อง' : 'ตั้งค่ากล้อง'}
+      </button>
+      {showCameraSettings && (
+        <div className="fixed bottom-16 right-4 z-50 bg-white/95 backdrop-blur-md rounded-xl shadow-2xl p-6 w-80 border border-gray-200">
+          <div className="mb-4">
+            <label className="block font-medium mb-1 text-gray-800">เลือกกล้องสำหรับน้ำหนัก</label>
+            <select
+              value={mainCameraIdWeight || ''}
+              onChange={e => setMainCameraIdWeight(e.target.value)}
+              className="p-2 border rounded w-full"
+            >
+              {videoDevices.map((device, idx) => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {device.label || `Camera ${idx + 1} (${device.deviceId.slice(-4)})`}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="mb-4">
+            <label className="block font-medium mb-1 text-gray-800">เลือกกล้องสำหรับส่วนสูง</label>
+            <select
+              value={mainCameraIdHeight || ''}
+              onChange={e => setMainCameraIdHeight(e.target.value)}
+              className="p-2 border rounded w-full"
+            >
+              {videoDevices.map((device, idx) => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {device.label || `Camera ${idx + 1} (${device.deviceId.slice(-4)})`}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block font-medium mb-1 text-gray-800">เลือกกล้องสำหรับความดัน/ชีพจร</label>
+            <select
+              value={bpCameraId || ''}
+              onChange={e => setBpCameraId(e.target.value)}
+              className="p-2 border rounded w-full"
+            >
+              {videoDevices.map((device, idx) => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {device.label || `Camera ${idx + 1} (${device.deviceId.slice(-4)})`}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+    </>
   );
 
-  useEffect(() => {
-    if (
-      vitalSigns.weight &&
-      vitalSigns.height &&
-      vitalSigns.weight > 0 &&
-      vitalSigns.height > 0
-    ) {
-      const bmi = calculateBMI(vitalSigns.weight, vitalSigns.height);
-      if (vitalSigns.bmi !== bmi) {
-        setVitalSigns(prev => ({
-          ...prev,
-          bmi
-        }));
-      }
-    }
-  }, [vitalSigns.weight, vitalSigns.height]);
-
-  // Add manual input states
-  const [manualWeight, setManualWeight] = useState('');
-  const [manualHeight, setManualHeight] = useState('');
-  const [manualSystolic, setManualSystolic] = useState('');
-  const [manualDiastolic, setManualDiastolic] = useState('');
-  const [manualPulse, setManualPulse] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-
-  // เพิ่ม Symptoms Step
   if (currentStep === 'symptoms') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-800 flex">
-        {/* Left Panel - Instructions */}
         <div className="w-1/3 bg-white/10 backdrop-blur-sm p-8 flex flex-col justify-center">
           <div className="text-center mb-8">
             <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center shadow-2xl mb-6">
@@ -699,8 +929,6 @@ const AllProcess: React.FC = () => {
             <h1 className="text-3xl font-bold text-white mb-4">บันทึกอาการ</h1>
             <p className="text-white/80 text-lg">ขั้นตอนสุดท้าย</p>
           </div>
-
-          {/* Patient Info */}
           <div className="bg-white/20 rounded-xl p-6 mb-6">
             <h3 className="text-white font-semibold mb-4">ข้อมูลผู้ป่วย</h3>
             <div className="space-y-2 text-white/80">
@@ -708,8 +936,6 @@ const AllProcess: React.FC = () => {
               <p><span className="font-medium">เลขประจำตัวประชาชน:</span> {patientData.nationalId.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')}</p>
             </div>
           </div>
-
-          {/* Instructions */}
           <div className="bg-white/20 rounded-xl p-6">
             <h3 className="text-white font-semibold mb-4">คำแนะนำ</h3>
             <ul className="space-y-2 text-white/80 list-disc list-inside">
@@ -719,16 +945,11 @@ const AllProcess: React.FC = () => {
             </ul>
           </div>
         </div>
-
-        {/* Right Panel - Recording */}
         <div className="w-2/3 p-8 flex flex-col items-center justify-center">
           <div className="bg-white rounded-xl shadow-xl p-8 w-full max-w-2xl">
             <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">บันทึกอาการของท่าน</h2>
-            
-            {/* Voice Recording Section */}
             <div className="mb-8">
               <h3 className="text-lg font-medium text-gray-800 mb-4">บันทึกเสียง</h3>
-              
               <div className="bg-gray-50 rounded-lg p-6">
                 {!isRecording && !audioBlob && (
                   <div className="text-center">
@@ -744,7 +965,6 @@ const AllProcess: React.FC = () => {
                     <p className="text-sm text-gray-500 mt-2">กดเพื่อเริ่มบันทึกเสียง</p>
                   </div>
                 )}
-
                 {isRecording && (
                   <div className="text-center">
                     <div className="flex items-center justify-center mb-4">
@@ -759,7 +979,6 @@ const AllProcess: React.FC = () => {
                     </button>
                   </div>
                 )}
-
                 {audioBlob && !isRecording && (
                   <div className="text-center">
                     <div className="flex items-center justify-center space-x-4 mb-4">
@@ -796,8 +1015,6 @@ const AllProcess: React.FC = () => {
                 )}
               </div>
             </div>
-
-            {/* Text Input Section */}
             <div className="mb-8">
               <h3 className="text-lg font-medium text-gray-800 mb-4">หรือพิมพ์อาการ</h3>
               <textarea
@@ -807,15 +1024,11 @@ const AllProcess: React.FC = () => {
                 className="w-full p-4 border border-gray-300 rounded-lg h-32 resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
-
-            {/* Error Message */}
             {errorMessage && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
                 <p>{errorMessage}</p>
               </div>
             )}
-
-            {/* Submit Button */}
             <div className="text-center">
               <button
                 onClick={submitSymptoms}
@@ -828,8 +1041,6 @@ const AllProcess: React.FC = () => {
               >
                 ยืนยันและดำเนินการต่อ
               </button>
-              
-              {/* Skip Button for Debug Mode */}
               {isDebugMode && (
                 <button
                   onClick={() => setCurrentStep('qr-code')}
@@ -839,13 +1050,9 @@ const AllProcess: React.FC = () => {
                 </button>
               )}
             </div>
-
-            {/* Hidden Audio Element */}
             <audio ref={audioRef} className="hidden" />
           </div>
         </div>
-        
-        {/* Debug Panel */}
         {showDebugPanel && <DebugPanel />}
         <DebugButton />
       </div>
@@ -855,7 +1062,6 @@ const AllProcess: React.FC = () => {
   if (currentStep === 'weight') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-800 flex">
-        {/* Left Panel - Instructions */}
         <div className="w-1/3 bg-white/10 backdrop-blur-sm p-8 flex flex-col justify-center">
           <div className="text-center mb-8">
             <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center shadow-2xl mb-6">
@@ -866,8 +1072,6 @@ const AllProcess: React.FC = () => {
             <h1 className="text-3xl font-bold text-white mb-4">สแกนน้ำหนัก</h1>
             <p className="text-white/80 text-lg">ขั้นตอนที่ 1 จาก 3</p>
           </div>
-
-          {/* Patient Info */}
           <div className="bg-white/20 rounded-xl p-6 mb-6">
             <h3 className="text-white font-semibold mb-4">ข้อมูลผู้ป่วย</h3>
             <div className="space-y-2 text-white/80">
@@ -875,12 +1079,10 @@ const AllProcess: React.FC = () => {
               <p><span className="font-medium">เลขประจำตัวประชาชน:</span> {patientData.nationalId.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')}</p>
             </div>
           </div>
-
-          {/* Instructions */}
           <div className="bg-white/20 rounded-xl p-6">
             <h3 className="text-white font-semibold mb-4">คำแนะนำ</h3>
             <ul className="space-y-2 text-white/80 list-disc list-inside">
-                            <li>ยืนตรงบนเครื่องชั่งน้ำหนัก</li>
+              <li>ยืนตรงบนเครื่องชั่งน้ำหนัก</li>
               <li>ถอดรองเท้าและของที่มีน้ำหนักออก</li>
               <li>ยืนนิ่งๆ จนกว่าระบบจะวัดเสร็จ</li>
             </ul>
@@ -894,59 +1096,25 @@ const AllProcess: React.FC = () => {
             </button>
           </div>
         </div>
-
-        {/* Right Panel - Measurement */}
         <div className="w-2/3 p-8 flex flex-col items-center justify-center">
           <CameraSelector />
           <div className="bg-white rounded-xl shadow-xl p-8 w-full max-w-2xl">
             <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">กำลังสแกนน้ำหนัก</h2>
-            
-            {/* Video Feed */}
-            <div className="relative mb-6 rounded-lg overflow-hidden bg-gray-100 aspect-video">
-              <video ref={mainVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-              {(!mainVideoRef.current || !mainVideoRef.current.srcObject) && (
-                <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
-                  <div className="text-center">
-                    <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-xl font-medium text-gray-800">กำลังเปิดกล้อง...</h3>
-                  </div>
-                </div>
+            <div className="mb-4 text-center">
+              {!isCameraOpen ? (
+                <div className="text-gray-500">กำลังเปิดกล้อง...</div>
+              ) : (
+                <video ref={mainVideoRef} autoPlay playsInline muted className="w-full h-64 object-cover mb-2" />
               )}
+              <div className="text-sm text-gray-500 mt-2">กำลังสแกนอัตโนมัติทุก 8 วินาที...</div>
             </div>
-            
-            {/* Error Message */}
-            {errorMessage && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-                <p>{errorMessage}</p>
-              </div>
-            )}
-            <div className="text-center text-lg">
-              น้ำหนักที่ได้: <span className="font-bold">{vitalSigns.weight ?? '-'}</span> กก.
-            </div>
-            <div className="text-center mt-4">
-              <button
-                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-                onClick={() => captureAndOcrFront('weight', mainVideoRef)}
-              >
-                สแกนน้ำหนักด้วยกล้อง
-              </button>
-            </div>
-            {/* Manual input */}
-            <div className="mt-4 flex flex-col items-center">
-              <input
-                type="number"
-                className="p-2 border rounded w-40 text-center"
-                placeholder="กรอกน้ำหนัก (กก.)"
-                value={manualWeight}
-                onChange={e => setManualWeight(e.target.value)}
-              />
-              <button
-                className="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
-                onClick={() => {
+            {errorMessage && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">{errorMessage}</div>}
+            <div className="text-center text-lg">น้ำหนักที่ได้: <span className="font-bold">{vitalSigns.weight ?? '-'}</span> กก.</div>
+            {(scanCount >= 5 || manualInputMode) && (
+              <div className="mt-4 flex flex-col items-center">
+                <label className="mb-1 text-gray-700">กรอกข้อมูลด้วยตัวเอง (optional):</label>
+                <input type="number" className="p-2 border rounded w-40 text-center" placeholder="กรอกน้ำหนัก (กก.)" value={manualWeight} onChange={e => setManualWeight(e.target.value)} />
+                <button className="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600" onClick={() => {
                   const w = parseFloat(manualWeight);
                   if (w > 20 && w < 200) {
                     setVitalSigns(prev => ({ ...prev, weight: w }));
@@ -955,15 +1123,11 @@ const AllProcess: React.FC = () => {
                   } else {
                     setErrorMessage('กรุณากรอกน้ำหนักให้ถูกต้อง');
                   }
-                }}
-              >
-                ยืนยันน้ำหนัก
-              </button>
-            </div>
+                }}>ยืนยันน้ำหนัก</button>
+              </div>
+            )}
           </div>
         </div>
-        
-        {/* Debug Panel */}
         {showDebugPanel && <DebugPanel />}
         <DebugButton />
       </div>
@@ -973,7 +1137,6 @@ const AllProcess: React.FC = () => {
   if (currentStep === 'height') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-800 flex">
-        {/* Left Panel - Instructions */}
         <div className="w-1/3 bg-white/10 backdrop-blur-sm p-8 flex flex-col justify-center">
           <div className="text-center mb-8">
             <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center shadow-2xl mb-6">
@@ -984,8 +1147,6 @@ const AllProcess: React.FC = () => {
             <h1 className="text-3xl font-bold text-white mb-4">สแกนส่วนสูง</h1>
             <p className="text-white/80 text-lg">ขั้นตอนที่ 2 จาก 3</p>
           </div>
-
-          {/* Patient Info */}
           <div className="bg-white/20 rounded-xl p-6 mb-6">
             <h3 className="text-white font-semibold mb-4">ข้อมูลผู้ป่วย</h3>
             <div className="space-y-2 text-white/80">
@@ -993,8 +1154,6 @@ const AllProcess: React.FC = () => {
               <p><span className="font-medium">เลขประจำตัวประชาชน:</span> {patientData.nationalId.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')}</p>
             </div>
           </div>
-
-          {/* Instructions */}
           <div className="bg-white/20 rounded-xl p-6">
             <h3 className="text-white font-semibold mb-4">คำแนะนำ</h3>
             <ul className="space-y-2 text-white/80 list-disc list-inside">
@@ -1012,57 +1171,25 @@ const AllProcess: React.FC = () => {
             </button>
           </div>
         </div>
-
-        {/* Right Panel - Measurement */}
         <div className="w-2/3 p-8 flex flex-col items-center justify-center">
           <CameraSelector />
           <div className="bg-white rounded-xl shadow-xl p-8 w-full max-w-2xl">
             <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">กำลังสแกนส่วนสูง</h2>
-            
-            {/* Video Feed */}
-            <div className="relative mb-6 rounded-lg overflow-hidden bg-gray-100 aspect-video">
-              <video ref={mainVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-              {(!mainVideoRef.current || !mainVideoRef.current.srcObject) && (
-                <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
-                  <div className="text-center">
-                    <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-xl font-medium text-gray-800">กำลังเปิดกล้อง...</h3>
-                  </div>
-                </div>
+            <div className="mb-4 text-center">
+              {!isCameraOpen ? (
+                <div className="text-gray-500">กำลังเปิดกล้อง...</div>
+              ) : (
+                <video ref={mainVideoRef} autoPlay playsInline muted className="w-full h-64 object-cover mb-2" />
               )}
+              <div className="text-sm text-gray-500 mt-2">กำลังสแกนอัตโนมัติทุก 8 วินาที...</div>
             </div>
-            
-            {/* Error Message */}
-            {errorMessage && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-                <p>{errorMessage}</p>
-              </div>
-            )}
+            {errorMessage && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">{errorMessage}</div>}
             <div className="text-center text-lg">ส่วนสูงที่ได้: <span className="font-bold">{vitalSigns.height ?? '-'}</span> ซม.</div>
-            <div className="text-center mt-4">
-              <button
-                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-                onClick={() => captureAndOcrFront('height', mainVideoRef)}
-              >
-                สแกนส่วนสูงด้วยกล้อง
-              </button>
-            </div>
-            {/* Manual input */}
-            <div className="mt-4 flex flex-col items-center">
-              <input
-                type="number"
-                className="p-2 border rounded w-40 text-center"
-                placeholder="กรอกส่วนสูง (ซม.)"
-                value={manualHeight}
-                onChange={e => setManualHeight(e.target.value)}
-              />
-              <button
-                className="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
-                onClick={() => {
+            {(scanCount >= 5 || manualInputMode) && (
+              <div className="mt-4 flex flex-col items-center">
+                <label className="mb-1 text-gray-700">กรอกข้อมูลด้วยตัวเอง (optional):</label>
+                <input type="number" className="p-2 border rounded w-40 text-center" placeholder="กรอกส่วนสูง (ซม.)" value={manualHeight} onChange={e => setManualHeight(e.target.value)} />
+                <button className="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600" onClick={() => {
                   const h = parseFloat(manualHeight);
                   if (h > 100 && h < 250) {
                     setVitalSigns(prev => ({ ...prev, height: h }));
@@ -1071,26 +1198,20 @@ const AllProcess: React.FC = () => {
                   } else {
                     setErrorMessage('กรุณากรอกส่วนสูงให้ถูกต้อง');
                   }
-                }}
-              >
-                ยืนยันส่วนสูง
-              </button>
-            </div>
+                }}>ยืนยันส่วนสูง</button>
+              </div>
+            )}
           </div>
         </div>
-        
-        {/* Debug Panel */}
         {showDebugPanel && <DebugPanel />}
         <DebugButton />
       </div>
     );
   }
 
-  // Blood Pressure Step
   if (currentStep === 'systolic') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-800 flex">
-        {/* Left Panel - Instructions */}
         <div className="w-1/3 bg-white/10 backdrop-blur-sm p-8 flex flex-col justify-center">
           <div className="text-center mb-8">
             <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center shadow-2xl mb-6">
@@ -1101,17 +1222,13 @@ const AllProcess: React.FC = () => {
             <h1 className="text-3xl font-bold text-white mb-4">วัดความดันตัวบน</h1>
             <p className="text-white/80 text-lg">ขั้นตอนที่ 3 จาก 3</p>
           </div>
-
-          {/* Patient Info */}
-                    <div className="bg-white/20 rounded-xl p-6 mb-6">
+          <div className="bg-white/20 rounded-xl p-6 mb-6">
             <h3 className="text-white font-semibold mb-4">ข้อมูลผู้ป่วย</h3>
             <div className="space-y-2 text-white/80">
               <p><span className="font-medium">ชื่อ:</span> {patientData.name}</p>
               <p><span className="font-medium">เลขประจำตัวประชาชน:</span> {patientData.nationalId.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')}</p>
             </div>
           </div>
-
-          {/* Instructions */}
           <div className="bg-white/20 rounded-xl p-6">
             <h3 className="text-white font-semibold mb-4">คำแนะนำ</h3>
             <ul className="space-y-2 text-white/80 list-disc list-inside">
@@ -1129,58 +1246,25 @@ const AllProcess: React.FC = () => {
             </button>
           </div>
         </div>
-
-        {/* Right Panel - Measurement */}
         <div className="w-2/3 p-8 flex flex-col items-center justify-center">
           <CameraSelector />
           <div className="bg-white rounded-xl shadow-xl p-8 w-full max-w-2xl">
             <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">กำลังวัดความดันโลหิต</h2>
-            
-            {/* Video Feed */}
-            <div className="relative mb-6 rounded-lg overflow-hidden bg-gray-100 aspect-video">
-              <video ref={bpVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-              {(!bpVideoRef.current || !bpVideoRef.current.srcObject) && (
-                <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
-                  <div className="text-center">
-                    <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-xl font-medium text-gray-800">เตรียมวัดความดันโลหิต</h3>
-                    <p className="text-sm text-gray-500 mt-2">กำลังเริ่มการวัด...</p>
-                  </div>
-                </div>
+            <div className="mb-4 text-center">
+              {!isCameraOpen ? (
+                <div className="text-gray-500">กำลังเปิดกล้อง...</div>
+              ) : (
+                <video ref={bpVideoRef} autoPlay playsInline muted className="w-full h-64 object-cover mb-2" />
               )}
+              <div className="text-sm text-gray-500 mt-2">กำลังสแกนอัตโนมัติทุก 8 วินาที...</div>
             </div>
-            
-            {/* Error Message */}
-            {errorMessage && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-                <p>{errorMessage}</p>
-              </div>
-            )}
+            {errorMessage && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">{errorMessage}</div>}
             <div className="text-center text-lg">ค่าความดันตัวบนที่ได้: <span className="font-bold">{vitalSigns.systolic ?? '-'}</span> mmHg</div>
-            <div className="text-center mt-4">
-              <button
-                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-                onClick={() => captureAndOcrFront('systolic', bpVideoRef)}
-              >
-                สแกนความดันตัวบน
-              </button>
-            </div>
-            {/* Manual input */}
-            <div className="mt-4 flex flex-col items-center">
-              <input
-                type="number"
-                className="p-2 border rounded w-40 text-center"
-                placeholder="กรอกความดันตัวบน (mmHg)"
-                value={manualSystolic}
-                onChange={e => setManualSystolic(e.target.value)}
-              />
-              <button
-                className="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
-                onClick={() => {
+            {(scanCount >= 5 || manualInputMode) && (
+              <div className="mt-4 flex flex-col items-center">
+                <label className="mb-1 text-gray-700">กรอกข้อมูลด้วยตัวเอง (optional):</label>
+                <input type="number" className="p-2 border rounded w-40 text-center" placeholder="กรอกความดันตัวบน (mmHg)" value={manualSystolic} onChange={e => setManualSystolic(e.target.value)} />
+                <button className="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600" onClick={() => {
                   const s = parseInt(manualSystolic);
                   if (s > 80 && s < 200) {
                     setVitalSigns(prev => ({ ...prev, systolic: s }));
@@ -1189,15 +1273,11 @@ const AllProcess: React.FC = () => {
                   } else {
                     setErrorMessage('กรุณากรอกค่าความดันตัวบนให้ถูกต้อง');
                   }
-                }}
-              >
-                ยืนยันความดันตัวบน
-              </button>
-            </div>
+                }}>ยืนยันความดันตัวบน</button>
+              </div>
+            )}
           </div>
         </div>
-        
-        {/* Debug Panel */}
         {showDebugPanel && <DebugPanel />}
         <DebugButton />
       </div>
@@ -1207,7 +1287,6 @@ const AllProcess: React.FC = () => {
   if (currentStep === 'diastolic') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-800 flex">
-        {/* Left Panel - Instructions */}
         <div className="w-1/3 bg-white/10 backdrop-blur-sm p-8 flex flex-col justify-center">
           <div className="text-center mb-8">
             <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center shadow-2xl mb-6">
@@ -1218,8 +1297,6 @@ const AllProcess: React.FC = () => {
             <h1 className="text-3xl font-bold text-white mb-4">วัดความดันตัวล่าง</h1>
             <p className="text-white/80 text-lg">ขั้นตอนที่ 3 จาก 3</p>
           </div>
-
-          {/* Patient Info */}
           <div className="bg-white/20 rounded-xl p-6 mb-6">
             <h3 className="text-white font-semibold mb-4">ข้อมูลผู้ป่วย</h3>
             <div className="space-y-2 text-white/80">
@@ -1227,8 +1304,6 @@ const AllProcess: React.FC = () => {
               <p><span className="font-medium">เลขประจำตัวประชาชน:</span> {patientData.nationalId.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')}</p>
             </div>
           </div>
-
-          {/* Instructions */}
           <div className="bg-white/20 rounded-xl p-6">
             <h3 className="text-white font-semibold mb-4">คำแนะนำ</h3>
             <ul className="space-y-2 text-white/80 list-disc list-inside">
@@ -1246,58 +1321,25 @@ const AllProcess: React.FC = () => {
             </button>
           </div>
         </div>
-
-        {/* Right Panel - Measurement */}
         <div className="w-2/3 p-8 flex flex-col items-center justify-center">
           <CameraSelector />
           <div className="bg-white rounded-xl shadow-xl p-8 w-full max-w-2xl">
             <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">กำลังวัดความดันโลหิต</h2>
-            
-            {/* Video Feed */}
-            <div className="relative mb-6 rounded-lg overflow-hidden bg-gray-100 aspect-video">
-              <video ref={bpVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-              {(!bpVideoRef.current || !bpVideoRef.current.srcObject) && (
-                <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
-                  <div className="text-center">
-                    <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-xl font-medium text-gray-800">เตรียมวัดความดันโลหิต</h3>
-                    <p className="text-sm text-gray-500 mt-2">กำลังเริ่มการวัด...</p>
-                  </div>
-                </div>
+            <div className="mb-4 text-center">
+              {!isCameraOpen ? (
+                <div className="text-gray-500">กำลังเปิดกล้อง...</div>
+              ) : (
+                <video ref={bpVideoRef} autoPlay playsInline muted className="w-full h-64 object-cover mb-2" />
               )}
+              <div className="text-sm text-gray-500 mt-2">กำลังสแกนอัตโนมัติทุก 8 วินาที...</div>
             </div>
-            
-            {/* Error Message */}
-            {errorMessage && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-                <p>{errorMessage}</p>
-              </div>
-            )}
+            {errorMessage && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">{errorMessage}</div>}
             <div className="text-center text-lg">ค่าความดันตัวล่างที่ได้: <span className="font-bold">{vitalSigns.diastolic ?? '-'}</span> mmHg</div>
-            <div className="text-center mt-4">
-              <button
-                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-                onClick={() => captureAndOcrFront('diastolic', bpVideoRef)}
-              >
-                สแกนความดันตัวล่าง
-              </button>
-            </div>
-            {/* Manual input */}
-            <div className="mt-4 flex flex-col items-center">
-              <input
-                type="number"
-                className="p-2 border rounded w-40 text-center"
-                placeholder="กรอกความดันตัวล่าง (mmHg)"
-                value={manualDiastolic}
-                onChange={e => setManualDiastolic(e.target.value)}
-              />
-              <button
-                className="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
-                onClick={() => {
+            {(scanCount >= 5 || manualInputMode) && (
+              <div className="mt-4 flex flex-col items-center">
+                <label className="mb-1 text-gray-700">กรอกข้อมูลด้วยตัวเอง (optional):</label>
+                <input type="number" className="p-2 border rounded w-40 text-center" placeholder="กรอกความดันตัวล่าง (mmHg)" value={manualDiastolic} onChange={e => setManualDiastolic(e.target.value)} />
+                <button className="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600" onClick={() => {
                   const d = parseInt(manualDiastolic);
                   if (d > 50 && d < 120) {
                     setVitalSigns(prev => ({ ...prev, diastolic: d }));
@@ -1306,15 +1348,11 @@ const AllProcess: React.FC = () => {
                   } else {
                     setErrorMessage('กรุณากรอกค่าความดันตัวล่างให้ถูกต้อง');
                   }
-                }}
-              >
-                ยืนยันความดันตัวล่าง
-              </button>
-            </div>
+                }}>ยืนยันความดันตัวล่าง</button>
+              </div>
+            )}
           </div>
         </div>
-        
-        {/* Debug Panel */}
         {showDebugPanel && <DebugPanel />}
         <DebugButton />
       </div>
@@ -1324,19 +1362,16 @@ const AllProcess: React.FC = () => {
   if (currentStep === 'pulse') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-800 flex">
-        {/* Left Panel - Instructions */}
         <div className="w-1/3 bg-white/10 backdrop-blur-sm p-8 flex flex-col justify-center">
           <div className="text-center mb-8">
             <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center shadow-2xl mb-6">
               <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
               </svg>
             </div>
             <h1 className="text-3xl font-bold text-white mb-4">วัดชีพจร</h1>
             <p className="text-white/80 text-lg">ขั้นตอนที่ 3 จาก 3</p>
           </div>
-
-          {/* Patient Info */}
           <div className="bg-white/20 rounded-xl p-6 mb-6">
             <h3 className="text-white font-semibold mb-4">ข้อมูลผู้ป่วย</h3>
             <div className="space-y-2 text-white/80">
@@ -1344,8 +1379,6 @@ const AllProcess: React.FC = () => {
               <p><span className="font-medium">เลขประจำตัวประชาชน:</span> {patientData.nationalId.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')}</p>
             </div>
           </div>
-
-          {/* Instructions */}
           <div className="bg-white/20 rounded-xl p-6">
             <h3 className="text-white font-semibold mb-4">คำแนะนำ</h3>
             <ul className="space-y-2 text-white/80 list-disc list-inside">
@@ -1363,127 +1396,57 @@ const AllProcess: React.FC = () => {
             </button>
           </div>
         </div>
-
-        {/* Right Panel - Measurement */}
         <div className="w-2/3 p-8 flex flex-col items-center justify-center">
           <CameraSelector />
           <div className="bg-white rounded-xl shadow-xl p-8 w-full max-w-2xl">
             <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">กำลังวัดชีพจร</h2>
-            
-            {/* Video Feed */}
-            <div className="relative mb-6 rounded-lg overflow-hidden bg-gray-100 aspect-video">
-              <video ref={bpVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-              {(!bpVideoRef.current || !bpVideoRef.current.srcObject) && (
-                <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
-                  <div className="text-center">
-                    <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-xl font-medium text-gray-800">เตรียมวัดชีพจร</h3>
-                    <p className="text-sm text-gray-500 mt-2">กำลังเริ่มการวัด...</p>
-                  </div>
-                </div>
+            <div className="mb-4 text-center">
+              {!isCameraOpen ? (
+                <div className="text-gray-500">กำลังเปิดกล้อง...</div>
+              ) : (
+                <video ref={bpVideoRef} autoPlay playsInline muted className="w-full h-64 object-cover mb-2" />
               )}
+              <div className="text-sm text-gray-500 mt-2">กำลังสแกนอัตโนมัติทุก 8 วินาที...</div>
             </div>
-            
-            {/* Error Message */}
-            {errorMessage && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-                <p>{errorMessage}</p>
-              </div>
-            )}
+            {errorMessage && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">{errorMessage}</div>}
             <div className="text-center text-lg">ค่าชีพจรที่ได้: <span className="font-bold">{vitalSigns.pulse ?? '-'}</span> bpm</div>
-            <div className="text-center mt-4">
-              <button
-                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-                onClick={() => captureAndOcrFront('pulse', bpVideoRef)}
-              >
-                สแกนชีพจร
-              </button>
-            </div>
-            {/* Manual input */}
-            <div className="mt-4 flex flex-col items-center">
-              <input
-                type="number"
-                className="p-2 border rounded w-40 text-center"
-                placeholder="กรอกชีพจร (bpm)"
-                value={manualPulse}
-                onChange={e => setManualPulse(e.target.value)}
-              />
-              <button
-                className="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
-                onClick={() => {
+            {(scanCount >= 5 || manualInputMode) && (
+              <div className="mt-4 flex flex-col items-center">
+                <label className="mb-1 text-gray-700">กรอกข้อมูลด้วยตัวเอง (optional):</label>
+                <input type="number" className="p-2 border rounded w-40 text-center" placeholder="กรอกชีพจร (bpm)" value={manualPulse} onChange={e => setManualPulse(e.target.value)} />
+                <button className="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600" onClick={() => {
                   const p = parseInt(manualPulse);
                   if (p > 40 && p < 150) {
                     setVitalSigns(prev => ({ ...prev, pulse: p }));
                     setManualPulse('');
-                    setTimeout(() => setCurrentStep('symptoms'), 800);
+                    setTimeout(() => setCurrentStep('summary'), 800);
                   } else {
                     setErrorMessage('กรุณากรอกค่าชีพจรให้ถูกต้อง');
                   }
-                }}
-              >
-                ยืนยันชีพจร
-              </button>
-            </div>
+                }}>ยืนยันชีพจร</button>
+              </div>
+            )}
           </div>
         </div>
-        
-        {/* Debug Panel */}
         {showDebugPanel && <DebugPanel />}
         <DebugButton />
       </div>
     );
   }
 
-  // Summary Step
   if (currentStep === 'summary') {
-    console.log('[SUMMARY] Render summary step', vitalSigns);
-    console.log('weight', vitalSigns.weight);
-    console.log('height', vitalSigns.height);
-    console.log('systolic', vitalSigns.systolic);
-    console.log('diastolic', vitalSigns.diastolic);
-    console.log('pulse', vitalSigns.pulse);
-    console.log('[DEBUG] About to get token from localStorage');
-    const token = localStorage.getItem('patient_token');
-    console.log('[SUMMARY SUBMIT] token:', token);
-
-    // เพิ่มฟังก์ชัน handleSubmit
-    const handleSubmit = async () => {
-      setIsLoading(true);
-      setErrorMessage('');
-      try {
-        if (!token) throw new Error('ไม่พบ token กรุณายืนยันตัวตนใหม่');
-        await axios.post(
-          `${API_BASE_URL}/api/queue/queue`,
-          { vital_signs: vitalSigns },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        setCurrentStep('qr-code');
-      } catch {
-        setErrorMessage('ส่งข้อมูลไม่สำเร็จ');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-800 flex">
-        {/* Left Panel - Patient Info */}
         <div className="w-1/3 bg-white/10 backdrop-blur-sm p-8 flex flex-col justify-center">
           <div className="text-center mb-8">
             <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center shadow-2xl mb-6">
               <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <h1 className="text-3xl font-bold text-white mb-4">สรุปผลการวัด</h1>
-            <p className="text-white/80 text-lg">ตรวจสอบข้อมูลก่อนยืนยัน</p>
+            <h1 className="text-3xl font-bold text-white mb-4">สรุปผล</h1>
+            <p className="text-white/80 text-lg">ตรวจสอบข้อมูล</p>
           </div>
-
-          {/* Patient Info */}
           <div className="bg-white/20 rounded-xl p-6 mb-6">
             <h3 className="text-white font-semibold mb-4">ข้อมูลผู้ป่วย</h3>
             <div className="space-y-2 text-white/80">
@@ -1491,210 +1454,125 @@ const AllProcess: React.FC = () => {
               <p><span className="font-medium">เลขประจำตัวประชาชน:</span> {patientData.nationalId.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')}</p>
             </div>
           </div>
+          <div className="bg-white/20 rounded-xl p-6">
+            <h3 className="text-white font-semibold mb-4">คำแนะนำ</h3>
+            <ul className="space-y-2 text-white/80 list-disc list-inside">
+              <li>ตรวจสอบข้อมูลสัญญาณชีพ</li>
+              <li>หากข้อมูลไม่ถูกต้อง สามารถกลับไปแก้ไขได้</li>
+              <li>กดยืนยันเพื่อไปขั้นตอนต่อไป</li>
+            </ul>
+          </div>
         </div>
-
-        {/* Right Panel - Measurement Results */}
         <div className="w-2/3 p-8 flex flex-col items-center justify-center">
           <div className="bg-white rounded-xl shadow-xl p-8 w-full max-w-2xl">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">ผลการวัดสัญญาณชีพ</h2>
-            
-            <div className="grid grid-cols-2 gap-6 mb-8">
-              {/* Weight & Height */}
-              <div className="bg-blue-50 rounded-xl p-6">
-                <h3 className="text-lg font-medium text-blue-800 mb-4">น้ำหนักและส่วนสูง</h3>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-white p-3 rounded-lg shadow text-center">
-                    <p className="text-sm text-gray-500">น้ำหนัก</p>
-                    <p className="text-xl font-bold text-gray-800">{vitalSigns.weight} กก.</p>
-                  </div>
-                  <div className="bg-white p-3 rounded-lg shadow text-center">
-                    <p className="text-sm text-gray-500">ส่วนสูง</p>
-                    <p className="text-xl font-bold text-gray-800">{vitalSigns.height} ซม.</p>
-                  </div>
-                  <div className="bg-white p-3 rounded-lg shadow text-center">
-                    <p className="text-sm text-gray-500">BMI</p>
-                    <p className="text-xl font-bold text-gray-800">{vitalSigns.bmi}</p>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Blood Pressure */}
-              <div className="bg-red-50 rounded-xl p-6">
-                <h3 className="text-lg font-medium text-red-800 mb-4">ความดันโลหิต</h3>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-white p-3 rounded-lg shadow text-center">
-                    <p className="text-sm text-gray-500">ตัวบน</p>
-                    <p className="text-xl font-bold text-gray-800">{vitalSigns.systolic} mmHg</p>
-                  </div>
-                  <div className="bg-white p-3 rounded-lg shadow text-center">
-                    <p className="text-sm text-gray-500">ตัวล่าง</p>
-                    <p className="text-xl font-bold text-gray-800">{vitalSigns.diastolic} mmHg</p>
-                  </div>
-                  <div className="bg-white p-3 rounded-lg shadow text-center">
-                    <p className="text-sm text-gray-500">ชีพจร</p>
-                    <p className="text-xl font-bold text-gray-800">{vitalSigns.pulse} bpm</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            {/* BMI Interpretation */}
-            <div className="mb-8">
-              <h3 className="text-lg font-medium text-gray-800 mb-2">การแปลผล BMI</h3>
+            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">สรุปผลสัญญาณชีพ</h2>
+            <div className="grid grid-cols-2 gap-4 mb-8">
               <div className="bg-gray-50 p-4 rounded-lg">
-                {vitalSigns.bmi && (
-                  <div className="flex items-center">
-                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                      <div 
-                        className={`h-2.5 rounded-full ${
-                          vitalSigns.bmi < 18.5 ? 'bg-blue-500' : 
-                          vitalSigns.bmi < 25 ? 'bg-green-500' : 
-                          vitalSigns.bmi < 30 ? 'bg-yellow-500' : 'bg-red-500'
-                        }`}
-                        style={{ width: `${Math.min(vitalSigns.bmi * 2, 100)}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                )}
-                <div className="flex justify-between text-xs mt-1">
-                                    <span>น้ำหนักน้อย</span>
-                  <span>ปกติ</span>
-                  <span>น้ำหนักเกิน</span>
-                  <span>อ้วน</span>
-                </div>
-                <p className="mt-2 text-sm">
-                  {vitalSigns.bmi && (
-                    <span className={
-                      vitalSigns.bmi < 18.5 ? 'text-blue-600' : 
-                      vitalSigns.bmi < 25 ? 'text-green-600' : 
-                      vitalSigns.bmi < 30 ? 'text-yellow-600' : 'text-red-600'
-                    }>
-                      {vitalSigns.bmi < 18.5 ? 'น้ำหนักน้อยกว่าเกณฑ์' : 
-                       vitalSigns.bmi < 25 ? 'น้ำหนักปกติ' : 
-                       vitalSigns.bmi < 30 ? 'น้ำหนักเกิน' : 'โรคอ้วน'}
-                    </span>
-                  )}
+                <p className="text-sm text-gray-600">น้ำหนัก</p>
+                <p className="text-lg font-semibold">{vitalSigns.weight ?? '-'} กก.</p>
+              </div>
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-600">ส่วนสูง</p>
+                <p className="text-lg font-semibold">{vitalSigns.height ?? '-'} ซม.</p>
+              </div>
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-600">BMI</p>
+                <p className="text-lg font-semibold">{vitalSigns.bmi ?? '-'}</p>
+              </div>
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-600">ความดันโลหิต</p>
+                <p className="text-lg font-semibold">
+                  {vitalSigns.systolic ?? '-'} / {vitalSigns.diastolic ?? '-'} mmHg
                 </p>
               </div>
-            </div>
-            
-            {/* Blood Pressure Interpretation */}
-            <div className="mb-8">
-              <h3 className="text-lg font-medium text-gray-800 mb-2">การแปลผลความดันโลหิต</h3>
               <div className="bg-gray-50 p-4 rounded-lg">
-                {vitalSigns.systolic && vitalSigns.diastolic && (
-                  <p className="text-sm">
-                    <span className={
-                      vitalSigns.systolic < 120 && vitalSigns.diastolic < 80 ? 'text-green-600' : 
-                      vitalSigns.systolic < 130 && vitalSigns.diastolic < 85 ? 'text-blue-600' : 
-                      vitalSigns.systolic < 140 && vitalSigns.diastolic < 90 ? 'text-yellow-600' : 'text-red-600'
-                    }>
-                      {vitalSigns.systolic < 120 && vitalSigns.diastolic < 80 ? 'ความดันโลหิตปกติ' : 
-                       vitalSigns.systolic < 130 && vitalSigns.diastolic < 85 ? 'ความดันโลหิตปกติค่อนข้างสูง' : 
-                       vitalSigns.systolic < 140 && vitalSigns.diastolic < 90 ? 'ความดันโลหิตสูงระดับต้น' : 'ความดันโลหิตสูง'}
-                    </span>
-                  </p>
-                )}
+                <p className="text-sm text-gray-600">ชีพจร</p>
+                <p className="text-lg font-semibold">{vitalSigns.pulse ?? '-'} bpm</p>
               </div>
             </div>
-            
-            {/* ปุ่ม Submit */}
-            <div className="text-center mt-8">
+            {errorMessage && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+                {errorMessage}
+              </div>
+            )}
+            <div className="flex justify-center space-x-4">
               <button
-                className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold text-lg hover:bg-green-700"
-                onClick={handleSubmit}
-                disabled={isLoading}
+                onClick={() => setCurrentStep('weight')}
+                className="bg-gray-500 text-white px-6 py-3 rounded-lg font-medium hover:bg-gray-600"
               >
-                {isLoading ? (
-                  <>
-                    <svg className="animate-spin h-5 w-5 mr-2 inline-block" viewBox="0 0 24 24" />
-                    กำลังส่งข้อมูล...
-                  </>
-                ) : (
-                  'ยืนยันและส่งข้อมูล'
-                )}
+                กลับไปแก้ไข
               </button>
-              {errorMessage && <div className="text-red-500 mt-2">{errorMessage}</div>}
+              <button
+                onClick={async () => {
+                  await saveAndSendVitalSigns();
+                  setCurrentStep('symptoms');
+                }}
+                className="bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700"
+              >
+                ยืนยันและไปต่อ
+              </button>
             </div>
           </div>
         </div>
-        {/* Debug Panel */}
         {showDebugPanel && <DebugPanel />}
         <DebugButton />
       </div>
     );
   }
 
-  // QR Code Step
   if (currentStep === 'qr-code') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-800 flex items-center justify-center">
-        <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full text-center">
-          <div className="w-20 h-20 mx-auto bg-green-100 rounded-full flex items-center justify-center mb-6">
-            <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">การวัดเสร็จสมบูรณ์</h1>
-          <p className="text-gray-600 mb-6">ข้อมูลของคุณถูกบันทึกเรียบร้อยแล้ว</p>
-          
-          <div className="bg-gray-50 p-6 rounded-lg mb-6">
-            <div className="flex justify-center mb-4">
-              <QRCodeSVG 
-                value={generateQRData()}
-                size={200}
-                bgColor={"#ffffff"}
-                fgColor={"#000000"}
-                level={"H"}
-                includeMargin={false}
-              />
+      <div className="min-h-screen bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-800 flex">
+        <div className="w-1/3 bg-white/10 backdrop-blur-sm p-8 flex flex-col justify-center">
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center shadow-2xl mb-6">
+              <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m-6 4h2m6-4h-2m-6 0h-2m4 0H8m-4 4h2m6 0h2m-2 4h2m-6 0h-2m4-4v-4m0 8v-4m4 4v-4" />
+              </svg>
             </div>
-            <p className="text-sm text-gray-500">สแกน QR Code </p>
+            <h1 className="text-3xl font-bold text-white mb-4">QR Code</h1>
+            <p className="text-white/80 text-lg">ขั้นตอนสุดท้าย</p>
           </div>
-          
-          <div className="bg-blue-50 p-4 rounded-lg mb-6">
-            <h3 className="font-medium text-blue-800 mb-2">ข้อมูลสัญญาณชีพ</h3>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div className="text-left">น้ำหนัก:</div>
-              <div className="text-right font-medium">{vitalSigns.weight} กก.</div>
-              
-              <div className="text-left">ส่วนสูง:</div>
-              <div className="text-right font-medium">{vitalSigns.height} ซม.</div>
-              
-              <div className="text-left">BMI:</div>
-              <div className="text-right font-medium">{vitalSigns.bmi}</div>
-              
-              <div className="text-left">ความดันโลหิต:</div>
-              <div className="text-right font-medium">{vitalSigns.systolic}/{vitalSigns.diastolic} mmHg</div>
-              
-              <div className="text-left">ชีพจร:</div>
-              <div className="text-right font-medium">{vitalSigns.pulse} bpm</div>
+          <div className="bg-white/20 rounded-xl p-6 mb-6">
+            <h3 className="text-white font-semibold mb-4">ข้อมูลผู้ป่วย</h3>
+            <div className="space-y-2 text-white/80">
+              <p><span className="font-medium">ชื่อ:</span> {patientData.name}</p>
+              <p><span className="font-medium">เลขประจำตัวประชาชน:</span> {patientData.nationalId.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')}</p>
             </div>
           </div>
-          
-          <p className="text-sm text-gray-500 mb-4">
-            โปรดรอเจ้าหน้าที่เรียกชื่อของท่าน
-          </p>
-          
-          <button
-            onClick={() => navigate('/screening/welcome')}
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors"
-          >
-            กลับสู่หน้าหลัก
-          </button>
+          <div className="bg-white/20 rounded-xl p-6">
+            <h3 className="text-white font-semibold mb-4">คำแนะนำ</h3>
+            <ul className="space-y-2 text-white/80 list-disc list-inside">
+              <li>สแกน QR Code เพื่อดูผล</li>
+              <li>นำ QR Code ไปแสดงที่เคาน์เตอร์</li>
+              <li>กดเสร็จสิ้นเพื่อกลับสู่หน้าหลัก</li>
+            </ul>
+          </div>
         </div>
-        
-        {/* Debug Panel */}
+        <div className="w-2/3 p-8 flex flex-col items-center justify-center">
+          <div className="bg-white rounded-xl shadow-xl p-8 w-full max-w-2xl">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">สแกน QR Code</h2>
+            <div className="flex justify-center mb-8">
+              <QRCodeSVG value={generateQRData()} size={256} />
+            </div>
+            <div className="text-center">
+              <p className="text-gray-600 mb-4">กรุณาสแกน QR Code นี้เพื่อดูผลการตรวจและคิวของคุณ</p>
+              <button
+                onClick={() => navigate('/welcome')}
+                className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700"
+              >
+                เสร็จสิ้น
+              </button>
+            </div>
+          </div>
+        </div>
         {showDebugPanel && <DebugPanel />}
         <DebugButton />
       </div>
     );
   }
 
-
-  // Default fallback
-  return null;
+  return null; // Fallback in case no step matches
 };
 
 export default AllProcess;

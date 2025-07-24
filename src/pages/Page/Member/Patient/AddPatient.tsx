@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 // import { usePageDebug } from '../../../../hooks/usePageDebug';
 // import { TableSchema } from '../../../../types/Debug';
@@ -94,6 +94,8 @@ const AddPatient: React.FC = () => {
   const [newMedication, setNewMedication] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
 
   const provinces = [
     'กรุงเทพมหานคร', 'กระบี่', 'กาญจนบุรี', 'กาฬสินธุ์', 'กำแพงเพชร', 'ขอนแก่น',
@@ -335,8 +337,17 @@ const AddPatient: React.FC = () => {
   }, [formData, isEdit, isLoading, isNavigating, navigate, profileImageFile, API_BASE_URL, validateStep, currentStep]);
 
   useEffect(() => {
-    return () => setIsNavigating(false);
-  }, []);
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      if (videoRef.current && videoRef.current.srcObject) {
+        const s = videoRef.current.srcObject as MediaStream;
+        s.getTracks().forEach(track => track.stop());
+        videoRef.current.srcObject = null;
+      }
+    };
+  }, [stream]);
 
   const handleCancel = useCallback(() => {
     if (isNavigating) return;

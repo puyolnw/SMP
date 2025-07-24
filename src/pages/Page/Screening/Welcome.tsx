@@ -1,21 +1,29 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import axios from 'axios';
 
 import { TableSchema } from '../../../types/Debug';
 
 interface PatientQueue {
-  queueNumber: string;
-  department: string;
-  room: string;
-  estimatedTime: string;
-  patientName: string;
-  appointmentType: string;
-  building: string;
-  floor: string;
-  currentQueue: string;
-  totalWaiting: number;
+  queueNumber?: string;
+  department?: string;
+  room?: string;
+  estimatedTime?: string;
+  patientName?: string;
+  appointmentType?: string;
+  building?: string;
+  floor?: string;
+  currentQueue?: string;
+  totalWaiting?: number;
   status: 'waiting' | 'ready' | 'missed' | 'completed';
   symptoms?: string;
+  // เพิ่ม field ที่ backend ส่งมา
+  queue_no?: string;
+  queue_time?: string;
+  triage_level?: number;
+  priority?: number;
+  room_id?: string;
+  vital_signs?: any;
 }
 
 interface PatientData {
@@ -26,9 +34,11 @@ interface PatientData {
   profileImage?: string;
 }
 
+
 const Welcome: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
 
   // Debug setup
   const requiredTables: TableSchema[] = useMemo(() => [
@@ -46,19 +56,53 @@ console.log(requiredTables)
   const [assignedQueue, setAssignedQueue] = useState<PatientQueue | null>(null);
   const [patientData, setPatientData] = useState<PatientData | null>(null);
   const [symptoms, setSymptoms] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [waitingBefore, setWaitingBefore] = useState<number>(0);
 
-  // Load data from location state (มาจากระบบคัดกรอง)
+  // รับ token/queue_id จาก query string
+  const token = searchParams.get('token');
+  const queueId = searchParams.get('queue_id');
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  // ถ้ามี token/queue_id ให้ fetch ข้อมูลจาก backend
   useEffect(() => {
-    if (location.state?.queue) {
+    if (token && queueId) {
+      setLoading(true);
+      setError(null);
+      axios.get(`${API_BASE_URL}/api/queue/queue/${queueId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(res => {
+          setAssignedQueue(res.data.queue || null);
+
+          // Map patient fields
+          const p = res.data.patient;
+          if (p) {
+            setPatientData({
+              id: p._id,
+              name: (p.first_name_th || '') + ' ' + (p.last_name_th || ''),
+              nationalId: p.national_id || '',
+              phone: p.phone || '',
+              profileImage: p.image_path ? `${API_BASE_URL}/api/patient/${p.image_path}` : undefined
+            });
+          } else {
+            setPatientData(null);
+          }
+          setSymptoms(res.data.queue?.symptoms || '');
+          setWaitingBefore(res.data.waiting_before ?? 0);
+        })
+        .catch(err => {
+          setError('ไม่สามารถดึงข้อมูลคิวได้');
+        })
+        .finally(() => setLoading(false));
+    } else if (location.state?.queue) {
+      // fallback: รับจาก state (local preview)
       setAssignedQueue(location.state.queue);
-    }
-    if (location.state?.patient) {
       setPatientData(location.state.patient);
+      setSymptoms(location.state.symptoms || '');
+      setWaitingBefore(0);
     }
-    if (location.state?.symptoms) {
-      setSymptoms(location.state.symptoms);
-    }
-  }, [location.state]);
+  }, [token, queueId, location.state]);
 
   // Handle queue completion
   const handleCompleteQueue = () => {
@@ -118,7 +162,7 @@ console.log(requiredTables)
           <div className="bg-gradient-to-r from-blue-600 to-purple-700 rounded-3xl p-8 mb-6 text-center shadow-2xl border border-white/30">
             <p className="text-white/80 text-lg mb-3 font-medium">หมายเลขคิวของคุณ</p>
             <div className="text-6xl font-black text-white mb-4 tracking-wider drop-shadow-lg">
-              {assignedQueue?.queueNumber || 'A001'}
+              {assignedQueue?.queue_no || 'A001'}
             </div>
             <div className="flex items-center justify-center space-x-6 text-white/90 text-sm">
               <div className="flex items-center bg-white/20 rounded-full px-3 py-1">
@@ -131,7 +175,7 @@ console.log(requiredTables)
                 <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
-                <span>รอ {assignedQueue?.totalWaiting || 5} คน</span>
+                <span>รอ {waitingBefore} คน</span>
               </div>
             </div>
           </div>
@@ -243,7 +287,7 @@ console.log(requiredTables)
               </ul>
             </div>
           </div>
-
+            
           {/* Action Buttons */}
           <div className="space-y-4">
             {/* Primary Actions */}

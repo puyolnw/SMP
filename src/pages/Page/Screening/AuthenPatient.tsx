@@ -219,7 +219,7 @@ const AuthenPatient: React.FC = () => {
       setScanResults(result);
       if (result.faces && result.faces.length > 0) {
         const recognizedFace = result.faces.find(face => face.name !== 'Unknown');
-        if (recognizedFace && recognizedFace.confidence > 0.65) {
+        if (recognizedFace && recognizedFace.confidence > 0.75) {
           // ดึงข้อมูลผู้ป่วยจาก backend ด้วย patient_id
           if (recognizedFace.patient_id) {
             try {
@@ -427,10 +427,19 @@ const AuthenPatient: React.FC = () => {
     if (currentStep === 'face-scan' && !stream) {
       startCamera();
     }
+    
+    // เริ่ม auto scan เมื่อกล้องพร้อม
+    if (currentStep === 'face-scan' && stream && !autoScanInterval) {
+      startAutoScan();
+    }
+    
     return () => {
-      stopCamera();
+      if (currentStep !== 'face-scan') {
+        stopCamera();
+        stopAutoScan();
+      }
     };
-  }, [currentStep]);
+  }, [currentStep, stream, autoScanInterval]);
 
   // ประมวลผล video stream อัตโนมัติ
   useEffect(() => {
@@ -451,7 +460,7 @@ const AuthenPatient: React.FC = () => {
           // ถ้ารู้จักใบหน้า ให้ setFoundPatient และเปลี่ยน step
           if (response.data.faces && response.data.faces.length > 0) {
             const recognizedFace = response.data.faces.find((f: FaceRecognitionResult) => f.name !== 'Unknown');
-            if (recognizedFace && recognizedFace.confidence > 0.65) {
+            if (recognizedFace && recognizedFace.confidence > 0.75) {
               setFoundPatient({
                 id: recognizedFace.patient_id || '',
                 name: recognizedFace.name,
@@ -478,48 +487,19 @@ const AuthenPatient: React.FC = () => {
     };
   }, [currentStep, isFaceApiLoaded, videoRef]);
 
-  // เริ่มกล้องและ auto scan เมื่อเข้าหน้า face-scan
+  // ปิดกล้องเมื่อออกจากหน้า (unmount หรือเปลี่ยน route)
   useEffect(() => {
-    if (currentStep === 'face-scan' && !stream) {
-      startCamera();
-    }
-    
-    // เริ่ม auto scan เมื่อกล้องพร้อม
-    if (currentStep === 'face-scan' && stream && !autoScanInterval) {
-      startAutoScan();
-    }
-    
     return () => {
-      if (currentStep !== 'face-scan') {
-        stopCamera();
-        stopAutoScan();
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      if (videoRef.current && videoRef.current.srcObject) {
+        const s = videoRef.current.srcObject as MediaStream;
+        s.getTracks().forEach(track => track.stop());
+        videoRef.current.srcObject = null;
       }
     };
-  }, [currentStep, stream, autoScanInterval]);
-
-  // หยุดกล้องและ auto scan เมื่อออกจากหน้านี้
-  useEffect(() => {
-    return () => {
-      stopCamera();
-      stopAutoScan();
-    };
-  }, []);
-
-  // เพิ่ม useEffect สำหรับ stopCamera ตอนออกจากหน้า (unmount)
-  useEffect(() => {
-    return () => {
-      stopCamera();
-      console.log('[AuthenPatient] stopCamera called on unmount');
-    };
-  }, []);
-
-  // เพิ่ม useEffect สำหรับ stopCamera ตอนเปลี่ยน step ที่ไม่ใช่ face-scan
-  useEffect(() => {
-    if (currentStep !== 'face-scan') {
-      stopCamera();
-      console.log('[AuthenPatient] stopCamera called on step change:', currentStep);
-    }
-  }, [currentStep]);
+  }, [stream]);
 
   // หน้าสแกนใบหน้า
   if (currentStep === 'face-scan') {
@@ -787,7 +767,7 @@ const AuthenPatient: React.FC = () => {
             </div>
             <div className="bg-blue-500/20 border border-blue-400/30 rounded-xl p-4">
               <p className="text-blue-200 text-sm">
-                <strong>หมายเหตุ:</strong> หากไม่มีข้อมูลในระบบ คุณจะต้องลงทะเบียนสมาชิกใหม่
+                <strong>หมายเหตุ:</strong> หากไม่มีข้อมูลในระบบ คุณจำเป็นต้องลงทะเบียนสมาชิกใหม่
               </p>
             </div>
             <button

@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DebugManager } from '../../../utils/Debuger';
-import { usePageDebug } from '../../../hooks/usePageDebug';
-import { TableSchema } from '../../../types/Debug';
+import axios from 'axios';
 import {
   Box,
   Paper,
@@ -62,6 +60,7 @@ interface Employee {
   position: string;
   profileImage?: string;
   status: 'active' | 'inactive' | 'leave';
+  workingDays?: string[]; // วันที่ทำงาน
 }
 
 interface Room {
@@ -101,45 +100,7 @@ const DAYS_OF_WEEK = [
 ];
 
 const ManageRoom: React.FC = () => {
-  const debugManager = DebugManager.getInstance();
-  
-  // Debug setup
-  const requiredTables: TableSchema[] = [
-    {
-      tableName: 'departments',
-      columns: ['id', 'name', 'shortName', 'thaiCode', 'color', 'bgColor', 'totalRooms', 'isActive'],
-      description: 'แผนกต่างๆ ในโรงพยาบาล'
-    },
-    {
-      tableName: 'employees',
-      columns: ['id', 'prefix', 'firstNameTh', 'lastNameTh', 'employeeType', 'departmentId', 'position', 'profileImage', 'status'],
-      description: 'ข้อมูลพนักงานทั้งหมด (หมอ พยาบาล เจ้าหน้าที่)'
-    },
-    {
-      tableName: 'rooms',
-      columns: ['id', 'departmentId', 'roomNumber', 'name', 'isActive', 'capacity', 'floor', 'building'],
-      description: 'ห้องตรวจต่างๆ ในโรงพยาบาล'
-    },
-    {
-      tableName: 'dailyRoomSchedules',
-      columns: ['id', 'date', 'departmentId', 'roomId', 'isOpen', 'doctorId', 'nurseId', 'openTime', 'closeTime', 'maxPatients', 'notes'],
-      description: 'ตารางการเปิดห้องตรวจรายวัน'
-    }
-  ];
-
-  usePageDebug('จัดการห้องตรวจรายวัน', requiredTables);
-
-  // State สำหรับข้อมูลที่ดึงมาจาก localStorage
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [dailySchedules, setDailySchedules] = useState<DailyRoomSchedule[]>([]);
-  
-  // State สำหรับการทำงานในหน้านี้
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [selectedDepartment, setSelectedDepartment] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  console.log('departments', isLoading);
   const [snackbarOpen, setSnackbarOpen] = useState<boolean>(false);
   const [snackbarMessage, setSnackbarMessage] = useState<string>('');
   const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error' | 'warning'>('success');
@@ -156,6 +117,18 @@ const ManageRoom: React.FC = () => {
   const [notes, setNotes] = useState<string>('');
   const [isRoomOpen, setIsRoomOpen] = useState<boolean>(true);
 
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+  // State สำหรับข้อมูลที่ดึงมาจาก localStorage
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [dailySchedules, setDailySchedules] = useState<DailyRoomSchedule[]>([]);
+  
+  // State สำหรับการทำงานในหน้านี้
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedDepartment, setSelectedDepartment] = useState<string>('');
+  
   // โหลดข้อมูลเริ่มต้น
   useEffect(() => {
     loadData();
@@ -168,60 +141,39 @@ const ManageRoom: React.FC = () => {
     }
   }, [selectedDate, selectedDepartment]);
 
-  // โหลดข้อมูลทั้งหมดจาก localStorage
-const loadData = () => {
-  setIsLoading(true);
-    
+  // โหลดข้อมูลทั้งหมดจาก backend
+  const loadData = async () => {
+    setIsLoading(true);
     try {
-    // โหลดข้อมูลแผนก
-    const departmentsData = debugManager.getData('departments') as Department[];
-    setDepartments(departmentsData || []);
-      
-       // โหลดข้อมูลพนักงาน
-    const employeesData = debugManager.getData('employees') as Employee[];
-    setEmployees(employeesData || []);
-       // โหลดข้อมูลห้องตรวจ
-    let roomsData = debugManager.getData('rooms') as Room[];
-      if (roomsData && roomsData.length > 0) {
-      roomsData = roomsData.map(room => ({
-        ...room,
-        building: room.building || 'อาคารผู้ป่วยนอก',
-        floor: room.floor || '1'
-      }));
-      debugManager.updateData('rooms', roomsData);
+      const [deptRes, empRes, roomRes, schedRes] = await Promise.all([
+        axios.get(`${API_BASE_URL}/api/workplace/department`),
+        axios.get(`${API_BASE_URL}/api/worker/`),
+        axios.get(`${API_BASE_URL}/api/workplace/room`),
+        axios.get(`${API_BASE_URL}/api/workplace/room_schedule?date=${selectedDate}`)
+      ]);
+      setDepartments(deptRes.data || []);
+      setEmployees(empRes.data || []);
+      setRooms(roomRes.data || []);
+      setDailySchedules(schedRes.data || []);
+      if (deptRes.data && deptRes.data.length > 0) {
+        setSelectedDepartment(deptRes.data[0].id);
+      }
+    } catch (error) {
+      console.error('Error loading data:', error);
+      showSnackbar('เกิดข้อผิดพลาดในการโหลดข้อมูล', 'error');
+    } finally {
+      setIsLoading(false);
     }
-    
-    setRooms(roomsData || []);
-      // ถ้ามีแผนก ให้เลือกแผนกแรกเป็นค่าเริ่มต้น
-     if (departmentsData && departmentsData.length > 0) {
-      setSelectedDepartment(departmentsData[0].id);
-    }
-  } catch (error) {
-    console.error('Error loading data:', error);
-    showSnackbar('เกิดข้อผิดพลาดในการโหลดข้อมูล', 'error');
-  } finally {
-    setIsLoading(false);
-  }
-};
+  };
 
   // โหลดข้อมูลตารางห้องตรวจรายวัน
-  const loadDailySchedules = () => {
+  const loadDailySchedules = async () => {
     setIsLoading(true);
-    
     try {
-      // โหลดข้อมูลตารางห้องตรวจรายวัน
-      const schedulesData = debugManager.getData('dailyRoomSchedules') as DailyRoomSchedule[];
-      
-      // กรองเฉพาะตารางของวันที่และแผนกที่เลือก
-      const filteredSchedules = schedulesData.filter(
-        schedule => schedule.date === selectedDate && schedule.departmentId === selectedDepartment
-      );
-      
-      setDailySchedules(filteredSchedules || []);
-      
-      // ถ้าไม่มีข้อมูลตารางห้องตรวจของวันนี้ ให้สร้างข้อมูลเริ่มต้น
-      if (filteredSchedules.length === 0) {
-        createDefaultSchedules();
+      const schedRes = await axios.get(`${API_BASE_URL}/api/workplace/room_schedule?date=${selectedDate}&departmentId=${selectedDepartment}`);
+      setDailySchedules(schedRes.data || []);
+      if (!schedRes.data || schedRes.data.length === 0) {
+        await createDefaultSchedules();
       }
     } catch (error) {
       console.error('Error loading daily schedules:', error);
@@ -232,32 +184,26 @@ const loadData = () => {
   };
 
   // สร้างข้อมูลตารางห้องตรวจเริ่มต้นสำหรับวันที่เลือก
-  const createDefaultSchedules = () => {
-    // หาห้องตรวจทั้งหมดของแผนกที่เลือก
+  const createDefaultSchedules = async () => {
     const departmentRooms = rooms.filter(room => room.departmentId === selectedDepartment);
-    
     if (departmentRooms.length === 0) return;
-    
-    // สร้างตารางห้องตรวจเริ่มต้น (เปิดเฉพาะ 2 ห้องแรก)
-    const newSchedules: DailyRoomSchedule[] = departmentRooms.map((room, index) => ({
-      id: `schedule_${Date.now()}_${index}`,
+    const newSchedules = departmentRooms.map((room, index) => ({
       date: selectedDate,
       departmentId: selectedDepartment,
       roomId: room.id,
-      isOpen: index < 2, // เปิดเฉพาะ 2 ห้องแรก
+      isOpen: index < 2,
       openTime: '08:00',
       closeTime: '16:00',
       maxPatients: 30,
       notes: ''
     }));
-    
-    // บันทึกข้อมูลลง localStorage
-    const allSchedules = [...debugManager.getData('dailyRoomSchedules'), ...newSchedules];
-    debugManager.updateData('dailyRoomSchedules', allSchedules);
-    
-    // อัพเดท state
-    setDailySchedules(newSchedules);
-    showSnackbar('สร้างตารางห้องตรวจเริ่มต้นสำหรับวันนี้แล้ว', 'success');
+    try {
+      await axios.post(`${API_BASE_URL}/api/workplace/room_schedule/bulk`, newSchedules);
+      await loadDailySchedules();
+      showSnackbar('สร้างตารางห้องตรวจเริ่มต้นสำหรับวันนี้แล้ว', 'success');
+    } catch (error) {
+      showSnackbar('เกิดข้อผิดพลาดในการสร้างตาราง', 'error');
+    }
   };
 
   // แสดง Snackbar
@@ -312,87 +258,42 @@ const loadData = () => {
   };
 
   // บันทึกข้อมูลห้องตรวจ
-  const handleSaveRoom = () => {
+  const handleSaveRoom = async () => {
     if (!currentRoom) return;
-    
     try {
-      let updatedSchedules: DailyRoomSchedule[] = [...dailySchedules];
-      
+      let payload = {
+        date: selectedDate,
+        departmentId: selectedDepartment,
+        roomId: currentRoom.id,
+        isOpen: isRoomOpen,
+        doctorId: selectedDoctor || undefined,
+        nurseId: selectedNurse || undefined,
+        openTime: openTime,
+        closeTime: closeTime,
+        maxPatients: maxPatients,
+        notes: notes
+      };
       if (currentSchedule) {
-        // กรณีแก้ไขข้อมูลเดิม
-        const index = updatedSchedules.findIndex(s => s.id === currentSchedule.id);
-        
-        if (index !== -1) {
-          updatedSchedules[index] = {
-            ...currentSchedule,
-            isOpen: isRoomOpen,
-            doctorId: selectedDoctor || undefined,
-            nurseId: selectedNurse || undefined,
-            openTime: openTime,
-            closeTime: closeTime,
-            maxPatients: maxPatients,
-            notes: notes
-          };
-        }
+        await axios.put(`${API_BASE_URL}/api/workplace/room_schedule/${currentSchedule.id}`, payload);
       } else {
-        // กรณีสร้างข้อมูลใหม่
-        const newSchedule: DailyRoomSchedule = {
-          id: `schedule_${Date.now()}`,
-          date: selectedDate,
-          departmentId: selectedDepartment,
-          roomId: currentRoom.id,
-          isOpen: isRoomOpen,
-          doctorId: selectedDoctor || undefined,
-          nurseId: selectedNurse || undefined,
-                    openTime: openTime,
-          closeTime: closeTime,
-          maxPatients: maxPatients,
-          notes: notes
-        };
-        
-        updatedSchedules.push(newSchedule);
+        await axios.post(`${API_BASE_URL}/api/workplace/room_schedule`, payload);
       }
-      
-      // อัพเดทข้อมูลใน localStorage
-      const allSchedules = debugManager.getData('dailyRoomSchedules') as DailyRoomSchedule[];
-      const otherSchedules = allSchedules.filter(
-        s => s.date !== selectedDate || s.departmentId !== selectedDepartment || s.roomId !== currentRoom.id
-      );
-      
-      const newAllSchedules = [...otherSchedules, ...updatedSchedules];
-      debugManager.updateData('dailyRoomSchedules', newAllSchedules);
-      
-      // อัพเดท state
-      setDailySchedules(updatedSchedules);
+      await loadDailySchedules();
       showSnackbar('บันทึกข้อมูลห้องตรวจเรียบร้อยแล้ว', 'success');
-      
-      // ปิด dialog
       setEditDialogOpen(false);
     } catch (error) {
-      console.error('Error saving room schedule:', error);
       showSnackbar('เกิดข้อผิดพลาดในการบันทึกข้อมูล', 'error');
     }
   };
 
   // รีเซ็ตข้อมูลตารางห้องตรวจของวันที่เลือก
-  const handleResetSchedules = () => {
+  const handleResetSchedules = async () => {
     if (window.confirm('คุณต้องการรีเซ็ตข้อมูลตารางห้องตรวจของวันนี้ใช่หรือไม่?')) {
       try {
-        // ลบข้อมูลตารางห้องตรวจของวันที่และแผนกที่เลือก
-        const allSchedules = debugManager.getData('dailyRoomSchedules') as DailyRoomSchedule[];
-        const filteredSchedules = allSchedules.filter(
-          s => s.date !== selectedDate || s.departmentId !== selectedDepartment
-        );
-        
-        debugManager.updateData('dailyRoomSchedules', filteredSchedules);
-        
-        // สร้างข้อมูลเริ่มต้นใหม่
-        setDailySchedules([]);
-        createDefaultSchedules();
-        
+        await axios.delete(`${API_BASE_URL}/api/workplace/room_schedule?date=${selectedDate}&departmentId=${selectedDepartment}`);
+        await createDefaultSchedules();
         showSnackbar('รีเซ็ตข้อมูลตารางห้องตรวจเรียบร้อยแล้ว', 'success');
       } catch (error) {
-        console.error('Error resetting schedules:', error);
         showSnackbar('เกิดข้อผิดพลาดในการรีเซ็ตข้อมูล', 'error');
       }
     }
@@ -484,6 +385,26 @@ const loadData = () => {
         (schedule.doctorId === employeeId || schedule.nurseId === employeeId) && 
         schedule.isOpen &&
         (!excludeRoomId || schedule.roomId !== excludeRoomId)
+    );
+  };
+
+  // Helper: Get available employees for a room on a given date
+  const getAvailableEmployeesForRoom = (
+    type: 'doctor' | 'nurse',
+    departmentId: string,
+    date: string
+  ): Employee[] => {
+    const dayOfWeek = new Date(date).toLocaleString('th-TH', { weekday: 'long' });
+    // Normalize: remove 'วัน', trim, and lowercase
+    const normalizeDay = (d: string) => d.replace(/^วัน/, '').trim().toLowerCase();
+    const normalizedDay = normalizeDay(dayOfWeek);
+    return employees.filter(
+      emp =>
+        emp.employeeType === type &&
+        emp.departmentId === departmentId &&
+        emp.status === 'active' &&
+        Array.isArray(emp.workingDays) &&
+        emp.workingDays.map(normalizeDay).includes(normalizedDay)
     );
   };
 
@@ -649,11 +570,6 @@ const loadData = () => {
                                     s.id === updatedSchedule.id ? updatedSchedule : s
                                   );
                                   
-                                  // อัพเดทข้อมูลใน localStorage
-                                  const allSchedules = debugManager.getData('dailyRoomSchedules') as DailyRoomSchedule[];
-                                  const otherSchedules = allSchedules.filter(s => s.id !== updatedSchedule.id);
-                                  debugManager.updateData('dailyRoomSchedules', [...otherSchedules, updatedSchedule]);
-                                  
                                   // อัพเดท state
                                   setDailySchedules(updatedSchedules);
                                 }
@@ -695,6 +611,17 @@ const loadData = () => {
                               ยังไม่ได้กำหนดแพทย์ประจำห้องตรวจ
                             </Typography>
                           )}
+                          {/* รายชื่อแพทย์ที่มีสิทธิ์ประจำห้องวันนี้ */}
+                          <Typography variant="subtitle2" sx={{ mb: 1 }}>รายชื่อแพทย์ที่มีสิทธิ์ประจำห้องวันนี้</Typography>
+                          <Box sx={{ mb: 2 }}>
+                            {getAvailableEmployeesForRoom('doctor', room.departmentId, selectedDate).length > 0 ? (
+                              getAvailableEmployeesForRoom('doctor', room.departmentId, selectedDate).map(doc => (
+                                <Chip key={doc.id} label={`${doc.prefix} ${doc.firstNameTh} ${doc.lastNameTh}`} sx={{ mr: 1, mb: 1 }} />
+                              ))
+                            ) : (
+                              <Typography variant="body2" color="text.secondary">ไม่มีแพทย์ที่มีสิทธิ์ประจำห้องวันนี้</Typography>
+                            )}
+                          </Box>
                           
                           {/* แสดงข้อมูลพยาบาล */}
                           <Typography variant="subtitle1" gutterBottom>
@@ -722,6 +649,17 @@ const loadData = () => {
                               ยังไม่ได้กำหนดพยาบาลประจำห้องตรวจ
                             </Typography>
                           )}
+                          {/* รายชื่อพยาบาลที่มีสิทธิ์ประจำห้องวันนี้ */}
+                          <Typography variant="subtitle2" sx={{ mb: 1 }}>รายชื่อพยาบาลที่มีสิทธิ์ประจำห้องวันนี้</Typography>
+                          <Box sx={{ mb: 2 }}>
+                            {getAvailableEmployeesForRoom('nurse', room.departmentId, selectedDate).length > 0 ? (
+                              getAvailableEmployeesForRoom('nurse', room.departmentId, selectedDate).map(nurse => (
+                                <Chip key={nurse.id} label={`${nurse.prefix} ${nurse.firstNameTh} ${nurse.lastNameTh}`} sx={{ mr: 1, mb: 1 }} />
+                              ))
+                            ) : (
+                              <Typography variant="body2" color="text.secondary">ไม่มีพยาบาลที่มีสิทธิ์ประจำห้องวันนี้</Typography>
+                            )}
+                          </Box>
                           
                           {/* แสดงเวลาทำการ */}
                           <Divider sx={{ my: 2 }} />

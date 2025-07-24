@@ -41,6 +41,7 @@ import {
   CalendarToday as CalendarIcon,
   AccountCircle as AccountIcon
 } from '@mui/icons-material';
+import axios from 'axios';
 
 interface Employee {
   id: string;
@@ -106,83 +107,69 @@ const DataEmployee: React.FC = () => {
 
   usePageDebug('ข้อมูลพนักงาน', requiredTables);
 
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
   useEffect(() => {
-    const loadEmployeeData = () => {
+    const loadEmployeeData = async () => {
       try {
         setIsLoading(true);
-        
-        // ลองดึงข้อมูลจาก location state ก่อน
-        const stateEmployee = location.state?.employee as Employee;
-        
+        let employeeId = id;
+        // ถ้า location.state มี employee ให้ใช้เลย
+        let stateEmployee = location.state?.employee;
         if (stateEmployee) {
           setEmployee(stateEmployee);
-          loadDepartmentData(stateEmployee.departmentId);
+          // ดึง department จาก backend
+          const deptRes = await axios.get(`${API_BASE_URL}/api/workplace/department`);
+          const foundDept = deptRes.data.find((d: any) => d.id === stateEmployee.departmentId);
+          setDepartment(foundDept || null);
           setIsLoading(false);
           return;
         }
-
-        // ถ้ามี id ใน url ให้ดึงจาก localStorage
-        if (id) {
-          const employees = debugManager.getData('employees') as Employee[];
-          const foundEmployee = employees.find(emp => emp.id === id);
-          
-          if (foundEmployee) {
-            setEmployee(foundEmployee);
-            loadDepartmentData(foundEmployee.departmentId);
-          } else {
-            // ไม่พบข้อมูล
-            setEmployee(null);
-          }
+        // ถ้ามี id ใน url ให้ดึงจาก backend
+        if (employeeId) {
+          const empRes = await axios.get(`${API_BASE_URL}/api/worker/${employeeId}`);
+          setEmployee(empRes.data);
+          // ดึง department จาก backend
+          const deptRes = await axios.get(`${API_BASE_URL}/api/workplace/department`);
+          const foundDept = deptRes.data.find((d: any) => d.id === empRes.data.departmentId);
+          setDepartment(foundDept || null);
+        } else {
+          setEmployee(null);
         }
-        
         setIsLoading(false);
       } catch (error) {
-        console.error('Error loading employee data:', error);
+        setEmployee(null);
         setIsLoading(false);
       }
     };
-
-    const loadDepartmentData = (departmentId: string) => {
-      const departments = debugManager.getData('departments') as Department[];
-      const foundDepartment = departments.find(dept => dept.id === departmentId);
-      setDepartment(foundDepartment || null);
-    };
-
     loadEmployeeData();
-  }, [id, location.state, debugManager]);
+  }, [id, location.state]);
 
   const handleEdit = () => {
-    navigate('/member/employee/addemployee', { 
-      state: { 
-        isEdit: true, 
-        employee: employee 
-      } 
+    navigate('/member/employee/addemployee', {
+      state: {
+        isEdit: true,
+        employee: employee
+      }
     });
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     setDeleteDialogOpen(true);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (employee) {
-      // ลบข้อมูลจาก localStorage - ใช้ addData แทน setData
-      const employees = debugManager.getData('employees') as Employee[];
-      const updatedEmployees = employees.filter(emp => emp.id !== employee.id);
-      
-      // ลบข้อมูลเก่าและเพิ่มข้อมูลใหม่
-      localStorage.removeItem('debug_employees');
-      updatedEmployees.forEach(emp => {
-        debugManager.addData('employees', emp);
-      });
-      
-      setSuccess(true);
-      setDeleteDialogOpen(false);
-      
-      // กลับไปหน้าค้นหาหลังจาก 2 วินาที
-      setTimeout(() => {
-        navigate('/member/employee/searchemployee');
-      }, 2000);
+      try {
+        await axios.delete(`${API_BASE_URL}/api/worker/${employee.id}`);
+        setSuccess(true);
+        setDeleteDialogOpen(false);
+        setTimeout(() => {
+          navigate('/member/employee/searchemployee');
+        }, 2000);
+      } catch (error) {
+        alert('เกิดข้อผิดพลาดในการลบข้อมูล');
+      }
     }
   };
   const getStatusColor = (status: string) => {
