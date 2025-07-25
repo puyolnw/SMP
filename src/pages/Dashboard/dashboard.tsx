@@ -290,7 +290,7 @@ const Dashboard: React.FC = () => {
             }}
           >
             <HospitalIcon sx={{ fontSize: 60, color: '#e53e3e' }} />
-            ระบบคัดกรองและจัดคิวผู้ป่วย
+            ระบบคัดกรองและจัดคิวผู้ป่วยสูงอายุ
           </Typography>
           <Typography variant="h6" color="text.secondary">
             ระบบคัดกรองผู้ป่วยเพื่อจัดลำดับความสำคัญและจัดคิวการรักษา
