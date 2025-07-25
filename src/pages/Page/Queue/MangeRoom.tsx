@@ -72,6 +72,7 @@ interface Room {
   capacity: number;
   floor: string;
   building: string;
+  room_type?: string; // Added room_type field
 }
 
 interface DailyRoomSchedule {
@@ -86,6 +87,7 @@ interface DailyRoomSchedule {
   closeTime?: string;
   maxPatients?: number;
   notes?: string;
+  room_type?: string; // Added room_type field
 }
 
 // วันในสัปดาห์
@@ -195,7 +197,8 @@ const ManageRoom: React.FC = () => {
       openTime: '08:00',
       closeTime: '16:00',
       maxPatients: 30,
-      notes: ''
+      notes: '',
+      room_type: room.room_type || 'general' // <-- copy room_type จากห้อง
     }));
     try {
       await axios.post(`${API_BASE_URL}/api/workplace/room_schedule/bulk`, newSchedules);
@@ -562,16 +565,27 @@ const ManageRoom: React.FC = () => {
                           control={
                             <Switch
                               checked={isOpen}
-                              onChange={(e) => {
-                                // อัพเดทสถานะการเปิด/ปิดห้องตรวจ
+                              onChange={async (e) => {
+                                const newIsOpen = e.target.checked;
+                                // อัปเดต state ทันที (optional)
                                 if (schedule) {
-                                  const updatedSchedule = { ...schedule, isOpen: e.target.checked };
-                                  const updatedSchedules = dailySchedules.map(s => 
+                                  const updatedSchedule = { ...schedule, isOpen: newIsOpen };
+                                  setDailySchedules(dailySchedules.map(s =>
                                     s.id === updatedSchedule.id ? updatedSchedule : s
-                                  );
-                                  
-                                  // อัพเดท state
-                                  setDailySchedules(updatedSchedules);
+                                  ));
+                                  // ส่ง PUT ไป backend
+                                  try {
+                                    await axios.put(
+                                      `${API_BASE_URL}/api/workplace/room_schedule/${schedule.id}`,
+                                      {
+                                        ...updatedSchedule,
+                                        type: "room_schedule" // สำคัญ! ต้องมี type ด้วย
+                                      }
+                                    );
+                                    showSnackbar('อัปเดตสถานะห้องตรวจเรียบร้อย', 'success');
+                                  } catch (error) {
+                                    showSnackbar('เกิดข้อผิดพลาดในการอัปเดตสถานะ', 'error');
+                                  }
                                 }
                               }}
                               color="primary"
@@ -862,4 +876,3 @@ const ManageRoom: React.FC = () => {
 };
 
 export default ManageRoom;
-
