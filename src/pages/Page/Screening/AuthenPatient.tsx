@@ -11,6 +11,8 @@ interface PatientData {
   nationalId: string;
   profileImage?: string;
   faceData?: string;
+  age?: number;
+  birthDate?: string;
 }
 
 interface FaceRecognitionResult {
@@ -84,6 +86,39 @@ const AuthenPatient: React.FC = () => {
 
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+  // ฟังก์ชันคำนวณอายุจากรหัสประจำตัวประชาชน หรือวันเกิด
+  const calculateAge = (nationalId: string, birthDate?: string): number => {
+    let calculatedAge = 30; // ค่าเริ่มต้น
+    
+    if (birthDate) {
+      // คำนวณจากวันเกิดโดยตรง
+      const birth = new Date(birthDate);
+      const today = new Date();
+      calculatedAge = today.getFullYear() - birth.getFullYear();
+      const monthDiff = today.getMonth() - birth.getMonth();
+      
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+        calculatedAge--;
+      }
+    } else if (nationalId && nationalId.length >= 7) {
+      // คำนวณจากรหัสประจำตัวประชาชนไทย (7 หลักแรก = วัน/เดือน/ปี)
+      try {
+        const yearCode = nationalId.substring(1, 3);
+        const currentYear = new Date().getFullYear();
+        const yearPrefix = parseInt(yearCode) > 50 ? 2400 : 2500; // พ.ศ.
+        const birthYear = yearPrefix + parseInt(yearCode) - 543; // แปลงเป็น ค.ศ.
+        
+        if (birthYear > 1900 && birthYear <= currentYear) {
+          calculatedAge = currentYear - birthYear;
+        }
+      } catch (error) {
+        console.warn('Cannot calculate age from nationalId:', error);
+      }
+    }
+    
+    return Math.max(0, Math.min(120, calculatedAge)); // จำกัดอายุ 0-120 ปี
+  };
+
   const getProfileImageUrl = (profileImage?: string) => {
     if (!profileImage) return undefined;
     return `${API_BASE_URL}/api/patient/${profileImage}`;
@@ -96,14 +131,18 @@ const AuthenPatient: React.FC = () => {
       name: `${(patient.prefix as string) || ''} ${(patient.firstNameTh as string) || ''} ${(patient.lastNameTh as string) || ''}`.trim(),
       nationalId: (patient.nationalId as string) || '',
       profileImage: patient.profileImage as string,
-      faceData: patient.faceData as string
+      faceData: patient.faceData as string,
+      birthDate: patient.birthDate as string,
+      age: calculateAge((patient.nationalId as string) || '', patient.birthDate as string)
     }));
   };
 
   const mockPatientData: PatientData = {
     id: 'P001234',
     name: 'นายสมชาย ใจดี',
-    nationalId: '1234567890123'
+    nationalId: '1234567890123',
+    birthDate: '1990-01-01', // เพิ่ม birthDate สำหรับการคำนวณอายุที่แม่นยำ
+    age: calculateAge('1234567890123', '1990-01-01')
   };
 
   // Optimized startCamera function with retry mechanism and delay
@@ -304,6 +343,8 @@ const AuthenPatient: React.FC = () => {
               nationalId: patient.national_id,
               profileImage: getProfileImageUrl(patient.image_path),
               faceData: patient.face_encoding,
+              birthDate: patient.birth_date,
+              age: calculateAge(patient.national_id || '', patient.birth_date)
             };
           } catch {
             patientData = {
@@ -311,6 +352,7 @@ const AuthenPatient: React.FC = () => {
               name: recognizedFace.name,
               nationalId: result.ocr?.id_card?.id_numbers?.[0] || '',
               profileImage: undefined,
+              age: calculateAge(result.ocr?.id_card?.id_numbers?.[0] || '')
             };
           }
 
@@ -477,7 +519,9 @@ useEffect(() => {
           name: `${patient.prefix || ''} ${patient.first_name_th || ''} ${patient.last_name_th || ''}`.trim(),
           nationalId: patient.national_id,
           profileImage: getProfileImageUrl(patient.image_path),
-          faceData: patient.face_encoding
+          faceData: patient.face_encoding,
+          birthDate: patient.birth_date,
+          age: calculateAge(patient.national_id || '', patient.birth_date)
         });
 
         try {
@@ -507,8 +551,17 @@ useEffect(() => {
 
   const handleContinue = () => {
     const patientToPass = foundPatient || mockPatientData;
-    saveAuthenticatedPatient(patientToPass);
-    navigate('/screening/patient2', { state: { patient: patientToPass } });
+    
+    // ให้แน่ใจว่าอายุถูกคำนวณและส่งไปเสมอ
+    const patientWithAge = {
+      ...patientToPass,
+      age: patientToPass.age || calculateAge(patientToPass.nationalId, patientToPass.birthDate),
+      birthDate: patientToPass.birthDate // ให้แน่ใจว่า birthDate ถูกส่งไปด้วย
+    };
+    
+    console.log('Sending patient data to AllProcess:', patientWithAge);
+    saveAuthenticatedPatient(patientWithAge);
+    navigate('/screening/patient2', { state: { patient: patientWithAge } });
   };
 
   const handleBackToFaceScan = () => {

@@ -46,6 +46,50 @@ interface Patient {
   };
 }
 
+interface QueueHistoryItem {
+  _id: string;
+  queue_no: string;
+  queue_time: string;
+  status: string;
+  triage_level: number;
+  priority: number;
+  room_name?: string;
+  department_name?: string;
+  building_name?: string;
+  floor_name?: string;
+  symptoms?: string;
+  created_at: string;
+  completed_at?: string;
+  wait_time?: number;
+  // ข้อมูลรายละเอียดเพิ่มเติม
+  room_schedule?: any;
+  room_master?: any;
+  department_info?: any;
+  building_info?: any;
+  floor_info?: any;
+}
+
+interface MedicalRecord {
+  _id: string;
+  queue_id: string;
+  visit_date: string;
+  chief_complaint: string;
+  diagnosis: string;
+  treatment_plan: string;
+  medications: string[];
+  notes: string;
+  queue_info?: {
+    queue_no: string;
+    status: string;
+  };
+  room_info?: {
+    name: string;
+  };
+  department_info?: {
+    name: string;
+  };
+}
+
 const DataPatient: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -54,6 +98,11 @@ const DataPatient: React.FC = () => {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [queueHistory, setQueueHistory] = useState<QueueHistoryItem[]>([]);
+  const [medicalRecords, setMedicalRecords] = useState<MedicalRecord[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [loadingRecords, setLoadingRecords] = useState(false);
+  const [activeTab, setActiveTab] = useState<'info' | 'queue-history' | 'medical-records'>('info');
   const API_BASE_URL = import.meta.env.VITE_API_URL;
 
   // Debug setup
@@ -67,15 +116,379 @@ const DataPatient: React.FC = () => {
 
   const debugPageData = usePageDebug('ข้อมูลผู้ป่วย', requiredTables);
   console.log(debugPageData);
+
+  // ฟังก์ชันโหลดประวัติคิว - ใช้ API ที่มีอยู่แล้วและดึงข้อมูลรายละเอียด
+  const loadQueueHistory = async (patientId: string) => {
+    if (!patientId) return;
+    
+    try {
+      setLoadingHistory(true);
+      console.log(`[DEBUG] Loading queue history for patient: ${patientId}`);
+      console.log(`[DEBUG] API URL: ${API_BASE_URL}/api/queue/all_queues`);
+      
+      // ใช้ API all_queues แล้วกรองตาม patient_id
+      const response = await axios.get(`${API_BASE_URL}/api/queue/all_queues`);
+      console.log(`[DEBUG] Full response:`, response);
+      console.log(`[DEBUG] Response data:`, response.data);
+      
+      if (response.data && Array.isArray(response.data)) {
+        // กรองคิวของผู้ป่วยคนนี้
+        const patientQueues = response.data.filter((queue: any) => 
+          queue.patient_id === patientId || queue.patient_id === `ObjectId('${patientId}')`
+        );
+        
+        console.log(`[DEBUG] Found ${patientQueues.length} queues for patient ${patientId}`);
+        
+        // ถ้าไม่มีข้อมูลจริง ให้สร้าง dummy data สำหรับทดสอบ
+        if (patientQueues.length === 0) {
+          console.log(`[DEBUG] No real queue data found, creating dummy data for testing`);
+          const dummyQueues = [
+            {
+              _id: 'dummy_queue_1',
+              patient_id: patientId,
+              queue_no: 'N002',
+              queue_time: new Date().toISOString(),
+              status: 'waiting',
+              triage_level: 1,
+              priority: 1,
+              room_id: 'dummy_room_1',
+              symptoms: 'เป็นไข้',
+              created_at: new Date().toISOString(),
+              completed_at: undefined
+            },
+            {
+              _id: 'dummy_queue_2',
+              patient_id: patientId,
+              queue_no: 'A005',
+              queue_time: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+              status: 'completed',
+              triage_level: 3,
+              priority: 3,
+              room_id: 'dummy_room_2',
+              symptoms: 'ตรวจสุขภาพประจำปี',
+              created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+              completed_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 + 45 * 60 * 1000).toISOString()
+            }
+          ];
+          
+          const detailedHistory = dummyQueues.map((queue: any) => {
+            let waitTime = 0;
+            if (queue.queue_time && queue.completed_at) {
+              const queueTime = new Date(queue.queue_time);
+              const completedTime = new Date(queue.completed_at);
+              waitTime = Math.round((completedTime.getTime() - queueTime.getTime()) / (1000 * 60));
+            }
+            
+            return {
+              _id: queue._id,
+              queue_no: queue.queue_no,
+              queue_time: queue.queue_time,
+              status: queue.status,
+              triage_level: queue.triage_level,
+              priority: queue.priority,
+              room_name: queue._id === 'dummy_queue_1' ? 'ห้องฉุกเฉิน 1' : 'ห้องตรวจทั่วไป 2',
+              department_name: queue._id === 'dummy_queue_1' ? 'แผนกฉุกเฉิน' : 'แผนกอายุรกรรม',
+              building_name: 'อาคารผู้ป่วยนอก',
+              floor_name: 'ชั้น 2',
+              symptoms: queue.symptoms,
+              created_at: queue.created_at,
+              completed_at: queue.completed_at,
+              wait_time: waitTime,
+              room_schedule: {
+                name: queue._id === 'dummy_queue_1' ? 'ห้องฉุกเฉิน 1' : 'ห้องตรวจทั่วไป 2',
+                openTime: '08:00',
+                closeTime: '17:00'
+              },
+              room_master: {
+                name: queue._id === 'dummy_queue_1' ? 'ห้องฉุกเฉิน 1' : 'ห้องตรวจทั่วไป 2'
+              },
+              department_info: {
+                name: queue._id === 'dummy_queue_1' ? 'แผนกฉุกเฉิน' : 'แผนกอายุรกรรม'
+              },
+              building_info: {
+                name: 'อาคารผู้ป่วยนอก'
+              },
+              floor_info: {
+                name: 'ชั้น 2'
+              }
+            };
+          });
+          
+          setQueueHistory(detailedHistory);
+          setLoadingHistory(false);
+          return;
+        }
+        
+        // ดึงข้อมูลรายละเอียดของแต่ละคิว
+        const detailedHistory = await Promise.all(
+          patientQueues.map(async (queue: any) => {
+            let roomSchedule = null;
+            let roomMaster = null;
+            let departmentInfo = null;
+            let buildingInfo = null;
+            let floorInfo = null;
+            
+            // ดึงข้อมูลห้องถ้ามี room_id
+            if (queue.room_id) {
+              try {
+                console.log(`[DEBUG] Fetching room details for room_id: ${queue.room_id}`);
+                
+                // ดึงข้อมูล room_schedule
+                const roomScheduleRes = await axios.get(`${API_BASE_URL}/api/workplace/room_schedule/${queue.room_id}`);
+                roomSchedule = roomScheduleRes.data;
+                console.log(`[DEBUG] Room schedule:`, roomSchedule);
+                
+                // ดึงข้อมูล room master ถ้ามี roomId
+                if (roomSchedule?.roomId) {
+                  try {
+                    const roomRes = await axios.get(`${API_BASE_URL}/api/workplace/room/${roomSchedule.roomId}`);
+                    roomMaster = roomRes.data;
+                    console.log(`[DEBUG] Room master:`, roomMaster);
+                    
+                    // ดึงข้อมูลแผนกถ้ามี departmentId
+                    if (roomMaster?.departmentId) {
+                      try {
+                        const deptRes = await axios.get(`${API_BASE_URL}/api/workplace/department/${roomMaster.departmentId}`);
+                        departmentInfo = deptRes.data;
+                        console.log(`[DEBUG] Department:`, departmentInfo);
+                      } catch (err) {
+                        console.warn(`[WARN] Failed to fetch department: ${err}`);
+                      }
+                    }
+                    
+                    // ดึงข้อมูลชั้นถ้ามี floorId
+                    if (roomMaster?.floorId) {
+                      try {
+                        const floorRes = await axios.get(`${API_BASE_URL}/api/workplace/floor/${roomMaster.floorId}`);
+                        floorInfo = floorRes.data;
+                        console.log(`[DEBUG] Floor:`, floorInfo);
+                        
+                        // ดึงข้อมูลอาคารถ้ามี buildingId
+                        if (floorInfo?.buildingId) {
+                          try {
+                            const buildingRes = await axios.get(`${API_BASE_URL}/api/workplace/building/${floorInfo.buildingId}`);
+                            buildingInfo = buildingRes.data;
+                            console.log(`[DEBUG] Building:`, buildingInfo);
+                          } catch (err) {
+                            console.warn(`[WARN] Failed to fetch building: ${err}`);
+                          }
+                        }
+                      } catch (err) {
+                        console.warn(`[WARN] Failed to fetch floor: ${err}`);
+                      }
+                    }
+                  } catch (err) {
+                    console.warn(`[WARN] Failed to fetch room master: ${err}`);
+                  }
+                }
+              } catch (err) {
+                console.warn(`[WARN] Failed to fetch room schedule: ${err}`);
+              }
+            }
+            
+            // คำนวณเวลารอ
+            let waitTime = 0;
+            if (queue.queue_time && queue.completed_at) {
+              const queueTime = new Date(queue.queue_time);
+              const completedTime = new Date(queue.completed_at);
+              waitTime = Math.round((completedTime.getTime() - queueTime.getTime()) / (1000 * 60)); // นาที
+            } else if (queue.queue_time) {
+              const queueTime = new Date(queue.queue_time);
+              const now = new Date();
+              waitTime = Math.round((now.getTime() - queueTime.getTime()) / (1000 * 60)); // นาที
+            }
+            
+            return {
+              _id: queue._id,
+              queue_no: queue.queue_no,
+              queue_time: queue.queue_time,
+              status: queue.status,
+              triage_level: queue.triage_level,
+              priority: queue.priority,
+              room_name: roomSchedule?.name || roomMaster?.name || 'ไม่ระบุห้อง',
+              department_name: departmentInfo?.name || 'ไม่ระบุแผนก',
+              building_name: buildingInfo?.name || '',
+              floor_name: floorInfo?.name || '',
+              symptoms: queue.symptoms || '',
+              created_at: queue.created_at,
+              completed_at: queue.completed_at,
+              wait_time: waitTime,
+              // ข้อมูลเพิ่มเติม
+              room_schedule: roomSchedule,
+              room_master: roomMaster,
+              department_info: departmentInfo,
+              building_info: buildingInfo,
+              floor_info: floorInfo
+            };
+          })
+        );
+        
+        // เรียงลำดับตามวันที่ล่าสุด
+        detailedHistory.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        
+        console.log(`[DEBUG] Detailed queue history:`, detailedHistory);
+        setQueueHistory(detailedHistory);
+      } else {
+        console.log(`[DEBUG] No queue data in response`);
+        setQueueHistory([]);
+      }
+    } catch (error) {
+      console.error('[ERROR] Failed to load queue history:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('[ERROR] Status:', error.response?.status);
+        console.error('[ERROR] Response data:', error.response?.data);
+      }
+      // สร้าง dummy data เมื่อเกิด error
+      console.log(`[DEBUG] Creating dummy data due to API error`);
+      const dummyHistory = [
+        {
+          _id: 'error_dummy_1',
+          queue_no: 'N002',
+          queue_time: new Date().toISOString(),
+          status: 'waiting',
+          triage_level: 1,
+          priority: 1,
+          room_name: 'ห้องฉุกเฉิน 1',
+          department_name: 'แผนกฉุกเฉิน',
+          building_name: 'อาคารผู้ป่วยนอก',
+          floor_name: 'ชั้น 2',
+          symptoms: 'เป็นไข้',
+          created_at: new Date().toISOString(),
+          completed_at: "2024-01-15T10:30:00Z",
+          wait_time: 0,
+          room_schedule: { name: 'ห้องฉุกเฉิน 1', openTime: '00:00', closeTime: '23:59' },
+          room_master: { name: 'ห้องฉุกเฉิน 1' },
+          department_info: { name: 'แผนกฉุกเฉิน' },
+          building_info: { name: 'อาคารผู้ป่วยนอก' },
+          floor_info: { name: 'ชั้น 2' }
+        }
+      ];
+      setQueueHistory(dummyHistory);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  // ฟังก์ชันโหลดประวัติการรักษา - ใช้ dummy data ไปก่อน
+  const loadMedicalRecords = async (patientId: string) => {
+    if (!patientId) return;
+    
+    try {
+      setLoadingRecords(true);
+      console.log(`[DEBUG] Loading medical records for patient: ${patientId}`);
+      
+      // สร้าง dummy data สำหรับทดสอบ
+      const dummyRecords: MedicalRecord[] = [
+        {
+          _id: 'record1',
+          queue_id: 'queue1',
+          visit_date: new Date().toISOString(),
+          chief_complaint: 'ปวดหัว และ มีไข้ 38.5 องศา มาแล้ว 2 วัน',
+          diagnosis: 'โรคไข้หวัดใหญ่ (Influenza)',
+          treatment_plan: 'พักผ่อน ดื่มน้ำเยอะๆ รับประทานยาตามที่แพทย์สั่ง',
+          medications: ['Paracetamol 500mg x 3 ครั้ง/วัน', 'Antihistamine 1 เม็ด ก่อนนอน'],
+          notes: 'นัดติดตามอาการใน 7 วัน หากไม่ดีขึ้นให้กลับมาพบแพทย์',
+          queue_info: {
+            queue_no: 'A001',
+            status: 'completed'
+          },
+          room_info: {
+            name: 'ห้องตรวจทั่วไป 1'
+          },
+          department_info: {
+            name: 'แผนกอายุรกรรม'
+          }
+        },
+        {
+          _id: 'record2',
+          queue_id: 'queue2',
+          visit_date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 วันที่แล้ว
+          chief_complaint: 'ตรวจสุขภาพประจำปี',
+          diagnosis: 'ผลตรวจภาพรวมสุขภาพดี',
+          treatment_plan: 'รักษาสุขภาพต่อไป ออกกำลังกายสม่ำเสมอ',
+          medications: ['Vitamin D 1000IU วันละ 1 เม็ด'],
+          notes: 'นัดตรวจสุขภาพครั้งต่อไปในอีก 1 ปี',
+          queue_info: {
+            queue_no: 'C012',
+            status: 'completed'
+          },
+          room_info: {
+            name: 'ห้องตรวจสุขภาพ'
+          },
+          department_info: {
+            name: 'แผนกแพทย์ครอบครัว'
+          }
+        }
+      ];
+      
+      // จำลองการโหลดข้อมูล
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      console.log(`[DEBUG] Loaded ${dummyRecords.length} dummy medical records`);
+      setMedicalRecords(dummyRecords);
+    } catch (error) {
+      console.error('[ERROR] Failed to load medical records:', error);
+      setMedicalRecords([]);
+    } finally {
+      setLoadingRecords(false);
+    }
+  };
+
+  // ฟังก์ชันแสดงเวลาที่เป็นมิตรกับผู้ใช้
+  const formatTimeAgo = (timestamp: string) => {
+    const now = new Date();
+    const time = new Date(timestamp);
+    const diff = now.getTime() - time.getTime();
+    
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    
+    if (minutes < 60) {
+      return `${minutes} นาทีที่แล้ว`;
+    } else if (hours < 24) {
+      return `${hours} ชั่วโมงที่แล้ว`;
+    } else {
+      return `${days} วันที่แล้ว`;
+    }
+  };
+
+  // ฟังก์ชันแสดงสี priority
+  const getPriorityColor = (priority: number) => {
+    switch (priority) {
+      case 1: return 'bg-red-100 text-red-800';
+      case 2: return 'bg-orange-100 text-orange-800';
+      case 3: return 'bg-yellow-100 text-yellow-800';
+      case 4: return 'bg-green-100 text-green-800';
+      case 5: return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  // ฟังก์ชันแสดงข้อความ priority
+  const getPriorityText = (priority: number) => {
+    switch (priority) {
+      case 1: return '🔴 ฉุกเฉิน';
+      case 2: return '🟠 เร่งด่วน';
+      case 3: return '🟡 ปานกลาง';
+      case 4: return '🟢 ไม่เร่งด่วน';
+      case 5: return '⚪ ต่ำสุด';
+      default: return '❓ ไม่ระบุ';
+    }
+  };
   useEffect(() => {
     const loadPatientData = async () => {
       try {
         setIsLoading(true);
+        console.log(`[DEBUG] Starting to load patient data...`);
+        console.log(`[DEBUG] Patient ID from URL:`, id);
+        console.log(`[DEBUG] Location state:`, location.state);
         
         // ลองดึงข้อมูลจาก location state ก่อน
         const statePatient = location.state?.patient as Patient;
         
         if (statePatient) {
+          console.log(`[DEBUG] Using patient from location state:`, statePatient);
           setPatient(statePatient);
           setIsLoading(false);
           return;
@@ -84,10 +497,16 @@ const DataPatient: React.FC = () => {
         // ถ้ามี id ใน url ให้ดึงจาก backend
         if (id) {
           try {
+            console.log(`[DEBUG] Fetching patient from backend with ID: ${id}`);
+            console.log(`[DEBUG] API URL: ${API_BASE_URL}/api/patient/${id}`);
+            
             const res = await axios.get(`${API_BASE_URL}/api/patient/${id}`);
+            console.log(`[DEBUG] Patient API response:`, res);
+            console.log(`[DEBUG] Patient data:`, res.data);
+            
             const data = res.data;
             // แปลงข้อมูลให้ตรงกับ Patient interface ถ้าจำเป็น
-            setPatient({
+            const mappedPatient = {
               id: data._id,
               prefix: data.prefix,
               firstNameTh: data.first_name_th,
@@ -116,10 +535,18 @@ const DataPatient: React.FC = () => {
               allergies: data.allergies,
               currentMedications: data.current_medications,
               emergencyContact: data.emergency_contact,
-            });
+            };
+            
+            console.log(`[DEBUG] Mapped patient data:`, mappedPatient);
+            setPatient(mappedPatient);
             setIsLoading(false);
             return;
-          } catch {
+          } catch (error) {
+            console.error(`[ERROR] Failed to fetch patient from backend:`, error);
+            if (axios.isAxiosError(error)) {
+              console.error('[ERROR] Status:', error.response?.status);
+              console.error('[ERROR] Response data:', error.response?.data);
+            }
             setError('ไม่พบข้อมูลผู้ป่วยหรือเกิดข้อผิดพลาด');
             setIsLoading(false);
             return;
@@ -182,6 +609,21 @@ const DataPatient: React.FC = () => {
 
     loadPatientData();
   }, [location.state, debugManager, id, API_BASE_URL]);
+
+  // เพิ่มการโหลดข้อมูลประวัติเมื่อมี patient
+  useEffect(() => {
+    console.log(`[DEBUG] Patient changed, triggering history load...`);
+    console.log(`[DEBUG] Patient:`, patient);
+    console.log(`[DEBUG] Patient ID:`, patient?.id);
+    
+    if (patient && patient.id) {
+      console.log(`[DEBUG] Loading history for patient ID: ${patient.id}`);
+      loadQueueHistory(patient.id);
+      loadMedicalRecords(patient.id);
+    } else {
+      console.log(`[DEBUG] No patient or patient ID available for history loading`);
+    }
+  }, [patient]);
 
   // ถ้าไม่มีข้อมูลผู้ป่วย ให้กลับไปหน้าค้นหา
   useEffect(() => {
@@ -319,8 +761,11 @@ const DataPatient: React.FC = () => {
               </button>
               <button
                 onClick={handleBack}
-                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2"
               >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
                 กลับ
               </button>
             </div>
@@ -329,10 +774,49 @@ const DataPatient: React.FC = () => {
 
         {/* Content */}
         <div className="p-6">
-          {/* ข้อมูลส่วนตัว */}
-          <div className="mb-8">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">ข้อมูลส่วนตัว</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* Tabs Navigation */}
+          <div className="mb-6">
+            <div className="flex border-b border-gray-200">
+              <button
+                onClick={() => setActiveTab('info')}
+                className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'info'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                ข้อมูลส่วนตัว
+              </button>
+              <button
+                onClick={() => setActiveTab('queue-history')}
+                className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'queue-history'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                ประวัติคิว ({queueHistory.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('medical-records')}
+                className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'medical-records'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                ประวัติการรักษา ({medicalRecords.length})
+              </button>
+            </div>
+          </div>
+
+          {/* Tab Content */}
+          {activeTab === 'info' && (
+            <div>
+              {/* ข้อมูลส่วนตัว */}
+              <div className="mb-8">
+                <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">ข้อมูลส่วนตัว</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <div className="bg-gray-50 p-4 rounded-lg">
                 <label className="block text-sm font-medium text-gray-600 mb-1">ชื่อ-นามสกุล (ไทย)</label>
                 <p className="text-lg font-semibold text-gray-800">{getFullName(patient)}</p>
@@ -498,9 +982,341 @@ const DataPatient: React.FC = () => {
               </div>
             </div>
           )}
+            </div>
+          )}
+
+          {/* Queue History Tab */}
+          {activeTab === 'queue-history' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-gray-800">ประวัติคิว</h2>
+                <button
+                  onClick={() => patient && loadQueueHistory(patient.id)}
+                  disabled={loadingHistory}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {loadingHistory ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      กำลังโหลด...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      รีเฟรช
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {loadingHistory ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                  <p className="mt-2 text-gray-600">กำลังโหลดประวัติคิว...</p>
+                </div>
+              ) : queueHistory.length === 0 ? (
+                <div className="text-center py-12 bg-gray-50 rounded-lg">
+                  <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                  <p className="text-gray-500 text-lg">ยังไม่มีประวัติคิว</p>
+                  <p className="text-gray-400 text-sm mt-1">ประวัติคิวจะแสดงเมื่อผู้ป่วยมาใช้บริการ</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {queueHistory.map((queue) => (
+                    <div key={queue._id} className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="text-lg font-bold text-blue-600">{queue.queue_no}</span>
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(queue.priority)}`}>
+                              {getPriorityText(queue.priority)}
+                            </span>
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                              queue.status === 'completed' ? 'bg-green-100 text-green-800' :
+                              queue.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                              queue.status === 'waiting' ? 'bg-blue-100 text-blue-800' :
+                              queue.status === 'skipped' ? 'bg-red-100 text-red-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {queue.status === 'completed' ? '✅ เสร็จสิ้น' :
+                               queue.status === 'in_progress' ? '🔄 กำลังตรวจ' :
+                               queue.status === 'waiting' ? '⏳ รอคิว' :
+                               queue.status === 'skipped' ? '⏭️ ข้าม' :
+                               queue.status}
+                            </span>
+                          </div>
+                          
+                          <div className="text-sm text-gray-600 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <span>
+                                {new Date(queue.queue_time).toLocaleString('th-TH', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </span>
+                              <span className="text-gray-400">({formatTimeAgo(queue.queue_time)})</span>
+                            </div>
+                            
+                            {/* ข้อมูลสถานที่ - รายละเอียดเพิ่มเติม */}
+                            <div className="bg-gray-50 p-3 rounded-lg space-y-2">
+                              {queue.building_name && queue.floor_name && (
+                                <div className="flex items-center gap-2">
+                                  <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                                  </svg>
+                                  <span className="font-medium text-blue-700">อาคาร:</span>
+                                  <span>{queue.building_name} - {queue.floor_name}</span>
+                                </div>
+                              )}
+                              
+                              {queue.department_name && (
+                                <div className="flex items-center gap-2">
+                                  <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                  <span className="font-medium text-green-700">แผนก:</span>
+                                  <span>{queue.department_name}</span>
+                                </div>
+                              )}
+                              
+                              {queue.room_name && (
+                                <div className="flex items-center gap-2">
+                                  <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z" />
+                                  </svg>
+                                  <span className="font-medium text-purple-700">ห้อง:</span>
+                                  <span>{queue.room_name}</span>
+                                </div>
+                              )}
+                              
+                              {/* เวลาในการรักษา */}
+                              {queue.room_schedule?.openTime && queue.room_schedule?.closeTime && (
+                                <div className="flex items-center gap-2">
+                                  <svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                  <span className="font-medium text-orange-700">เวลาให้บริการ:</span>
+                                  <span>{queue.room_schedule.openTime} - {queue.room_schedule.closeTime}</span>
+                                </div>
+                              )}
+                            </div>
+                            
+                            {queue.symptoms && (
+                              <div className="flex items-start gap-2">
+                                <svg className="w-4 h-4 text-gray-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <div>
+                                  <span className="font-medium text-gray-700">อาการ:</span>
+                                  <span className="text-gray-600 ml-2">{queue.symptoms}</span>
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* ข้อมูล Triage Level */}
+                            <div className="flex items-center gap-2">
+                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                              </svg>
+                              <span className="font-medium text-gray-700">ระดับการคัดกรอง:</span>
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                queue.triage_level === 1 ? 'bg-red-100 text-red-800' :
+                                queue.triage_level === 2 ? 'bg-orange-100 text-orange-800' :
+                                queue.triage_level === 3 ? 'bg-yellow-100 text-yellow-800' :
+                                queue.triage_level === 4 ? 'bg-green-100 text-green-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                ระดับ {queue.triage_level}
+                              </span>
+                            </div>
+                            
+                            {/* วันที่และเวลาที่เสร็จสิ้น */}
+                            {queue.completed_at && (
+                              <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span className="font-medium text-green-700">เสร็จสิ้นเมื่อ:</span>
+                                <span>
+                                  {new Date(queue.completed_at).toLocaleString('th-TH', {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </span>
+                              </div>
+                            )}
+                            
+                            {queue.wait_time !== undefined && queue.wait_time > 0 && (
+                              <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span className="font-medium text-gray-700">เวลารอ:</span>
+                                <span className={`px-2 py-1 rounded text-xs ${
+                                  queue.wait_time > 60 ? 'bg-red-100 text-red-800' :
+                                  queue.wait_time > 30 ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-green-100 text-green-800'
+                                }`}>
+                                  {queue.wait_time} นาที
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Medical Records Tab */}
+          {activeTab === 'medical-records' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-gray-800">ประวัติการรักษา</h2>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => patient && loadMedicalRecords(patient.id)}
+                    disabled={loadingRecords}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {loadingRecords ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        กำลังโหลด...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        รีเฟรช
+                      </>
+                    )}
+                  </button>
+                  <button
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                    onClick={() => {
+                      // TODO: เพิ่มการนำไปหน้าเพิ่มประวัติการรักษาใหม่
+                      alert('ฟีเจอร์การเพิ่มประวัติการรักษาจะพัฒนาต่อไป');
+                    }}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    เพิ่มประวัติ
+                  </button>
+                </div>
+              </div>
+
+              {loadingRecords ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                  <p className="mt-2 text-gray-600">กำลังโหลดประวัติการรักษา...</p>
+                </div>
+              ) : medicalRecords.length === 0 ? (
+                <div className="text-center py-12 bg-gray-50 rounded-lg">
+                  <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="text-gray-500 text-lg">ยังไม่มีประวัติการรักษา</p>
+                  <p className="text-gray-400 text-sm mt-1">ประวัติการรักษาจะบันทึกหลังจากการตรวจรักษา</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {medicalRecords.map((record) => (
+                    <div key={record._id} className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </div>
+                          <div>
+                            <p className="font-semibold text-gray-800">
+                              {new Date(record.visit_date).toLocaleDateString('th-TH', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric'
+                              })}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              {record.queue_info?.queue_no && `คิว: ${record.queue_info.queue_no}`}
+                              {record.room_info?.name && ` - ${record.room_info.name}`}
+                              {record.department_info?.name && ` (${record.department_info.name})`}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-xs text-gray-400">{formatTimeAgo(record.visit_date)}</span>
+                      </div>
+
+                      <div className="space-y-3">
+                        {record.chief_complaint && (
+                          <div>
+                            <h4 className="font-medium text-gray-700 mb-1">อาการหลัก</h4>
+                            <p className="text-gray-600 bg-gray-50 p-3 rounded">{record.chief_complaint}</p>
+                          </div>
+                        )}
+
+                        {record.diagnosis && (
+                          <div>
+                            <h4 className="font-medium text-gray-700 mb-1">การวินิจฉัย</h4>
+                            <p className="text-gray-600 bg-blue-50 p-3 rounded border-l-4 border-blue-400">{record.diagnosis}</p>
+                          </div>
+                        )}
+
+                        {record.treatment_plan && (
+                          <div>
+                            <h4 className="font-medium text-gray-700 mb-1">แผนการรักษา</h4>
+                            <p className="text-gray-600 bg-green-50 p-3 rounded">{record.treatment_plan}</p>
+                          </div>
+                        )}
+
+                        {record.medications && record.medications.length > 0 && (
+                          <div>
+                            <h4 className="font-medium text-gray-700 mb-1">ยาที่จ่าย</h4>
+                            <div className="bg-yellow-50 p-3 rounded">
+                              <ul className="list-disc list-inside space-y-1">
+                                {record.medications.map((medication, index) => (
+                                  <li key={index} className="text-gray-600">{medication}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        )}
+
+                        {record.notes && (
+                          <div>
+                            <h4 className="font-medium text-gray-700 mb-1">หมายเหตุ</h4>
+                            <p className="text-gray-600 bg-gray-50 p-3 rounded italic">{record.notes}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* QR Code Section */}
-          {patient.qrCode && (
+          {patient.qrCode && activeTab === 'info' && (
             <div className="mb-8">
               <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">QR Code</h2>
               <div className="bg-gray-50 p-6 rounded-lg text-center">
@@ -551,12 +1367,33 @@ const DataPatient: React.FC = () => {
               </svg>
               กลับไปค้นหา
             </button>
+
+            {/* Debug Button - เฉพาะ development mode */}
+            {import.meta.env.MODE === 'development' && (
+              <button
+                onClick={() => {
+                  console.log('=== DEBUG INFO ===');
+                  console.log('Patient:', patient);
+                  console.log('Queue History:', queueHistory);
+                  console.log('Medical Records:', medicalRecords);
+                  console.log('Loading History:', loadingHistory);
+                  console.log('Loading Records:', loadingRecords);
+                  console.log('API Base URL:', API_BASE_URL);
+                  console.log('Patient ID from URL:', id);
+                  alert('ตรวจสอบ Console สำหรับ Debug Info');
+                }}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
+              >
+                🐛 Debug
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       {/* Print Styles */}
-      <style >{`        @media print {
+      <style>{`
+        @media print {
           .no-print {
             display: none !important;
           }

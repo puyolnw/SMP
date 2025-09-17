@@ -9,6 +9,9 @@ interface PatientData {
   name: string;
   nationalId: string;
   profileImage?: string;
+  // เพิ่มข้อมูลวันเกิดเพื่อคำนวณอายุ
+  birthDate?: string; // รูปแบบ YYYY-MM-DD หรือ ISO date
+  age?: number; // อายุที่คำนวณแล้ว
 }
 
 interface VitalSigns {
@@ -18,6 +21,7 @@ interface VitalSigns {
   systolic: number | null;
   diastolic: number | null;
   pulse: number | null;
+  age: number | null;
 }
 
 type ProcessStep = 'weight' | 'height' | 'systolic' | 'diastolic' | 'pulse' | 'blood-pressure' | 'symptoms' | 'summary' | 'qr-code';
@@ -45,7 +49,7 @@ const loadCameraSizeSettings = () => {
 };
   const [currentStep, setCurrentStep] = useState<ProcessStep>('weight');
   const [vitalSigns, setVitalSigns] = useState<VitalSigns>({
-    weight: null, height: null, bmi: null, systolic: null, diastolic: null, pulse: null
+    weight: null, height: null, bmi: null, systolic: null, diastolic: null, pulse: null, age: null
   });
   const [errorMessage, setErrorMessage] = useState('');
   const [patientToken] = useState<string | null>(localStorage.getItem('patient_token'));
@@ -56,7 +60,7 @@ const loadCameraSizeSettings = () => {
   const [recordingTime, setRecordingTime] = useState(0);
   const [symptomsText, setSymptomsText] = useState('');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-const recordingTimerRef = useRef<number | null>(null);
+const recordingTimerRef = useRef<NodeJS.Timeout | number | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [mainStream, setMainStream] = useState<MediaStream | null>(null);
   const [bpStream, setBpStream] = useState<MediaStream | null>(null);
@@ -70,14 +74,15 @@ const recordingTimerRef = useRef<number | null>(null);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   
 
-const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isNarratorEnabled, setIsNarratorEnabled] = useState(true);
 console.log('isSpeaking', isSpeaking,setIsSpeaking);
 
   const [queueInfo, setQueueInfo] = useState<any>(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [scanCount, setScanCount] = useState(0);
   const [manualInputMode, setManualInputMode] = useState(false);
-const scanIntervalId = useRef<number | null>(null);
+const scanIntervalId = useRef<NodeJS.Timeout | number | null>(null);
 
   // Camera management
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
@@ -110,7 +115,7 @@ const loadCameraSettings = () => {
   return null;
 };
 const speak = (text: string) => {
-  if (window.speechSynthesis) {
+  if (window.speechSynthesis && isNarratorEnabled) {
     // หยุดเสียงเก่าก่อน
     window.speechSynthesis.cancel();
     
@@ -127,52 +132,108 @@ const speak = (text: string) => {
   stopSpeaking();
 }, [currentStep]);
 
-useEffect(() => {
-  let message = '';
-  
-  switch (currentStep) {
-    case 'weight':
-      message = 'เริ่มขั้นตอนการชั่งน้ำหนัก กรุณาขึ้นชั่งน้ำหนัก ถอดรองเท้าออก และยืนนิ่งๆ รอสักครู่';
-      break;
-    case 'height':
-      message = 'เริ่มขั้นตอนการวัดส่วนสูง กรุณายืนตรงใต้เครื่องวัดส่วนสูง ถอดรองเท้าออก และยืนนิ่งๆ รอสักครู่';
-      break;
-    case 'blood-pressure':
-      message = 'เริ่มขั้นตอนการวัดความดันโลหิตและชีพจร กรุณานั่งพักสักครู่ วางแขนบนที่วางแขน และนั่งนิ่งๆ ไม่พูดคุยระหว่างวัด รอสักครู่';
-      break;
-    case 'symptoms':
-      message = 'เริ่มขั้นตอนการบันทึกอาการ กรุณาบันทึกเสียงหรือพิมพ์อาการที่รู้สึก';
-      break;
-    case 'summary':
-      message = 'กรุณาตรวจสอบข้อมูลสัญญาณชีพของท่าน หากถูกต้องกดยืนยัน หากไม่ถูกต้องสามารถกลับไปแก้ไขได้';
-      break;
-    case 'qr-code':
-      message = 'การตรวจเสร็จสิ้น กรุณาสแกน คิวอาร์โค้ด เพื่อดูผลการตรวจและคิวของท่าน';
-      break;
-  }
-  
-  if (message) {
-    setTimeout(() => speak(message), 500);
-  }
-}, [currentStep]);
+  useEffect(() => {
+    let message = '';
+    
+    switch (currentStep) {
+      case 'weight':
+        message = 'เริ่มขั้นตอนการชั่งน้ำหนัก กรุณาขึ้นชั่งน้ำหนัก ถอดรองเท้าออก และยืนนิ่งๆ รอสักครู่';
+        break;
+      case 'height':
+        message = 'เริ่มขั้นตอนการวัดส่วนสูง กรุณายืนตรงใต้เครื่องวัดส่วนสูง ถอดรองเท้าออก และยืนนิ่งๆ รอสักครู่';
+        break;
+      case 'blood-pressure':
+        message = 'เริ่มขั้นตอนการวัดความดันโลหิตและชีพจร กรุณานั่งพักสักครู่ วางแขนบนที่วางแขน และนั่งนิ่งๆ ไม่พูดคุยระหว่างวัด รอสักครู่';
+        break;
+      case 'symptoms':
+        message = 'เริ่มขั้นตอนการบันทึกอาการ กรุณาบันทึกเสียงหรือพิมพ์อาการที่รู้สึก';
+        break;
+      case 'summary':
+        message = 'กรุณาตรวจสอบข้อมูลสัญญาณชีพของท่าน หากถูกต้องกดยืนยัน หากไม่ถูกต้องสามารถกลับไปแก้ไขได้';
+        break;
+      case 'qr-code':
+        message = 'การตรวจเสร็จสิ้น กรุณาสแกน คิวอาร์โค้ด เพื่อดูผลการตรวจและคิวของท่าน';
+        break;
+    }
+    
+    if (message && isNarratorEnabled) {
+      setTimeout(() => speak(message), 500);
+    }
+  }, [currentStep, isNarratorEnabled]);
+
+  // ฟังก์ชันคำนวณอายุจากรหัสประจำตัวประชาชน หรือวันเกิด
+  const calculateAge = (nationalId: string, birthDate?: string): number => {
+    let calculatedAge = 30; // ค่าเริ่มต้น
+    
+    if (birthDate) {
+      // คำนวณจากวันเกิดโดยตรง
+      const birth = new Date(birthDate);
+      const today = new Date();
+      calculatedAge = today.getFullYear() - birth.getFullYear();
+      const monthDiff = today.getMonth() - birth.getMonth();
+      
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+        calculatedAge--;
+      }
+    } else if (nationalId && nationalId.length >= 7) {
+      // คำนวณจากรหัสประจำตัวประชาชนไทย (7 หลักแรก = วัน/เดือน/ปี)
+      try {
+        const yearCode = nationalId.substring(1, 3);
+        const currentYear = new Date().getFullYear();
+        const yearPrefix = parseInt(yearCode) > 50 ? 2400 : 2500; // พ.ศ.
+        const birthYear = yearPrefix + parseInt(yearCode) - 543; // แปลงเป็น ค.ศ.
+        
+        if (birthYear > 1900 && birthYear <= currentYear) {
+          calculatedAge = currentYear - birthYear;
+        }
+      } catch (error) {
+        console.warn('Cannot calculate age from nationalId:', error);
+      }
+    }
+    
+    return Math.max(0, Math.min(120, calculatedAge)); // จำกัดอายุ 0-120 ปี
+  };
 
   // Patient data
   const getPatientData = (): PatientData => {
     if (location.state?.patient) {
+      console.log('Patient data received from location.state:', location.state.patient);
       return location.state.patient;
     }
     const storedPatient = localStorage.getItem('authenticatedPatient');
     if (storedPatient) {
-      return JSON.parse(storedPatient);
+      const patient = JSON.parse(storedPatient);
+      console.log('Patient data from localStorage:', patient);
+      // คำนวณอายุถ้ายังไม่มี
+      if (!patient.age) {
+        patient.age = calculateAge(patient.nationalId, patient.birthDate);
+        console.log('Calculated age for patient:', patient.age);
+      }
+      return patient;
     }
+    console.log('Using fallback patient data');
     return {
       id: 'P001234',
       name: 'นายสมชาย ใจดี',
-      nationalId: '1234567890123'
+      nationalId: '1234567890123',
+      birthDate: '1990-01-01', // เพิ่ม birthDate สำหรับการคำนวณอายุ
+      age: calculateAge('1234567890123', '1990-01-01') // คำนวณอายุจาก nationalId และ birthDate
     };
   };
   
   const [patientData] = useState<PatientData>(getPatientData());
+
+  // ตั้งค่าอายุเริ่มต้นใน vitalSigns
+  useEffect(() => {
+    console.log('Setting up initial age in vitalSigns:', { 
+      patientAge: patientData.age, 
+      currentVitalSignsAge: vitalSigns.age 
+    });
+    if (patientData.age && vitalSigns.age === null) {
+      setVitalSigns(prev => ({ ...prev, age: patientData.age || null }));
+      console.log('Age set in vitalSigns:', patientData.age);
+    }
+  }, [patientData.age, vitalSigns.age]);
 
   // Debug input states
   const [debugWeight, setDebugWeight] = useState('');
@@ -191,34 +252,133 @@ console.log('existingVitalSigns:', isLoadingExistingData);
   const [manualPulse, setManualPulse] = useState('');
  // แก้ไข simulateWeightScan ให้มี TTS
 const simulateWeightScan = async () => {
-  setErrorMessage('กำลังประมวลผล OCR...');
-  speak('กำลังประมวลผลการชั่งน้ำหนัก รอสักครู่');
-  
-  // เพิ่ม delay 15 วินาที
-  await new Promise(resolve => setTimeout(resolve, 15000));
-  
-  // ตรวจสอบว่ามีข้อมูลเก่าหรือไม่
-  if (existingVitalSigns?.weight) {
-    // ใช้ข้อมูลจาก database แบบเงียบๆ
-    setVitalSigns(prev => ({ ...prev, weight: existingVitalSigns.weight }));
-    setErrorMessage('');
-    setScanCount(0);
-    setIsCameraOpen(false);
-    closeCamera();
-    setManualInputMode(false);
-    
-    speak(`ชั่งน้ำหนักเสร็จสิ้น น้ำหนัก ${existingVitalSigns.weight} กิโลกรัม ไปขั้นตอนถัดไป`);
-    
-    // ไปขั้นตอนต่อไปทันที โดยไม่บอกว่าเจอข้อมูลเก่า
-    setTimeout(() => {
-      setCurrentStep('height');
-    }, 2000);
-  } else {
-    // ไม่มีข้อมูลเก่า ให้กรอกด้วยมือ
-    setScanCount(5); // ตั้งให้แสดง manual input ทันที
+  try {
+    if (!mainVideoRef.current) return;
+    if (mainVideoRef.current.videoWidth === 0 || mainVideoRef.current.videoHeight === 0) return;
+
+    console.log('Starting weight scan at', new Date().toLocaleTimeString());
+    setErrorMessage('กำลังประมวลผล OCR...');
+    speak('กำลังประมวลผลการชั่งน้ำหนัก รอสักครู่');
+
+    // จับภาพจากกล้องเป็น Blob
+    const canvas = document.createElement('canvas');
+    canvas.width = mainVideoRef.current.videoWidth;
+    canvas.height = mainVideoRef.current.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(mainVideoRef.current, 0, 0, canvas.width, canvas.height);
+
+    const blob: Blob | null = await new Promise(resolve => canvas.toBlob(b => resolve(b), 'image/jpeg', 0.9));
+    if (!blob) return;
+
+    const form = new FormData();
+    form.append('image', blob, 'weight.jpg');
+
+    console.log('Sending POST to weight scan API:', `${API_BASE_URL}/api/realtime/weight/scan`);
+    const res = await axios.post(`${API_BASE_URL}/api/realtime/weight/scan`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    console.log('Weight scan API response:', res.data);
+
+    const w = typeof res.data?.weight === 'number' ? res.data.weight : (typeof res.data?.weight?.weight === 'number' ? res.data.weight.weight : null);
+
+    if (typeof w === 'number' && w > 20 && w < 300) {
+      setVitalSigns(prev => ({ ...prev, weight: w }));
+      setErrorMessage('');
+      setScanCount(0);
+      setIsCameraOpen(false);
+      closeCamera();
+      setManualInputMode(false);
+      speak(`ชั่งน้ำหนักเสร็จสิ้น น้ำหนัก ${w} กิโลกรัม ไปขั้นตอนถัดไป`);
+      setTimeout(() => setCurrentStep('height'), 1500);
+      return;
+    }
+
+    if (existingVitalSigns?.weight) {
+      setVitalSigns(prev => ({ ...prev, weight: existingVitalSigns.weight }));
+      setErrorMessage('');
+      setScanCount(0);
+      setIsCameraOpen(false);
+      closeCamera();
+      setManualInputMode(false);
+      speak(`ชั่งน้ำหนักเสร็จสิ้น น้ำหนัก ${existingVitalSigns.weight} กิโลกรัม ไปขั้นตอนถัดไป`);
+      setTimeout(() => setCurrentStep('height'), 1500);
+      return;
+    }
+
+    setScanCount(5);
     setManualInputMode(true);
-    setErrorMessage('ไม่สามารถอ่านค่าได้ กรุณากรอกด้วยตัวเอง');
+    setErrorMessage('ไม่สามารถอ่านน้ำหนักได้ กรุณากรอกด้วยตัวเอง');
     speak('ไม่สามารถอ่านค่าน้ำหนักได้ กรุณากรอกน้ำหนักด้วยตัวเอง');
+  } catch (e) {
+    console.error('weight scan api error:', e);
+    setScanCount(5);
+    setManualInputMode(true);
+    setErrorMessage('เรียก API อ่านน้ำหนักล้มเหลว กรุณากรอกด้วยตัวเอง');
+    speak('ไม่สามารถอ่านค่าน้ำหนักได้ กรุณากรอกน้ำหนักด้วยตัวเอง');
+  }
+};
+// ฟังก์ชันเรียก API ความดันจาก backend
+const scanBloodPressureViaAPI = async (blob: Blob) => {
+  try {
+    console.log('Starting blood pressure scan at', new Date().toLocaleTimeString());
+    setErrorMessage('กำลังประมวลผล OCR...');
+    speak('กำลังประมวลผลการวัดความดันและชีพจร รอสักครู่');
+    const form = new FormData();
+    form.append('image', blob, 'bp.jpg');
+    console.log('Sending POST to BP scan API:', `${API_BASE_URL}/api/realtime/bp/scan`);
+    const res = await axios.post(`${API_BASE_URL}/api/realtime/bp/scan`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    console.log('BP scan API response:', res.data);
+    const { systolic, diastolic, pulse } = res.data || {};
+    if (systolic || diastolic || pulse) {
+      const updated: any = { ...vitalSigns };
+      if (typeof systolic === 'number') updated.systolic = systolic;
+      if (typeof diastolic === 'number') updated.diastolic = diastolic;
+      if (typeof pulse === 'number') updated.pulse = pulse;
+      setVitalSigns(updated);
+      setErrorMessage('');
+      
+      // ตรวจสอบว่าได้ครบทั้ง 3 ค่าหรือยัง
+      console.log('Checking BP values:', { 
+        systolic: updated.systolic, 
+        diastolic: updated.diastolic, 
+        pulse: updated.pulse,
+        allComplete: !!(updated.systolic && updated.diastolic && updated.pulse)
+      });
+      
+      if (updated.systolic && updated.diastolic && updated.pulse) {
+        console.log('All BP values complete, proceeding to symptoms step');
+        setScanCount(0);
+        setIsCameraOpen(false);
+        closeCamera();
+        setManualInputMode(false);
+        
+        // หยุด interval scan ทันที
+        if (scanIntervalId.current) {
+          clearInterval(scanIntervalId.current as any);
+          scanIntervalId.current = null;
+        }
+        
+        speak(`วัดความดันและชีพจรเสร็จสิ้น ความดัน ${updated.systolic}/${updated.diastolic} ชีพจร ${updated.pulse} ไปขั้นตอนถัดไป`);
+        setTimeout(() => {
+          console.log('Changing to symptoms step');
+          setCurrentStep('symptoms');
+        }, 2000);
+      } else {
+        console.log('BP values incomplete, continuing scan');
+        speak('พบข้อมูลบางส่วน กำลังสแกนต่อ');
+      }
+    } else {
+      setScanCount(c => c + 1);
+      setErrorMessage('OCR ไม่พบข้อมูลความดันและชีพจร');
+      speak('ไม่พบข้อมูล กำลังลองใหม่');
+    }
+  } catch (e) {
+    console.error('bp scan api error:', e);
+    setScanCount(c => c + 1);
+    setErrorMessage('เรียก API ความดันล้มเหลว');
   }
 };
 const fetchExistingVitalSigns = async (nationalId: string) => {
@@ -388,7 +548,7 @@ useEffect(() => {
       setIsRecording(false);
       
       if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
+        clearInterval(recordingTimerRef.current as any);
         recordingTimerRef.current = null;
       }
       
@@ -709,12 +869,15 @@ useEffect(() => {
   };
 
   const ocrImageBlob = async (blob: Blob, lang: string = 'eng'): Promise<string[]> => {
+    console.log('Starting OCR scan at', new Date().toLocaleTimeString());
     const formData = new FormData();
     formData.append('image', blob, 'ocr.jpg');
     formData.append('lang', lang);
+    console.log('Sending POST to OCR API:', `${API_BASE_URL}/api/realtime/ocr/scan`);
     const res = await axios.post(`${API_BASE_URL}/api/realtime/ocr/scan`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
+    console.log('OCR API response:', res.data);
     return res.data.text;
   };
 
@@ -724,6 +887,7 @@ useEffect(() => {
       return;
     }
     try {
+      console.log('Sending vital signs to backend:', { vital_signs: vitalSigns, symptoms: symptomsText });
       const res = await axios.post(
         `${API_BASE_URL}/api/queue/queue`,
         {
@@ -739,8 +903,8 @@ useEffect(() => {
       );
       setQueueInfo(queueResponse.data.queue); // <-- สำคัญ!
       console.log('Queue info:', res);
-    } catch {
-
+    } catch (error) {
+      console.error('Error saving vital signs:', error);
       setErrorMessage('บันทึกข้อมูลหรือดึงคิวล้มเหลว');
     }
   };
@@ -780,11 +944,13 @@ useEffect(() => {
       if (bpVideoRef.current) bpVideoRef.current.srcObject = null;
     }
     setIsCameraOpen(false);
-    if (scanIntervalId.current) clearInterval(scanIntervalId.current);
+    if (scanIntervalId.current) clearInterval(scanIntervalId.current as any);
   };
 
 const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
-  // ถ้าเป็นน้ำหนัก ใช้ simulateWeightScan แทน
+  console.log(`Starting scan for ${field} at ${new Date().toLocaleTimeString()}`);
+  
+  // ถ้าเป็นน้ำหนัก ใช้ simulateWeightScan
   if (field === 'weight') {
     await simulateWeightScan();
     return;
@@ -829,16 +995,16 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
       return;
     }
     
-    // เพิ่ม TTS สำหรับแต่ละขั้นตอน
+    // หากเป็นความดัน ใช้ API แล้วออกเลย
+    if (field === 'blood-pressure') {
+      await scanBloodPressureViaAPI(blob);
+      return;
+    }
+
+    // เพิ่ม TTS สำหรับแต่ละขั้นตอน (ส่วนสูง)
     if (field === 'height') {
       setErrorMessage('กำลังประมวลผล OCR...');
       speak('กำลังประมวลผลการวัดส่วนสูง รอสักครู่');
-    } else if (field === 'blood-pressure') {
-      setErrorMessage('กำลังตรวจสแกนตัวเลข...');
-      speak('กำลังประมวลผลการวัดความดันและชีพจร รอสักครู่');
-      // เพิ่ม delay 30 วินาทีสำหรับความดัน
-      await new Promise(resolve => setTimeout(resolve, 30000));
-      setErrorMessage('กำลังประมวลผล OCR...');
     }
     
     try {
@@ -913,7 +1079,15 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
             setErrorMessage('');
             
             // ตรวจสอบว่าได้ครบทั้ง 3 ค่าหรือยัง
+            console.log('OCR - Checking BP values:', { 
+              systolic: updatedVitalSigns.systolic, 
+              diastolic: updatedVitalSigns.diastolic, 
+              pulse: updatedVitalSigns.pulse,
+              allComplete: !!(updatedVitalSigns.systolic && updatedVitalSigns.diastolic && updatedVitalSigns.pulse)
+            });
+            
             if (updatedVitalSigns.systolic && updatedVitalSigns.diastolic && updatedVitalSigns.pulse) {
+              console.log('OCR - All BP values complete, proceeding to symptoms step');
               setScanCount(0);
               setIsCameraOpen(false);
               closeCamera();
@@ -921,13 +1095,17 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
               
               // หยุด interval scan ทันที
               if (scanIntervalId.current) {
-                clearInterval(scanIntervalId.current);
+                clearInterval(scanIntervalId.current as any);
                 scanIntervalId.current = null;
               }
               
               speak(`วัดความดันและชีพจรเสร็จสิ้น ความดัน ${updatedVitalSigns.systolic}/${updatedVitalSigns.diastolic} ชีพจร ${updatedVitalSigns.pulse} ไปขั้นตอนถัดไป`);
-              setTimeout(() => setCurrentStep('symptoms'), 2000);
+              setTimeout(() => {
+                console.log('OCR - Changing to symptoms step');
+                setCurrentStep('symptoms');
+              }, 2000);
             } else {
+              console.log('OCR - BP values incomplete, continuing scan');
               speak('พบข้อมูลบางส่วน กำลังสแกนต่อ');
             }
           } else {
@@ -961,20 +1139,19 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
       return; // ไม่ใช่ขั้นตอนที่ต้องสแกน
     }
     
-    // สำหรับน้ำหนัก ไม่ต้องทำ interval scan
-    if (field === 'weight') {
-      simulateWeightScan();
-      return;
-    }
+    // ทำ scan ทันทีครั้งแรก
+    scan(field);
     
-    // สำหรับอื่นๆ ทำ scan ปกติ
+    // ตั้ง interval scan ทุก 8 วินาที
+    scanIntervalId.current = setInterval(() => {
+      console.log(`Auto scanning ${field} at ${new Date().toLocaleTimeString()}`);
       scan(field);
-      scanIntervalId.current = setInterval(() => scan(field), 8000);
+    }, 8000);
     }
   
     return () => {
     if (scanIntervalId.current) {
-      clearInterval(scanIntervalId.current);
+      clearInterval(scanIntervalId.current as any);
     }
     };
   }, [isCameraOpen, currentStep]);
@@ -1141,14 +1318,35 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
 
   const CameraSelector = () => (
     <>
-      <button
-        className="fixed bottom-4 right-4 z-50 bg-gray-700 text-white px-4 py-2 rounded shadow-lg hover:bg-gray-800"
-        onClick={() => setShowCameraSettings(v => !v)}
-      >
-        {showCameraSettings ? 'ปิดการตั้งค่ากล้อง' : 'ตั้งค่ากล้อง'}
-      </button>
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col space-y-2">
+        <button
+          className="bg-gray-700 text-white px-4 py-2 rounded shadow-lg hover:bg-gray-800"
+          onClick={() => setShowCameraSettings(v => !v)}
+        >
+          {showCameraSettings ? 'ปิดการตั้งค่ากล้อง' : 'ตั้งค่ากล้อง'}
+        </button>
+        <button
+          className={`px-4 py-2 rounded shadow-lg transition-colors ${
+            isNarratorEnabled 
+              ? 'bg-green-600 text-white hover:bg-green-700' 
+              : 'bg-red-600 text-white hover:bg-red-700'
+          }`}
+          onClick={() => setIsNarratorEnabled(!isNarratorEnabled)}
+        >
+          {isNarratorEnabled ? '🔊 ปิดเสียง' : '🔇 เปิดเสียง'}
+        </button>
+      </div>
       {showCameraSettings && (
         <div className="fixed bottom-16 right-4 z-50 bg-white/95 backdrop-blur-md rounded-xl shadow-2xl p-6 w-80 border border-gray-200">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-bold text-gray-800">ตั้งค่ากล้อง</h3>
+            <button
+              onClick={() => setShowCameraSettings(false)}
+              className="text-gray-500 hover:text-gray-700 text-xl"
+            >
+              ✕
+            </button>
+          </div>
           <div className="mb-4">
             <label className="block font-medium mb-1 text-gray-800">เลือกกล้องสำหรับน้ำหนัก</label>
             <select
@@ -1478,7 +1676,7 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
           <div className="w-16 h-16 mx-auto bg-white rounded-full flex items-center justify-center shadow-2xl mb-4">
             <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
+                           </svg>
             </div>
           <h1 className="text-2xl font-bold text-white mb-2">สแกนน้ำหนัก</h1>
           <p className="text-white/80">ขั้นตอนที่ 1 จาก 3</p>
@@ -1529,20 +1727,38 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
             </div>
           {errorMessage && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">{errorMessage}</div>}
           <div className="text-center text-xl">น้ำหนักที่ได้: <span className="font-bold text-blue-600">{vitalSigns.weight ?? '-'}</span> กก.</div>
+            
+            {/* ปุ่มกรอกข้อมูลโดยตรง */}
+            <div className="mt-4 flex flex-col items-center">
+              <button
+                onClick={() => setManualInputMode(true)}
+                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mb-4"
+              >
+                กรอกข้อมูลด้วยตัวเอง
+              </button>
+            </div>
+            
             {(scanCount >= 5 || manualInputMode) && (
               <div className="mt-4 flex flex-col items-center">
-                <label className="mb-1 text-gray-700">กรอกข้อมูลด้วยตัวเอง (optional):</label>
+                <label className="mb-1 text-gray-700">กรอกข้อมูลด้วยตัวเอง:</label>
                 <input type="number" className="p-2 border rounded w-40 text-center" placeholder="กรอกน้ำหนัก (กก.)" value={manualWeight} onChange={e => setManualWeight(e.target.value)} />
-                <button className="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600" onClick={() => {
-                  const w = parseFloat(manualWeight);
-                  if (w > 20 && w < 200) {
-                    setVitalSigns(prev => ({ ...prev, weight: w }));
+                <div className="flex space-x-2 mt-2">
+                  <button className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600" onClick={() => {
+                    const w = parseFloat(manualWeight);
+                    if (w > 20 && w < 200) {
+                      setVitalSigns(prev => ({ ...prev, weight: w }));
+                      setManualWeight('');
+                      setManualInputMode(false);
+                      setTimeout(() => setCurrentStep('height'), 800);
+                    } else {
+                      setErrorMessage('กรุณากรอกน้ำหนักให้ถูกต้อง');
+                    }
+                  }}>ยืนยันน้ำหนัก</button>
+                  <button className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600" onClick={() => {
+                    setManualInputMode(false);
                     setManualWeight('');
-                    setTimeout(() => setCurrentStep('height'), 800);
-                  } else {
-                    setErrorMessage('กรุณากรอกน้ำหนักให้ถูกต้อง');
-                  }
-                }}>ยืนยันน้ำหนัก</button>
+                  }}>ยกเลิก</button>
+                </div>
               </div>
             )}
           </div>
@@ -1603,20 +1819,38 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
             </div>
             {errorMessage && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">{errorMessage}</div>}
             <div className="text-center text-lg">ส่วนสูงที่ได้: <span className="font-bold">{vitalSigns.height ?? '-'}</span> ซม.</div>
+            
+            {/* ปุ่มกรอกข้อมูลโดยตรง */}
+            <div className="mt-4 flex flex-col items-center">
+              <button
+                onClick={() => setManualInputMode(true)}
+                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mb-4"
+              >
+                กรอกข้อมูลด้วยตัวเอง
+              </button>
+            </div>
+            
             {(scanCount >= 5 || manualInputMode) && (
               <div className="mt-4 flex flex-col items-center">
-                <label className="mb-1 text-gray-700">กรอกข้อมูลด้วยตัวเอง (optional):</label>
+                <label className="mb-1 text-gray-700">กรอกข้อมูลด้วยตัวเอง:</label>
                 <input type="number" className="p-2 border rounded w-40 text-center" placeholder="กรอกส่วนสูง (ซม.)" value={manualHeight} onChange={e => setManualHeight(e.target.value)} />
-                <button className="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600" onClick={() => {
-                  const h = parseFloat(manualHeight);
-                  if (h > 100 && h < 250) {
-                    setVitalSigns(prev => ({ ...prev, height: h }));
+                <div className="flex space-x-2 mt-2">
+                  <button className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600" onClick={() => {
+                    const h = parseFloat(manualHeight);
+                    if (h > 100 && h < 250) {
+                      setVitalSigns(prev => ({ ...prev, height: h }));
+                      setManualHeight('');
+                      setManualInputMode(false);
+                      setTimeout(() => setCurrentStep('blood-pressure'), 800);
+                    } else {
+                      setErrorMessage('กรุณากรอกส่วนสูงให้ถูกต้อง');
+                    }
+                  }}>ยืนยันส่วนสูง</button>
+                  <button className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600" onClick={() => {
+                    setManualInputMode(false);
                     setManualHeight('');
-                    setTimeout(() => setCurrentStep('systolic'), 800);
-                  } else {
-                    setErrorMessage('กรุณากรอกส่วนสูงให้ถูกต้อง');
-                  }
-                }}>ยืนยันส่วนสูง</button>
+                  }}>ยกเลิก</button>
+                </div>
               </div>
             )}
           </div>
@@ -1707,10 +1941,20 @@ if (currentStep === 'blood-pressure') {
               <p className="text-xs text-gray-500">bpm</p>
         </div>
       </div>
+      
+      {/* ปุ่มกรอกข้อมูลโดยตรง */}
+      <div className="mt-4 flex flex-col items-center">
+        <button
+          onClick={() => setManualInputMode(true)}
+          className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mb-4"
+        >
+          กรอกข้อมูลด้วยตัวเอง
+        </button>
+      </div>
 
           {(scanCount >= 5 || manualInputMode) && (
             <div className="mt-4 space-y-4">
-              <div className="text-center text-gray-700 font-medium">กรอกข้อมูลด้วยตัวเอง (optional):</div>
+              <div className="text-center text-gray-700 font-medium">กรอกข้อมูลด้วยตัวเอง:</div>
               <div className="grid grid-cols-3 gap-4">
                 <div className="flex flex-col items-center">
                   <label className="mb-1 text-sm text-gray-600">ความดันตัวบน</label>
@@ -1743,7 +1987,7 @@ if (currentStep === 'blood-pressure') {
                   />
             </div>
           </div>
-              <div className="text-center">
+              <div className="text-center flex justify-center space-x-2">
             <button
                   className="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600" 
                   onClick={() => {
@@ -1782,16 +2026,120 @@ if (currentStep === 'blood-pressure') {
                     setManualSystolic('');
                     setManualDiastolic('');
                     setManualPulse('');
+                    setManualInputMode(false);
                     
                     // ไปขั้นตอนถัดไป
-                    setTimeout(() => setCurrentStep('summary'), 800);
+                    console.log('Manual input complete, changing to summary step');
+                    setTimeout(() => {
+                      console.log('Setting current step to summary');
+                      setCurrentStep('summary');
+                    }, 800);
                   }}
                 >
                   ยืนยันข้อมูล
               </button>
+              <button
+                className="bg-gray-500 text-white px-6 py-2 rounded hover:bg-gray-600"
+                onClick={() => {
+                  setManualInputMode(false);
+                  setManualSystolic('');
+                  setManualDiastolic('');
+                  setManualPulse('');
+                }}
+              >
+                ยกเลิก
+              </button>
             </div>
             </div>
           )}
+          </div>
+        </div>
+        {showDebugPanel && <DebugPanel />}
+        <DebugButton />
+      </div>
+    );
+  }
+
+  if (currentStep === 'summary') {
+    console.log('Rendering summary step with vital signs:', vitalSigns);
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-800 flex">
+        <div className="w-1/3 bg-white/10 backdrop-blur-sm p-8 flex flex-col justify-center">
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center shadow-2xl mb-6">
+              <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h1 className="text-3xl font-bold text-white mb-4">ตรวจสอบข้อมูล</h1>
+            <p className="text-white/80 text-lg">กรุณาตรวจสอบข้อมูลสัญญาณชีพ</p>
+          </div>
+          <div className="bg-white/20 rounded-xl p-6 mb-6">
+            <h3 className="text-white font-semibold mb-4">ข้อมูลผู้ป่วย</h3>
+            <div className="space-y-2 text-white/80">
+              <p><span className="font-medium">ชื่อ:</span> {patientData.name}</p>
+              <p><span className="font-medium">เลขประจำตัวประชาชน:</span> {patientData.nationalId.replace(/(\d{1})(\d{4})(\d{5})(\d{2})(\d{1})/, '$1-$2-$3-$4-$5')}</p>
+            </div>
+          </div>
+        </div>
+        <div className="w-2/3 p-8 flex flex-col items-center justify-center">
+          <div className="bg-white rounded-xl shadow-xl p-8 w-full max-w-4xl">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">ข้อมูลสัญญาณชีพของท่าน</h2>
+            
+            {/* แสดงข้อมูลสัญญาณชีพ */}
+            <div className="grid grid-cols-2 gap-6 mb-8">
+              <div className="bg-blue-50 p-6 rounded-lg">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">น้ำหนักและส่วนสูง</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">น้ำหนัก:</span>
+                    <span className="font-bold text-blue-600">{vitalSigns.weight ?? '-'} กก.</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">ส่วนสูง:</span>
+                    <span className="font-bold text-blue-600">{vitalSigns.height ?? '-'} ซม.</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">BMI:</span>
+                    <span className="font-bold text-blue-600">{vitalSigns.bmi ?? '-'}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-green-50 p-6 rounded-lg">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">ความดันและชีพจร</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">ความดันตัวบน:</span>
+                    <span className="font-bold text-green-600">{vitalSigns.systolic ?? '-'} mmHg</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">ความดันตัวล่าง:</span>
+                    <span className="font-bold text-green-600">{vitalSigns.diastolic ?? '-'} mmHg</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">ชีพจร:</span>
+                    <span className="font-bold text-green-600">{vitalSigns.pulse ?? '-'} bpm</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ปุ่มแก้ไขและยืนยัน */}
+            <div className="flex justify-center space-x-4">
+              <button
+                onClick={() => setCurrentStep('blood-pressure')}
+                className="bg-yellow-500 hover:bg-yellow-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+              >
+                แก้ไขข้อมูล
+              </button>
+              <button
+                onClick={() => setCurrentStep('symptoms')}
+                className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+              >
+                ยืนยันและดำเนินการต่อ
+              </button>
+            </div>
           </div>
         </div>
         {showDebugPanel && <DebugPanel />}
