@@ -11,9 +11,12 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  Chip,
   IconButton,
+  Alert,
+  Snackbar,
+  Chip,
 } from '@mui/material';
+import axios from 'axios';   
 import {
   LocalHospital as HospitalIcon,
   MonitorHeart as HeartIcon,
@@ -26,10 +29,25 @@ import {
 } from '@mui/icons-material';
 
 interface QueueItem {
-  id: string;
-  queue_code: string;
-  room: string;
+  _id: string;
+  queue_no: string;
+  patient_id: string;
   status: string;
+  priority: number;
+  triage_level: number;
+  queue_time: string;
+  room_id?: string;
+  patient?: {
+    _id: string;
+    first_name_th: string;
+    last_name_th: string;
+    national_id: string;
+  };
+  room?: {
+    _id: string;
+    name: string;
+    room_type: string;
+  };
   isUpdated?: boolean;
 }
 
@@ -45,102 +63,238 @@ interface Department {
 }
 
 const ShowQueue: React.FC = () => {
-  const [selectedDepartment, setSelectedDepartment] = useState<string>('NEU');
+  const [selectedDepartment, setSelectedDepartment] = useState<string>('');
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [activeRooms, setActiveRooms] = useState<number>(3);
   const [currentQueues, setCurrentQueues] = useState<QueueItem[]>([]);
   const [nextQueues, setNextQueues] = useState<QueueItem[]>([]);
   const [showSettings, setShowSettings] = useState<boolean>(false);
-
+  const [snackbarOpen, setSnackbarOpen] = useState<boolean>(false);
+  const [snackbarMessage, setSnackbarMessage] = useState<string>('');
+  
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
   // Department configuration
-  const departments: Department[] = [
-    {
-      id: 'GEN',
-      name: 'ห้องตรวจโรคทั่วไป',
-      shortName: 'GEN',
-      thaiCode: 'ทว',
-      icon: <HospitalIcon />,
-      color: '#1976d2',
-      bgColor: '#e3f2fd',
-      rooms: ['ห้องตรวจ 1', 'ห้องตรวจ 2', 'ห้องตรวจ 3']
-    },
-    {
-      id: 'CAR',
-      name: 'ห้องรักษาหัวใจ',
-      shortName: 'CAR',
-      thaiCode: 'หจ',
-      icon: <HeartIcon />,
-      color: '#d32f2f',
-      bgColor: '#ffebee',
-      rooms: ['ห้องตรวจหัวใจ 1', 'ห้องตรวจหัวใจ 2', 'ห้องตรวจหัวใจ 3']
-    },
-    {
-      id: 'NEU',
-      name: 'ห้องตรวจระบบประสาท',
-      shortName: 'NEU',
-      thaiCode: 'ปส',
-      icon: <PsychologyIcon />,
-      color: '#7b1fa2',
-      bgColor: '#f3e5f5',
-      rooms: ['ห้องตรวจประสาท 1', 'ห้องตรวจประสาท 2', 'ห้องตรวจประสาท 3']
-    },
-    {
-      id: 'ORT',
-      name: 'ห้องกระดูกและข้อ',
-      shortName: 'ORT',
-      thaiCode: 'กข',
-      icon: <HealingIcon />,
-      color: '#388e3c',
-      bgColor: '#e8f5e8',
-      rooms: ['ห้องตรวจกระดูก 1', 'ห้องตรวจกระดูก 2', 'ห้องตรวจกระดูก 3']
-    },
-    {
-      id: 'EYE',
-      name: 'ห้องตรวจตา',
-      shortName: 'EYE',
-      thaiCode: 'ตา',
-      icon: <EyeIcon />,
-      color: '#f57c00',
-      bgColor: '#fff3e0',
-      rooms: ['ห้องตรวจตา 1', 'ห้องตรวจตา 2', 'ห้องตรวจตา 3']
-    },
-    {
-      id: 'EMR',
-      name: 'ห้องฉุกเฉิน',
-      shortName: 'EMR',
-      thaiCode: 'ฉก',
-      icon: <EmergencyIcon />,
-      color: '#c62828',
-      bgColor: '#ffebee',
-      rooms: ['ห้องฉุกเฉิน 1', 'ห้องฉุกเฉิน 2', 'ห้องฉุกเฉิน 3']
-    }
-  ];
-
-  // Mock queue data
-  const generateMockData = () => {
-    const currentDept = getCurrentDepartment();
-    const baseQueueNum = Math.floor(Math.random() * 50) + 1;
-    
-    // Generate current queues for active rooms only
-    const current = Array.from({ length: activeRooms }, (_, index) => ({
-      id: `current-${index}`,
-      queue_code: `${currentDept.thaiCode}${(baseQueueNum + index).toString().padStart(3, '0')}`,
-      room: currentDept.rooms[index],
-      status: 'กำลังตรวจ',
-      isUpdated: Math.random() > 0.7 // Random chance for update animation
-    }));
-
-    // Generate next queues
-    const next = Array.from({ length: 8 }, (_, index) => ({
-      id: `next-${index}`,
-      queue_code: `${currentDept.thaiCode}${(baseQueueNum + activeRooms + index).toString().padStart(3, '0')}`,
-      room: '',
-      status: 'รอตรวจ',
-      isUpdated: Math.random() > 0.8
-    }));
-
-    return { current, next };
+  const departmentConfig: { [key: string]: { icon: React.ReactNode; color: string; bgColor: string; shortName: string; thaiCode: string } } = {
+    'GEN': { icon: <HospitalIcon />, color: '#1976d2', bgColor: '#e3f2fd', shortName: 'GEN', thaiCode: 'ทว' },
+    'CAR': { icon: <HeartIcon />, color: '#d32f2f', bgColor: '#ffebee', shortName: 'CAR', thaiCode: 'หจ' },
+    'NEU': { icon: <PsychologyIcon />, color: '#7b1fa2', bgColor: '#f3e5f5', shortName: 'NEU', thaiCode: 'ปส' },
+    'ORT': { icon: <HealingIcon />, color: '#388e3c', bgColor: '#e8f5e8', shortName: 'ORT', thaiCode: 'กข' },
+    'EYE': { icon: <EyeIcon />, color: '#f57c00', bgColor: '#fff3e0', shortName: 'EYE', thaiCode: 'ตา' },
+    'EMR': { icon: <EmergencyIcon />, color: '#c62828', bgColor: '#ffebee', shortName: 'EMR', thaiCode: 'ฉก' },
+    'ENT': { icon: <HospitalIcon />, color: '#9c27b0', bgColor: '#f3e5f5', shortName: 'ENT', thaiCode: 'หู' },
+    'PED': { icon: <HospitalIcon />, color: '#ff9800', bgColor: '#fff3e0', shortName: 'PED', thaiCode: 'เด็ก' },
+    'OBG': { icon: <HospitalIcon />, color: '#e91e63', bgColor: '#fce4ec', shortName: 'OBG', thaiCode: 'สูติ' },
+    'SUR': { icon: <HospitalIcon />, color: '#795548', bgColor: '#efebe9', shortName: 'SUR', thaiCode: 'ศัล' }
   };
+
+  // Load departments from API
+  const loadDepartments = async () => {
+    try {
+      console.log('[DEBUG] Loading departments from API');
+      const response = await axios.get(`${API_BASE_URL}/api/workplace/department`);
+      const apiDepartments = response.data || [];
+      console.log('[DEBUG] API departments:', apiDepartments);
+      
+      // ถ้าไม่มีข้อมูลจาก API ให้ใช้ข้อมูลสำรอง
+      let departmentsToUse = apiDepartments;
+      if (apiDepartments.length === 0) {
+        departmentsToUse = [
+          { id: 'GEN', name: 'แผนกผู้ป่วยนอก', rooms: ['ห้องตรวจ 1', 'ห้องตรวจ 2', 'ห้องตรวจ 3'] },
+          { id: 'EMR', name: 'แผนกฉุกเฉิน', rooms: ['ห้องฉุกเฉิน 1', 'ห้องฉุกเฉิน 2'] },
+          { id: 'CAR', name: 'แผนกหัวใจ', rooms: ['ห้องหัวใจ 1', 'ห้องหัวใจ 2'] }
+        ];
+      }
+      
+      // แปลงข้อมูลจาก API เป็นรูปแบบที่ใช้ใน component
+      const formattedDepartments = departmentsToUse.map((dept: any) => {
+        const config = departmentConfig[dept.id] || departmentConfig['GEN'];
+        return {
+          id: dept.id,
+          name: dept.name,
+          shortName: config.shortName,
+          thaiCode: config.thaiCode,
+          icon: config.icon,
+          color: config.color,
+          bgColor: config.bgColor,
+          rooms: dept.rooms || ['ห้องตรวจ 1', 'ห้องตรวจ 2', 'ห้องตรวจ 3']
+        };
+      });
+      
+      console.log('[DEBUG] Formatted departments:', formattedDepartments);
+      setDepartments(formattedDepartments);
+      
+      // เลือกแผนกแรกหากยังไม่ได้เลือก
+      if (!selectedDepartment && formattedDepartments.length > 0) {
+        setSelectedDepartment(formattedDepartments[0].id);
+      }
+      
+    } catch (err) {
+      console.error('Error loading departments:', err);
+      showSnackbar('ไม่สามารถโหลดข้อมูลแผนกได้');
+    }
+  };
+
+  // Load real queue data from API
+  const loadQueueData = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/queue/queues/active`);
+      const data = response.data;
+      
+      // แปลงข้อมูลให้เข้ากับ UI พร้อมดึงรายละเอียดห้อง
+      const current = await Promise.all(data.in_progress_queues.map(async (queue: QueueItem) => {
+        let roomDetails = {
+          room_name: queue.room?.name || 'ไม่ระบุห้อง',
+          department_name: '',
+          building_name: '',
+          floor_name: ''
+        };
+
+        // ดึงรายละเอียดห้องเพิ่มเติม
+        if (queue.room_id) {
+          try {
+            const roomResponse = await axios.get(`${API_BASE_URL}/api/workplace/room_schedule/${queue.room_id}`);
+            const roomData = roomResponse.data;
+            
+            if (roomData.roomId) {
+              const roomMasterResponse = await axios.get(`${API_BASE_URL}/api/workplace/room/${roomData.roomId}`);
+              const roomMaster = roomMasterResponse.data;
+              
+              roomDetails.room_name = roomMaster.name || roomDetails.room_name;
+              
+              // ดึงข้อมูลแผนก
+              if (roomMaster.departmentId) {
+                const deptResponse = await axios.get(`${API_BASE_URL}/api/workplace/department/${roomMaster.departmentId}`);
+                roomDetails.department_name = deptResponse.data.name || '';
+              }
+              
+              // ดึงข้อมูลอาคาร
+              if (roomMaster.buildingId) {
+                const buildingResponse = await axios.get(`${API_BASE_URL}/api/workplace/building/${roomMaster.buildingId}`);
+                roomDetails.building_name = buildingResponse.data.name || '';
+              }
+              
+              // ดึงข้อมูลชั้น
+              if (roomMaster.floorId) {
+                const floorResponse = await axios.get(`${API_BASE_URL}/api/workplace/floor/${roomMaster.floorId}`);
+                roomDetails.floor_name = floorResponse.data.name || '';
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching room details:', error);
+          }
+        }
+
+        return {
+          ...queue,
+          queue_code: queue.queue_no,
+          patient_name: queue.patient ? 
+            `${queue.patient.first_name_th} ${queue.patient.last_name_th}` : 
+            'ไม่ระบุชื่อ',
+          room: roomDetails.room_name,
+          room_details: `${roomDetails.building_name ? roomDetails.building_name + ' ' : ''}${roomDetails.floor_name ? 'ชั้น ' + roomDetails.floor_name + ' ' : ''}${roomDetails.department_name}`,
+          status: 'กำลังตรวจ',
+          priority_level: getPriorityText(queue.priority),
+          estimated_time: formatQueueTime(queue.queue_time),
+          isUpdated: false
+        };
+      }));
+      
+      const next = await Promise.all(data.waiting_queues.map(async (queue: QueueItem) => {
+        let roomDetails = {
+          department_name: '',
+          building_name: '',
+          floor_name: ''
+        };
+
+        // ดึงรายละเอียดห้องสำหรับคิวถัดไป (ถ้ามี room_id)
+        if (queue.room_id) {
+          try {
+            const roomResponse = await axios.get(`${API_BASE_URL}/api/workplace/room_schedule/${queue.room_id}`);
+            const roomData = roomResponse.data;
+            
+            if (roomData.roomId) {
+              const roomMasterResponse = await axios.get(`${API_BASE_URL}/api/workplace/room/${roomData.roomId}`);
+              const roomMaster = roomMasterResponse.data;
+              
+              // ดึงข้อมูลแผนก
+              if (roomMaster.departmentId) {
+                const deptResponse = await axios.get(`${API_BASE_URL}/api/workplace/department/${roomMaster.departmentId}`);
+                roomDetails.department_name = deptResponse.data.name || '';
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching room details for next queue:', error);
+          }
+        }
+
+        return {
+          ...queue,
+          queue_code: queue.queue_no,
+          patient_name: queue.patient ? 
+            `${queue.patient.first_name_th} ${queue.patient.last_name_th}` : 
+            'ไม่ระบุชื่อ',
+          room: '',
+          department_info: roomDetails.department_name,
+          status: 'รอตรวจ',
+          priority_level: getPriorityText(queue.priority),
+          estimated_time: formatQueueTime(queue.queue_time),
+          isUpdated: false
+        };
+      }));
+      
+      setCurrentQueues(current);
+      setNextQueues(next);
+      
+    } catch (err) {
+      console.error('Error loading queue data:', err);
+      showSnackbar('ไม่สามารถโหลดข้อมูลคิวได้');
+    }
+  };
+
+  const showSnackbar = (message: string) => {
+    setSnackbarMessage(message);
+    setSnackbarOpen(true);
+  };
+
+  const getPriorityText = (priority: number) => {
+    switch (priority) {
+      case 1: return 'ฉุกเฉิน';
+      case 2: return 'เร่งด่วน';
+      case 3: return 'ปานกลาง';
+      case 4: return 'ไม่เร่งด่วน';
+      case 5: return 'ต่ำสุด';
+      default: return 'ไม่ระบุ';
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'ฉุกเฉิน':
+        return '#d32f2f';
+      case 'เร่งด่วน':
+        return '#f57c00';
+      case 'ปานกลาง':
+        return '#1976d2';
+      case 'ไม่เร่งด่วน':
+        return '#388e3c';
+      default:
+        return '#757575';
+    }
+  };
+
+  const formatQueueTime = (queueTime: string) => {
+    const date = new Date(queueTime);
+    return date.toLocaleTimeString('th-TH', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
+
+  // Load departments on mount
+  useEffect(() => {
+    loadDepartments();
+  }, []);
 
   // Auto refresh data every 10 seconds
   useEffect(() => {
@@ -155,14 +309,17 @@ const ShowQueue: React.FC = () => {
     loadQueueData();
   }, [selectedDepartment, activeRooms]);
 
-  const loadQueueData = () => {
-    const mockData = generateMockData();
-    setCurrentQueues(mockData.current);
-    setNextQueues(mockData.next);
-  };
-
   const getCurrentDepartment = () => {
-    return departments.find(dept => dept.id === selectedDepartment) || departments[0];
+    return departments.find(dept => dept.id === selectedDepartment) || departments[0] || {
+      id: 'GEN',
+      name: 'กำลังโหลด...',
+      shortName: 'GEN',
+      thaiCode: 'ทว',
+      icon: <HospitalIcon />,
+      color: '#1976d2',
+      bgColor: '#e3f2fd',
+      rooms: []
+    };
   };
 
   const handleDepartmentSelect = (deptId: string) => {
@@ -339,10 +496,10 @@ const ShowQueue: React.FC = () => {
             {/* Current Queues Grid */}
             <Grid container spacing={3} sx={{ mb: 4 }} >
               {currentQueues.map((queue) => (
-                <Grid item xs={12} md={activeRooms === 3 ? 4 : activeRooms === 2 ? 6 : 12} key={queue.id}>
+                <Grid item xs={12} md={activeRooms === 3 ? 4 : activeRooms === 2 ? 6 : 12} key={queue._id}>
                   <Card 
                     sx={{ 
-                      height: { xs: '200px', md: '300px' },
+                      height: { xs: '280px', md: '350px' },
                       borderRadius: '20px',
                       textAlign: 'center',
                       bgcolor: 'white',
@@ -355,39 +512,94 @@ const ShowQueue: React.FC = () => {
                     }}
                   >
                     <CardContent sx={{ p: 2 }}>
+                      {/* ชื่อห้องตรวจ */}
                       <Typography 
                         variant="h5" 
                         fontWeight="bold" 
                         color={currentDept.color} 
                         sx={{ 
-                          mb: 2,
+                          mb: 0.5,
                           fontSize: { xs: '1.2rem', md: '1.5rem' }
                         }}
                       >
-                        {queue.room}
+                        {typeof queue.room === 'string' ? queue.room : queue.room?.name || 'ไม่ระบุห้อง'}
                       </Typography>
+                      
+                      {/* รายละเอียดห้อง (อาคาร ชั้น แผนก) */}
+                      <Typography 
+                        variant="body2" 
+                        color="text.secondary"
+                        sx={{ 
+                          mb: 1,
+                          fontSize: { xs: '0.8rem', md: '0.9rem' }
+                        }}
+                      >
+                        {(queue as any).room_details || 'ข้อมูลห้อง'}
+                      </Typography>
+                      
+                      {/* หมายเลขคิว */}
                       <Typography 
                         variant="h1" 
                         fontWeight="bold" 
                         color={currentDept.color}
                         sx={{ 
-                                                    fontSize: { xs: '4rem', md: '6rem', lg: '8rem' },
+                          fontSize: { xs: '3.5rem', md: '5rem', lg: '6rem' },
                           lineHeight: 1,
-                          mb: 2,
+                          mb: 1,
                           animation: queue.isUpdated ? 'blink 1s ease-in-out 3' : 'none'
                         }}
                       >
-                        {queue.queue_code}
+                        {queue.queue_no}
                       </Typography>
+                      
+                      {/* ชื่อผู้ป่วย */}
+                      <Typography 
+                        variant="h6" 
+                        fontWeight="medium"
+                        color="text.primary"
+                        sx={{ 
+                          mb: 1,
+                          fontSize: { xs: '1rem', md: '1.2rem' }
+                        }}
+                      >
+                        {(queue as any).patient_name}
+                      </Typography>
+                      
+                      {/* ระดับความเร่งด่วน */}
+                      <Chip
+                        label={(queue as any).priority_level}
+                        sx={{
+                          mb: 1,
+                          bgcolor: getPriorityColor((queue as any).priority_level),
+                          color: 'white',
+                          fontWeight: 'bold',
+                          fontSize: { xs: '0.8rem', md: '1rem' }
+                        }}
+                      />
+                      
+                      {/* เวลาเข้าคิว */}
+                      <Typography 
+                        variant="body2" 
+                        color="text.secondary"
+                        sx={{ 
+                          mb: 1,
+                          fontSize: { xs: '0.8rem', md: '0.9rem' }
+                        }}
+                      >
+                        เข้าคิว: {(queue as any).estimated_time}
+                      </Typography>
+                      
+                      {/* สถานะ */}
                       <Box sx={{ 
                         bgcolor: currentDept.color,
                         color: 'white',
                         borderRadius: '25px',
                         py: 1,
                         px: 2,
-                        display: 'inline-block'
+                        display: 'inline-block',
+                        mt: 1
                       }}>
-                        <Typography variant="h6" fontWeight="bold">
+                        <Typography variant="h6" fontWeight="bold" sx={{ fontSize: { xs: '1rem', md: '1.2rem' } }}>
                           กำลังตรวจ
                         </Typography>
                       </Box>
@@ -423,20 +635,91 @@ const ShowQueue: React.FC = () => {
                 maxWidth: '100%'
               }}>
                 {nextQueues.slice(0, 8).map((queue, index) => (
-                  <Typography 
-                    key={queue.id}
-                    variant="h4" 
-                    fontWeight="bold" 
-                    color={index < 3 ? currentDept.color : 'text.secondary'}
-                    sx={{ 
-                      fontSize: { xs: '1.5rem', md: '2.5rem' },
+                  <Card
+                    key={queue._id}
+                    elevation={3}
+                    sx={{
+                      minWidth: { xs: '140px', md: '180px' },
+                      borderRadius: '16px',
+                      border: `2px solid ${index < 3 ? currentDept.color : '#e0e0e0'}`,
+                      bgcolor: index < 3 ? `${currentDept.color}10` : 'white',
+                      p: 2,
+                      textAlign: 'center',
                       opacity: index < 3 ? 1 : 0.7,
                       animation: queue.isUpdated ? 'blink 1s ease-in-out 3' : 'none',
                       transition: 'all 0.3s ease'
                     }}
                   >
-                    {queue.queue_code}
-                  </Typography>
+                    <CardContent sx={{ p: 1 }}>
+                      {/* หมายเลขคิว */}
+                      <Typography 
+                        variant="h4" 
+                        fontWeight="bold" 
+                        color={index < 3 ? currentDept.color : 'text.secondary'}
+                        sx={{ 
+                          fontSize: { xs: '1.8rem', md: '2.5rem' },
+                          mb: 1
+                        }}
+                      >
+                        {queue.queue_no}
+                      </Typography>
+                      
+                      {/* ชื่อผู้ป่วย */}
+                      <Typography 
+                        variant="body2" 
+                        fontWeight="medium"
+                        color="text.primary"
+                        sx={{ 
+                          mb: 1,
+                          fontSize: { xs: '0.8rem', md: '1rem' },
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {(queue as any).patient_name}
+                      </Typography>
+                      
+                      {/* แผนก (สำหรับคิวถัดไป) */}
+                      {(queue as any).department_info && (
+                        <Typography 
+                          variant="body2" 
+                          color="text.secondary"
+                          sx={{ 
+                            mb: 1,
+                            fontSize: { xs: '0.7rem', md: '0.8rem' },
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {(queue as any).department_info}
+                        </Typography>
+                      )}
+                      
+                      {/* ระดับความเร่งด่วน */}
+                      <Chip
+                        label={(queue as any).priority_level}
+                        size="small"
+                        sx={{
+                          bgcolor: getPriorityColor((queue as any).priority_level),
+                          color: 'white',
+                          fontWeight: 'bold',
+                          fontSize: { xs: '0.7rem', md: '0.8rem' },
+                          mb: 1
+                        }}
+                      />
+                      
+                      {/* เวลา */}
+                      <Typography 
+                        variant="body2" 
+                        color="text.secondary"
+                        sx={{ fontSize: { xs: '0.7rem', md: '0.8rem' } }}
+                      >
+                        {(queue as any).estimated_time}
+                      </Typography>
+                    </CardContent>
+                  </Card>
                 ))}
               </Box>
             </Box>
@@ -471,6 +754,23 @@ const ShowQueue: React.FC = () => {
           }
         `}
       </style>
+      
+      {/* Snackbar */}
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={4000}
+        onClose={() => setSnackbarOpen(false)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert 
+          onClose={() => setSnackbarOpen(false)} 
+          severity="error"
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snackbarMessage}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

@@ -1,4 +1,5 @@
 import { createBrowserRouter } from 'react-router-dom';
+import { lazy } from 'react';
 import Dashboard from '../pages/Dashboard/dashboard';
 import Layout from '../components/Layout';
 import EmLayout from '../components/EmLayout';
@@ -6,27 +7,24 @@ import AuthenLayout from '../components/Auth/AuthenLayout';
 import LoginPage from '../pages/Auth/Login/login';
 import ProtectedRoute from '../components/Auth/ProtectedRoute'; // นำเข้า ProtectedRoute
 
-
-import AllData from '../pages/Page/DailyPatient';
-import EditData from '../pages/Page/EditData';
-import ExportData from '../pages/Page/ExportData';
-import ShowQueue from '../pages/Page/Queue/ShowQueue';
-import ManageQueue from '../pages/Page/Queue/ManageQueue';
-import AddPatient from '../pages/Page/Member/Patient/AddPatient';
-import SearchPatient from '../pages/Page/Member/Patient/SeachPatient';
-import DataPatient from '../pages/Page/Member/Patient/DataPatient';
-import Welcome from '../pages/Page/Screening/Welcome';
-import AuthenPatient from '../pages/Page/Screening/AuthenPatient';
-import AllProcess from '../pages/Page/Screening/AllProcess';
-
-import AddDepartment from '../pages/Page/Manage/Add-Department';
-import Departments from '../pages/Page/Manage/Departments';
-
-import AddEmployee from '../pages/Page/Member/Employee/AddEmployee';
-import DataEmployee from '../pages/Page/Member/Employee/DataEmployee';
-import SearchEmployee from '../pages/Page/Member/Employee/SearchEmployee';
-
-import ManageRoom from '../pages/Page/Queue/MangeRoom';
+// Lazy load components
+const AllData = lazy(() => import('../pages/Page/DailyPatient'));
+const EditData = lazy(() => import('../pages/Page/EditData'));
+const ExportData = lazy(() => import('../pages/Page/ExportData'));
+const ShowQueue = lazy(() => import('../pages/Page/Queue/ShowQueue'));
+const ManageQueue = lazy(() => import('../pages/Page/Queue/ManageQueue'));
+const AddPatient = lazy(() => import('../pages/Page/Member/Patient/AddPatient'));
+const SearchPatient = lazy(() => import('../pages/Page/Member/Patient/SeachPatient'));
+const DataPatient = lazy(() => import('../pages/Page/Member/Patient/DataPatient'));
+const Welcome = lazy(() => import('../pages/Page/Screening/Welcome'));
+const AuthenPatient = lazy(() => import('../pages/Page/Screening/AuthenPatient'));
+const AllProcess = lazy(() => import('../pages/Page/Screening/AllProcess'));
+const AddDepartment = lazy(() => import('../pages/Page/Manage/Add-Department'));
+const Departments = lazy(() => import('../pages/Page/Manage/Departments'));
+const AddEmployee = lazy(() => import('../pages/Page/Member/Employee/AddEmployee'));
+const DataEmployee = lazy(() => import('../pages/Page/Member/Employee/DataEmployee'));
+const SearchEmployee = lazy(() => import('../pages/Page/Member/Employee/SearchEmployee'));
+const ManageRoom = lazy(() => import('../pages/Page/Queue/MangeRoom'));
 import {
   Dashboard as DashboardIcon,
 } from '@mui/icons-material';

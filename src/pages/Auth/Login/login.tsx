@@ -178,11 +178,6 @@ const LoginPage = () => {
           </Alert>
         )}
 
-        {/* แสดงข้อความแจ้งเตือนว่าเป็น bypass mode */}
-        <Alert severity="info" sx={{ marginBottom: 2 }}>
-          Development Mode: Any username/password will work
-        </Alert>
-
         {/* แบบฟอร์มเข้าสู่ระบบ */}
         <form onSubmit={handleSubmit}>
           <TextField

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { 
   Box,
   Typography,
@@ -86,62 +87,182 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  // Load data from localStorage
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = () => {
-    setLoading(true);
-    
+  // ฟังก์ชันดึงจำนวนห้องที่เปิดจาก API จริง
+  const fetchActiveRooms = async () => {
     try {
-      // Get patients data
-      const patients = debugManager.getData('patients') || [];
-      
-      // Get screenings data
-      const screenings = debugManager.getData('screenings') || [];
-      
-      // Get queues data
-      const queues = debugManager.getData('patientQueues') || [];
-      
-      // Get rooms data
-      const rooms = debugManager.getData('rooms') || [];
-      const activeRooms = rooms.filter((room: any) => room.isActive).length;
-      
-      // Calculate stats
-      const emergency = screenings.filter((s: any) => s.triageLevel === 1).length;
-      const waiting = patients.length - screenings.length;
-      const screened = screenings.length;
-      const inQueue = queues.length;
-      
-      // Update stats
-      setStats({
-        emergency,
-        waiting,
-        screened,
-        inQueue,
-        totalPatients: patients.length,
-        activeRooms
-      });
-      
-      // Get recent patients (last 5)
-      const sortedPatients = [...patients].sort((a: any, b: any) => {
-        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return dateB - dateA;
-      }).slice(0, 5);
-      
-      setRecentPatients(sortedPatients);
-      setLastUpdated(new Date());
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
-    } finally {
-      setLoading(false);
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const res = await axios.get(`${API_BASE_URL}/api/workplace/room_schedule`);
+      const openRooms = res.data.filter((room: any) => room.isOpen);
+      return openRooms.length;
+    } catch (err) {
+      console.error('โหลดข้อมูลห้องตรวจล้มเหลว', err);
+      return 0;
     }
   };
 
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      // mock ข้อมูลสถิติ
+      const mockStats = {
+        emergency: 2,
+        waiting: 5,
+        screened: 10,
+        inQueue: 7,
+        totalPatients: 20,
+        activeRooms: 0 // จะอัปเดตจาก API จริง
+      };
+      mockStats.activeRooms = await fetchActiveRooms();
+      setStats(mockStats);
+      // mock recentPatients
+      setRecentPatients([
+        {
+          id: '1',
+          prefix: 'นาย',
+          firstNameTh: 'สมชาย',
+          lastNameTh: 'ใจดี',
+          age: 35,
+          gender: 'ชาย',
+          phone: '0812345678',
+          bloodType: 'O',
+          chronicDiseases: ['เบาหวาน'],
+          profileImage: '',
+        },
+        {
+          id: '2',
+          prefix: 'นางสาว',
+          firstNameTh: 'สายใจ',
+          lastNameTh: 'สุขใจ',
+          age: 28,
+          gender: 'หญิง',
+          phone: '0898765432',
+          bloodType: 'A',
+          chronicDiseases: [],
+          profileImage: '',
+        },
+        {
+          id: '3',
+          prefix: 'เด็กชาย',
+          firstNameTh: 'ภูผา',
+          lastNameTh: 'เขียวสด',
+          age: 10,
+          gender: 'ชาย',
+          phone: '0823456789',
+          bloodType: 'B',
+          chronicDiseases: ['หอบหืด'],
+          profileImage: '',
+        },
+        {
+          id: '4',
+          prefix: 'นาง',
+          firstNameTh: 'จันทร์เพ็ญ',
+          lastNameTh: 'ทองดี',
+          age: 52,
+          gender: 'หญิง',
+          phone: '0865432198',
+          bloodType: 'AB',
+          chronicDiseases: ['ความดันโลหิตสูง'],
+          profileImage: '',
+        },
+        {
+          id: '5',
+          prefix: 'นาย',
+          firstNameTh: 'วีระ',
+          lastNameTh: 'แสงทอง',
+          age: 40,
+          gender: 'ชาย',
+          phone: '0834567890',
+          bloodType: 'O',
+          chronicDiseases: [],
+          profileImage: '',
+        },
+      ]);
+      setLastUpdated(new Date());
+      setLoading(false);
+    };
+    load();
+  }, []);
+
   const handleRefresh = () => {
-    loadData();
+    // เรียก load ใหม่
+    const load = async () => {
+      setLoading(true);
+      const mockStats = {
+        emergency: 2,
+        waiting: 5,
+        screened: 10,
+        inQueue: 7,
+        totalPatients: 20,
+        activeRooms: 0
+      };
+      mockStats.activeRooms = await fetchActiveRooms();
+      setStats(mockStats);
+      setRecentPatients([
+        {
+          id: '1',
+          prefix: 'นาย',
+          firstNameTh: 'สมชาย',
+          lastNameTh: 'ใจดี',
+          age: 35,
+          gender: 'ชาย',
+          phone: '0812345678',
+          bloodType: 'O',
+          chronicDiseases: ['เบาหวาน'],
+          profileImage: '',
+        },
+        {
+          id: '2',
+          prefix: 'นางสาว',
+          firstNameTh: 'สายใจ',
+          lastNameTh: 'สุขใจ',
+          age: 28,
+          gender: 'หญิง',
+          phone: '0898765432',
+          bloodType: 'A',
+          chronicDiseases: [],
+          profileImage: '',
+        },
+        {
+          id: '3',
+          prefix: 'เด็กชาย',
+          firstNameTh: 'ภูผา',
+          lastNameTh: 'เขียวสด',
+          age: 10,
+          gender: 'ชาย',
+          phone: '0823456789',
+          bloodType: 'B',
+          chronicDiseases: ['หอบหืด'],
+          profileImage: '',
+        },
+        {
+          id: '4',
+          prefix: 'นาง',
+          firstNameTh: 'จันทร์เพ็ญ',
+          lastNameTh: 'ทองดี',
+          age: 52,
+          gender: 'หญิง',
+          phone: '0865432198',
+          bloodType: 'AB',
+          chronicDiseases: ['ความดันโลหิตสูง'],
+          profileImage: '',
+        },
+        {
+          id: '5',
+          prefix: 'นาย',
+          firstNameTh: 'วีระ',
+          lastNameTh: 'แสงทอง',
+          age: 40,
+          gender: 'ชาย',
+          phone: '0834567890',
+          bloodType: 'O',
+          chronicDiseases: [],
+          profileImage: '',
+        },
+      ]);
+      setLastUpdated(new Date());
+      setLoading(false);
+    };
+    load();
   };
 
   const navigateTo = (path: string) => {
@@ -169,7 +290,7 @@ const Dashboard: React.FC = () => {
             }}
           >
             <HospitalIcon sx={{ fontSize: 60, color: '#e53e3e' }} />
-            ระบบคัดกรองและจัดคิวผู้ป่วย
+            ระบบคัดกรองและจัดคิวผู้ป่วยสูงอายุ
           </Typography>
           <Typography variant="h6" color="text.secondary">
             ระบบคัดกรองผู้ป่วยเพื่อจัดลำดับความสำคัญและจัดคิวการรักษา

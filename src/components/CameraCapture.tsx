@@ -1,9 +1,10 @@
-import { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 
 const CameraCapture = ({ onCapture }: { onCapture: (file: File) => void }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (videoRef.current && stream) {
@@ -12,7 +13,16 @@ const CameraCapture = ({ onCapture }: { onCapture: (file: File) => void }) => {
     }
   }, [stream]);
 
+  useEffect(() => {
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [stream]);
+
   const startCamera = async () => {
+    if (stream) return; // ป้องกันเปิดกล้องซ้ำ
     try {
       const s = await navigator.mediaDevices.getUserMedia({ video: true });
       setStream(s);
@@ -35,14 +45,24 @@ const CameraCapture = ({ onCapture }: { onCapture: (file: File) => void }) => {
         }, 'image/jpeg');
       }
     }
+    // ปิดกล้องหลัง capture
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
       setStream(null);
     }
   };
 
+  // เพิ่มฟังก์ชัน handleFileUpload
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      onCapture(file);
+    }
+  };
+
   return (
     <div style={{ display: 'inline-block' }}>
+      {/* ปุ่มเปิดกล้องและกล้อง */}
       {!stream && (
         <button
           type="button"
@@ -59,9 +79,21 @@ const CameraCapture = ({ onCapture }: { onCapture: (file: File) => void }) => {
             <button
               type="button"
               onClick={capture}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
+              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 mr-2"
             >
               ถ่ายภาพ
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (stream) {
+                  stream.getTracks().forEach(track => track.stop());
+                  setStream(null);
+                }
+              }}
+              className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600"
+            >
+              ปิดกล้อง
             </button>
           </div>
         </div>

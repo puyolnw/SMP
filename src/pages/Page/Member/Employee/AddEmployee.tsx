@@ -35,6 +35,7 @@ import {
   Work as WorkIcon,
   Security as SecurityIcon
 } from '@mui/icons-material';
+import axios from 'axios';
 
 interface Employee {
   id: string;
@@ -140,6 +141,8 @@ const AddEmployee: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [usernameError, setUsernameError] = useState('');
 
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
   // ตำแหน่งตามประเภทพนักงาน
   const positionsByType = {
     doctor: [
@@ -170,17 +173,17 @@ const AddEmployee: React.FC = () => {
   const allWorkingDays = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
 
   useEffect(() => {
-    // โหลดข้อมูลแผนก
-    const departmentsData = debugManager.getData('departments') as Department[];
-    setDepartments(departmentsData || []);
-
+    // โหลดข้อมูลแผนกจาก backend
+    axios.get(`${API_BASE_URL}/api/workplace/department`).then(res => {
+      setDepartments(res.data || []);
+    });
     if (isEdit && existingEmployee) {
       setFormData(existingEmployee);
     } else {
       const newId = 'E' + Date.now().toString().slice(-6);
       setFormData(prev => ({ ...prev, id: newId }));
     }
-  }, [isEdit, existingEmployee, debugManager]);
+  }, [isEdit, existingEmployee]);
 
   // Validate National ID (simple checksum)
   const validateNationalId = (id: string): boolean => {
@@ -204,16 +207,16 @@ const AddEmployee: React.FC = () => {
       return;
     }
 
-    const employees = debugManager.getData('employees') as Employee[];
-    const existingUser = employees.find(emp => 
-      emp.username === username && emp.id !== formData.id
-    );
-    
-    if (existingUser) {
-      setUsernameError('ชื่อผู้ใช้นี้ถูกใช้แล้ว');
-    } else {
-      setUsernameError('');
-    }
+    axios.get(`${API_BASE_URL}/api/worker/check-username/${username}`).then(res => {
+      if (res.data.exists) {
+        setUsernameError('ชื่อผู้ใช้นี้ถูกใช้แล้ว');
+      } else {
+        setUsernameError('');
+      }
+    }).catch(error => {
+      console.error('Error checking username:', error);
+      setUsernameError('เกิดข้อผิดพลาดในการตรวจสอบชื่อผู้ใช้');
+    });
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -363,24 +366,38 @@ const AddEmployee: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!validateForm()) {
       alert('กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน');
       return;
     }
-
     setIsLoading(true);
-
     try {
-      // บันทึกข้อมูลลง localStorage ผ่าน DebugManager
-      debugManager.addData('employees', formData);
-      
-      // จำลองการบันทึกข้อมูล
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
+      let payload = { ...formData };
+      // ถ้ามีไฟล์รูป profileImageFile ให้ส่งเป็น multipart/form-data
+      let response;
+      if (profileImageFile) {
+        const form = new FormData();
+        Object.entries(payload).forEach(([key, value]) => {
+          if (typeof value === 'object' && value !== null) {
+            form.append(key, JSON.stringify(value));
+          } else {
+            form.append(key, value as any);
+          }
+        });
+        form.append('profileImage', profileImageFile);
+        if (isEdit) {
+          response = await axios.put(`${API_BASE_URL}/api/worker/${formData.id}`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+        } else {
+          response = await axios.post(`${API_BASE_URL}/api/worker/`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+        }
+      } else {
+        if (isEdit) {
+          response = await axios.put(`${API_BASE_URL}/api/worker/${formData.id}`, payload);
+        } else {
+          response = await axios.post(`${API_BASE_URL}/api/worker/`, payload);
+        }
+      }
       setSuccess(true);
-      
-      // รีเซ็ตฟอร์มหลังจากบันทึกสำเร็จ
       if (!isEdit) {
         const newId = 'E' + Date.now().toString().slice(-6);
         setFormData({
@@ -392,7 +409,7 @@ const AddEmployee: React.FC = () => {
           phone: '',
           nationalId: '',
           profileImage: '',
-                    employeeType: 'staff',
+          employeeType: 'staff',
           departmentId: '',
           position: '',
           licenseNumber: '',
@@ -405,22 +422,17 @@ const AddEmployee: React.FC = () => {
           email: '',
           address: '',
           workingDays: ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์'],
-          workingHours: {
-            start: '08:00',
-            end: '16:00'
-          }
+          workingHours: { start: '08:00', end: '16:00' }
         });
       }
-      
-      // ซ่อนข้อความสำเร็จหลังจาก 3 วินาที
       setTimeout(() => {
         setSuccess(false);
         if (isEdit) {
           navigate('/member/employee/searchemployee');
         }
-      }, 3000);
-    } catch (error) {
-      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+      }, 2000);
+    } catch (error: any) {
+      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล: ' + (error?.response?.data?.error || error.message));
     } finally {
       setIsLoading(false);
     }

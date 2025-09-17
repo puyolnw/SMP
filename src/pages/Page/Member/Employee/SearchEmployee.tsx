@@ -28,6 +28,7 @@ import {
   Person as PersonIcon,
   Work as WorkIcon
 } from '@mui/icons-material';
+import axios from 'axios';
 
 interface Employee {
   id: string;
@@ -75,6 +76,8 @@ const SearchEmployee: React.FC = () => {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
   // Debug setup
   const requiredTables: TableSchema[] = [
     {
@@ -93,22 +96,22 @@ const SearchEmployee: React.FC = () => {
 
   // โหลดข้อมูลพนักงานและแผนก
   useEffect(() => {
-    const loadData = () => {
+    const loadData = async () => {
       setIsLoading(true);
       try {
-        const employeesData = debugManager.getData('employees') as Employee[];
-        const departmentsData = debugManager.getData('departments') as Department[];
-        
-        setAllEmployees(employeesData || []);
-        setDepartments(departmentsData || []);
+        const [empRes, deptRes] = await Promise.all([
+          axios.get(`${API_BASE_URL}/api/worker/`),
+          axios.get(`${API_BASE_URL}/api/workplace/department`)
+        ]);
+        setAllEmployees(empRes.data || []);
+        setDepartments(deptRes.data || []);
       } catch (error) {
         console.error('Error loading data:', error);
       }
       setIsLoading(false);
     };
-
     loadData();
-  }, [debugManager]);
+  }, []);
 
   // ค้นหาแบบ real-time
   useEffect(() => {
@@ -155,23 +158,19 @@ const SearchEmployee: React.FC = () => {
     });
   };
 
-  const handleDeleteEmployee = (employee: Employee) => {
+  const handleDeleteEmployee = async (employee: Employee) => {
     if (window.confirm(`คุณต้องการลบข้อมูลพนักงาน "${employee.prefix} ${employee.firstNameTh} ${employee.lastNameTh}" ใช่หรือไม่?`)) {
-      const updatedEmployees = allEmployees.filter(emp => emp.id !== employee.id);
-      
-      // ลบข้อมูลเก่าและเพิ่มข้อมูลใหม่ - ใช้ addData แทน setData
-      localStorage.removeItem('debug_employees');
-      updatedEmployees.forEach(emp => {
-        debugManager.addData('employees', emp);
-      });
-      
-      setAllEmployees(updatedEmployees);
-      
-      // อัปเดตผลการค้นหาด้วย
-      if (searchTerm.trim()) {
-        const updatedResults = searchResults.filter(emp => emp.id !== employee.id);
-        setSearchResults(updatedResults);
+      setIsLoading(true);
+      try {
+        await axios.delete(`${API_BASE_URL}/api/worker/${employee.id}`);
+        setAllEmployees(prev => prev.filter(emp => emp.id !== employee.id));
+        if (searchTerm.trim()) {
+          setSearchResults(prev => prev.filter(emp => emp.id !== employee.id));
+        }
+      } catch (error) {
+        alert('เกิดข้อผิดพลาดในการลบข้อมูล');
       }
+      setIsLoading(false);
     }
   };
 
@@ -292,7 +291,7 @@ const SearchEmployee: React.FC = () => {
                       {/* Header with Avatar and Status */}
                       <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
                         <Avatar
-                          src={employee.profileImage || undefined}
+                          src={employee.profileImage ? `${API_BASE_URL}/uploads/${employee.profileImage}` : undefined}
                           sx={{ width: 56, height: 56, mr: 2 }}
                         />
                         <Box sx={{ flex: 1, minWidth: 0 }}>
