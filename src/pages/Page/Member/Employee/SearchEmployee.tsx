@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePageDebug } from '../../../../hooks/usePageDebug';
 import { TableSchema } from '../../../../types/Debug';
-import { DebugManager } from '../../../../utils/Debuger';
 import {
   Box,
   Paper,
@@ -68,15 +67,28 @@ interface Department {
 
 const SearchEmployee: React.FC = () => {
   const navigate = useNavigate();
-  const debugManager = DebugManager.getInstance();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<Employee[]>([]);
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentUserRole, setCurrentUserRole] = useState<string>('');
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const API_BASE_URL = import.meta.env.VITE_API_URL;
+
+  // Get current user role
+  useEffect(() => {
+    const userDataString = localStorage.getItem('userData');
+    if (userDataString) {
+      try {
+        const userData = JSON.parse(userDataString);
+        setCurrentUserRole(userData.role || '');
+      } catch (error) {
+        console.error('Error parsing user data:', error);
+      }
+    }
+  }, []);
 
   // Debug setup
   const requiredTables: TableSchema[] = [
@@ -144,9 +156,7 @@ const SearchEmployee: React.FC = () => {
   }, [searchTerm, allEmployees, departments]);
 
   const handleViewEmployee = (employee: Employee) => {
-    navigate(`/member/employee/dataemployee/${employee.id}`, { 
-      state: { employee } 
-    });
+    navigate(`/member/employee/dataemployee/${employee.id}`);
   };
 
   const handleEditEmployee = (employee: Employee) => {
@@ -167,6 +177,7 @@ const SearchEmployee: React.FC = () => {
         if (searchTerm.trim()) {
           setSearchResults(prev => prev.filter(emp => emp.id !== employee.id));
         }
+        alert(`ลบข้อมูลพนักงาน "${employee.prefix} ${employee.firstNameTh} ${employee.lastNameTh}" สำเร็จแล้ว`);
       } catch (error) {
         alert('เกิดข้อผิดพลาดในการลบข้อมูล');
       }
@@ -217,14 +228,16 @@ const SearchEmployee: React.FC = () => {
           <Typography variant="h4" component="h1" fontWeight="bold">
             ค้นหาพนักงาน
           </Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={handleAddEmployee}
-            size="large"
-          >
-            เพิ่มพนักงานใหม่
-          </Button>
+          {currentUserRole === 'admin' && (
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={handleAddEmployee}
+              size="large"
+            >
+              เพิ่มพนักงานใหม่
+            </Button>
+          )}
         </Box>
 
         {/* Search Box */}
@@ -369,24 +382,28 @@ const SearchEmployee: React.FC = () => {
                             <VisibilityIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
-                        <Tooltip title="แก้ไข">
-                          <IconButton 
-                            size="small" 
-                            color="warning"
-                            onClick={() => handleEditEmployee(employee)}
-                          >
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="ลบ">
-                          <IconButton 
-                            size="small" 
-                            color="error"
-                            onClick={() => handleDeleteEmployee(employee)}
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
+                        {currentUserRole === 'admin' && (
+                          <>
+                            <Tooltip title="แก้ไข">
+                              <IconButton 
+                                size="small" 
+                                color="warning"
+                                onClick={() => handleEditEmployee(employee)}
+                              >
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="ลบ">
+                              <IconButton 
+                                size="small" 
+                                color="error"
+                                onClick={() => handleDeleteEmployee(employee)}
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </>
+                        )}
                       </Box>
                     </CardContent>
                   </Card>
@@ -457,30 +474,6 @@ const SearchEmployee: React.FC = () => {
               คลิกปุ่ม "เพิ่มพนักงานใหม่" เพื่อเริ่มเพิ่มข้อมูลพนักงาน
             </Typography>
           </Alert>
-        )}
-
-        {/* Debug Info (Development Only) */}
-        {process.env.NODE_ENV === 'development' && (
-          <Box sx={{ mt: 4, pt: 3, borderTop: '1px dashed #ccc' }}>
-            <Typography variant="caption" color="text.secondary" gutterBottom>
-              Debug Info (Development Only)
-            </Typography>
-            <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1, maxHeight: 200, overflow: 'auto' }}>
-              <pre style={{ margin: 0, fontSize: '0.75rem' }}>
-                {JSON.stringify({
-                  totalEmployees: allEmployees.length,
-                  searchResults: searchResults.length,
-                  searchTerm,
-                  departments: departments.length,
-                  employeeTypes: {
-                    doctors: allEmployees.filter(emp => emp.employeeType === 'doctor').length,
-                    nurses: allEmployees.filter(emp => emp.employeeType === 'nurse').length,
-                    staff: allEmployees.filter(emp => emp.employeeType === 'staff').length
-                  }
-                }, null, 2)}
-              </pre>
-            </Box>
-          </Box>
         )}
       </Paper>
     </Box>

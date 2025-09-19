@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { routes } from '../routes/routes';
 import {
   AppBar,
@@ -41,6 +41,7 @@ function findCurrentPageName(routes: Route[], pathname: string): string | null {
 
 function NavBar({ onSidebarToggle }: { onSidebarToggle: () => void }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const currentPage = findCurrentPageName(routes, location.pathname) || 'SM : Smart Patient'; // Default หากไม่เจอ
 
   const theme = useTheme();
@@ -50,8 +51,8 @@ function NavBar({ onSidebarToggle }: { onSidebarToggle: () => void }) {
   const open = Boolean(anchorEl);
 
   // Retrieve user information from localStorage
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const userName = user.username || 'ผู้ใช้งาน'; // ดึง username จาก user object
+  const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+  const userName = userData.username || userData.fullname || 'ผู้ใช้งาน'; // ดึง username หรือ fullname จาก userData object
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLButtonElement>) => {
     setAnchorEl(event.currentTarget);
@@ -59,6 +60,12 @@ function NavBar({ onSidebarToggle }: { onSidebarToggle: () => void }) {
 
   const handleMenuClose = () => {
     setAnchorEl(null);
+  };
+
+  const handleProfileClick = () => {
+    const userId = userData._id || userData.id || '';
+    navigate(`/profile/${userId}`);
+    handleMenuClose();
   };
 
   return (
@@ -143,7 +150,7 @@ function NavBar({ onSidebarToggle }: { onSidebarToggle: () => void }) {
               horizontal: 'right',
             }}
           >
-            <MenuItem onClick={() => { /* Navigate to profile page */ handleMenuClose(); }}>
+            <MenuItem onClick={handleProfileClick}>
               ไปที่หน้าโปรไฟล์
             </MenuItem>
             <MenuItem onClick={() => { logout(); handleMenuClose(); }}>

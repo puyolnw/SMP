@@ -8,7 +8,7 @@ interface User {
 
 // Get the current authenticated user
 export function getCurrentUser(): User | null {
-  const userJson = localStorage.getItem('user');
+  const userJson = localStorage.getItem('userData');
   if (!userJson) return null;
   
   try {
@@ -44,14 +44,15 @@ export function getUserBranchId(): string | null {
 // Login function
 export function login(token: string, userData: User): void {
   localStorage.setItem('token', token);
-  localStorage.setItem('user', JSON.stringify(userData));
+  localStorage.setItem('userData', JSON.stringify(userData));
 }
 
 // Logout function - keeping exactly as provided
 export function logout() {
   // Clear all user-related data
   localStorage.removeItem('token');
-  localStorage.removeItem('user');
+  localStorage.removeItem('userData');
+  localStorage.removeItem('user'); // เก็บไว้เผื่อข้อมูลเก่า
   localStorage.removeItem('userPreferences'); // ตัวอย่างข้อมูลที่อาจเก็บไว้
   sessionStorage.clear(); // ล้างข้อมูลใน sessionStorage ทั้งหมด
 

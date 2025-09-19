@@ -1,7 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-// import { usePageDebug } from '../../../../hooks/usePageDebug';
-// import { TableSchema } from '../../../../types/Debug';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import axios from 'axios';
 import CameraCapture from '../../../../components/CameraCapture';
 
@@ -29,7 +27,6 @@ interface Patient {
   phone: string;
   email?: string;
   profileImage?: string;
-  qrCode?: string;
   
   // ข้อมูลสุขภาพพื้นฐาน
   bloodType?: string;
@@ -48,7 +45,8 @@ interface Patient {
 const AddPatient: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const isEdit = location.state?.isEdit || false;
+  const { id } = useParams<{ id: string }>();
+  const isEdit = location.state?.isEdit || !!id;
   const existingPatient = location.state?.patient as Patient;
   
   const [isNavigating, setIsNavigating] = useState(false);
@@ -77,7 +75,6 @@ const AddPatient: React.FC = () => {
     phone: '',
     email: '',
     profileImage: '',
-    qrCode: '',
     bloodType: '',
     chronicDiseases: [],
     allergies: [],
@@ -94,8 +91,6 @@ const AddPatient: React.FC = () => {
   const [newMedication, setNewMedication] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
 
   const provinces = [
     'กรุงเทพมหานคร', 'กระบี่', 'กาญจนบุรี', 'กาฬสินธุ์', 'กำแพงเพชร', 'ขอนแก่น',
@@ -111,14 +106,80 @@ const AddPatient: React.FC = () => {
     'อุตรดิตถ์', 'อุทัยธานี', 'อุบลราชธานี'
   ];
 
+  // ฟังก์ชันสำหรับสร้าง URL รูปภาพ
+  const getProfileImageUrl = (profileImage?: string) => {
+    if (!profileImage) return null;
+    
+    // ถ้าเป็น data URL แล้ว (base64) ให้ return ตรงๆ
+    if (profileImage.startsWith('data:')) {
+      return profileImage;
+    }
+    
+    // ถ้าเป็น path ให้สร้าง URL เต็ม
+    const API_BASE_URL = import.meta.env.VITE_API_URL;
+    return `${API_BASE_URL}/api/patient/${profileImage}`;
+  };
+
   useEffect(() => {
     if (isEdit && existingPatient) {
       setFormData(existingPatient);
+    } else if (id && !existingPatient) {
+      // โหลดข้อมูลผู้ป่วยจาก API หากมี id แต่ไม่มีข้อมูลใน state
+      const loadPatientData = async () => {
+        try {
+          setIsLoading(true);
+          const API_BASE_URL = import.meta.env.VITE_API_URL;
+          const response = await axios.get(`${API_BASE_URL}/api/patient/${id}`);
+          if (response.data) {
+            const data = response.data;
+            
+            // แปลงข้อมูลให้ตรงกับ Patient interface
+            const mappedPatient: Patient = {
+              id: data._id,
+              prefix: data.prefix,
+              firstNameTh: data.first_name_th,
+              lastNameTh: data.last_name_th,
+              firstNameEn: data.first_name_en,
+              lastNameEn: data.last_name_en,
+              gender: data.gender,
+              birthDate: data.birth_date,
+              age: Number(data.age),
+              nationalId: data.national_id,
+              address: {
+                houseNumber: data.address?.house_no || '',
+                village: data.address?.village || '',
+                street: data.address?.road || '',
+                subDistrict: data.address?.subdistrict || '',
+                district: data.address?.district || '',
+                province: data.address?.province || '',
+                postalCode: data.address?.zipcode || '',
+              },
+              phone: data.phone,
+              email: data.email,
+              profileImage: data.image_path, // รูป profile จาก backend
+              bloodType: data.blood_type,
+              chronicDiseases: data.chronic_diseases,
+              allergies: data.allergies,
+              currentMedications: data.current_medications,
+              emergencyContact: data.emergency_contact,
+            };
+            
+            setFormData(mappedPatient);
+          }
+        } catch (error) {
+          console.error('Error loading patient data:', error);
+          alert('ไม่สามารถโหลดข้อมูลผู้ป่วยได้');
+          navigate('/member/patient/searchpatient');
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      loadPatientData();
     } else {
       const newId = 'P' + Date.now().toString().slice(-6);
       setFormData(prev => ({ ...prev, id: newId }));
     }
-  }, [isEdit, existingPatient]);
+  }, [isEdit, existingPatient, id, navigate]);
 
   const calculateAge = (birthDate: string): number => {
     const today = new Date();
@@ -305,7 +366,6 @@ const AddPatient: React.FC = () => {
       form.append('zipcode', formData.address.postalCode);
       form.append('phone', formData.phone);
       form.append('email', formData.email || '');
-      form.append('qr_code', formData.qrCode || '');
       form.append('blood_type', formData.bloodType || '');
       (formData.chronicDiseases || []).forEach(d => form.append('chronic_diseases', d));
       (formData.allergies || []).forEach(a => form.append('allergies', a));
@@ -318,10 +378,22 @@ const AddPatient: React.FC = () => {
       if (profileImageFile) {
         form.append('image', profileImageFile);
       }
-      const response = await axios.post(`${API_BASE_URL}/api/patient`, form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      const patientId = response.data._id;
+      
+      let response;
+      if (isEdit && (id || existingPatient?.id)) {
+        // ถ้าเป็นการแก้ไข ใช้ PUT
+        const patientId = id || existingPatient?.id;
+        response = await axios.put(`${API_BASE_URL}/api/patient/edit/${patientId}`, form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      } else {
+        // ถ้าเป็นการเพิ่มใหม่ ใช้ POST
+        response = await axios.post(`${API_BASE_URL}/api/patient`, form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      }
+      
+      const patientId = response.data._id || id || existingPatient?.id;
       navigate(`/member/patient/dataPatient/${patientId}`);
       alert(isEdit ? 'แก้ไขข้อมูลผู้ป่วยเรียบร้อยแล้ว' : 'เพิ่มผู้ป่วยใหม่เรียบร้อยแล้ว');
       setIsNavigating(true);
@@ -335,19 +407,6 @@ const AddPatient: React.FC = () => {
       setIsLoading(false);
     }
   }, [formData, isEdit, isLoading, isNavigating, navigate, profileImageFile, API_BASE_URL, validateStep, currentStep]);
-
-  useEffect(() => {
-    return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-      if (videoRef.current && videoRef.current.srcObject) {
-        const s = videoRef.current.srcObject as MediaStream;
-        s.getTracks().forEach(track => track.stop());
-        videoRef.current.srcObject = null;
-      }
-    };
-  }, [stream]);
 
   const handleCancel = useCallback(() => {
     if (isNavigating) return;
@@ -389,7 +448,11 @@ const AddPatient: React.FC = () => {
         <div className="flex-shrink-0">
           <div className="w-32 h-32 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center overflow-hidden">
             {formData.profileImage ? (
-              <img src={formData.profileImage} alt="Profile" className="w-full h-full object-cover" />
+              <img 
+                src={getProfileImageUrl(formData.profileImage) || formData.profileImage} 
+                alt="Profile" 
+                className="w-full h-full object-cover" 
+              />
             ) : (
               <div className="text-center">
                 <svg className="w-12 h-12 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -514,10 +577,6 @@ const AddPatient: React.FC = () => {
           <label className="block text-sm font-medium text-gray-700 mb-2">อีเมล</label>
           <input type="email" name="email" value={formData.email} onChange={handleInputChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="example@email.com" />
         </div>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">QR Code / รหัสคนไข้ (สำหรับสแกนภายหลัง)</label>
-        <input type="text" name="qrCode" value={formData.qrCode} onChange={handleInputChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="QR Code หรือรหัสพิเศษ" />
       </div>
     </div>
   );
@@ -681,6 +740,19 @@ const AddPatient: React.FC = () => {
   );
 
   // 5. In the form, renderStep1, renderStep2, renderStep3 by currentStep
+  
+  // Loading state สำหรับการโหลดข้อมูลผู้ป่วย
+  if (isLoading && id && !existingPatient) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">กำลังโหลดข้อมูลผู้ป่วย...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-6 max-w-4xl">
       <div className="bg-white rounded-lg shadow-lg">

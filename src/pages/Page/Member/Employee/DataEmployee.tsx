@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { usePageDebug } from '../../../../hooks/usePageDebug';
 import { TableSchema } from '../../../../types/Debug';
-import { DebugManager } from '../../../../utils/Debuger';
+import axios from 'axios';
 import {
   Box,
   Paper,
@@ -21,7 +21,6 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Alert,
   IconButton,
   Tooltip
 } from '@mui/material';
@@ -41,7 +40,6 @@ import {
   CalendarToday as CalendarIcon,
   AccountCircle as AccountIcon
 } from '@mui/icons-material';
-import axios from 'axios';
 
 interface Employee {
   id: string;
@@ -83,13 +81,25 @@ const DataEmployee: React.FC = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
-  const debugManager = DebugManager.getInstance();
-  
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [department, setDepartment] = useState<Department | null>(null);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const [currentUserRole, setCurrentUserRole] = useState<string>('');
+
+  // Get current user role
+  useEffect(() => {
+    const userDataString = localStorage.getItem('userData');
+    if (userDataString) {
+      try {
+        const userData = JSON.parse(userDataString);
+        setCurrentUserRole(userData.role || '');
+      } catch (error) {
+        console.error('Error parsing user data:', error);
+      }
+    }
+  }, []);
 
   // Debug setup
   const requiredTables: TableSchema[] = [
@@ -113,26 +123,127 @@ const DataEmployee: React.FC = () => {
     const loadEmployeeData = async () => {
       try {
         setIsLoading(true);
+        const token = localStorage.getItem('token');
+        
+        if (!token) {
+          navigate('/auth/login');
+          return;
+        }
+
+        // โหลดข้อมูลแผนกก่อน
+        try {
+          const deptRes = await axios.get(`${API_BASE_URL}/api/workplace/department`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          setDepartments(deptRes.data || []);
+        } catch (deptError) {
+          console.error('Error loading departments:', deptError);
+          setDepartments([]);
+        }
+
         let employeeId = id;
         // ถ้า location.state มี employee ให้ใช้เลย
         let stateEmployee = location.state?.employee;
         if (stateEmployee) {
           setEmployee(stateEmployee);
-          // ดึง department จาก backend
-          const deptRes = await axios.get(`${API_BASE_URL}/api/workplace/department`);
-          const foundDept = deptRes.data.find((d: any) => d.id === stateEmployee.departmentId);
-          setDepartment(foundDept || null);
           setIsLoading(false);
           return;
         }
+        
         // ถ้ามี id ใน url ให้ดึงจาก backend
         if (employeeId) {
-          const empRes = await axios.get(`${API_BASE_URL}/api/worker/${employeeId}`);
-          setEmployee(empRes.data);
-          // ดึง department จาก backend
-          const deptRes = await axios.get(`${API_BASE_URL}/api/workplace/department`);
-          const foundDept = deptRes.data.find((d: any) => d.id === empRes.data.departmentId);
-          setDepartment(foundDept || null);
+          try {
+            // ลองดึงข้อมูลจาก endpoint ต่างๆ โดยเริ่มจาก employees collection ก่อน
+            let empRes;
+            try {
+              // ลองดึงจาก worker/employees endpoint ก่อน (primary source)
+              empRes = await axios.get(`${API_BASE_URL}/api/worker/${employeeId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+            } catch (workerError: any) {
+              if (workerError.response?.status === 404) {
+                // ถ้าไม่พบใน employees ลองดึงจาก doctor
+                try {
+                  empRes = await axios.get(`${API_BASE_URL}/api/doctor/${employeeId}`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                  });
+                } catch (doctorError: any) {
+                  if (doctorError.response?.status === 404) {
+                    // ถ้าไม่พบใน doctor ลองดึงจาก nurse
+                    try {
+                      empRes = await axios.get(`${API_BASE_URL}/api/doctor/nurses/${employeeId}`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                      });
+                    } catch (nurseError: any) {
+                      if (nurseError.response?.status === 404) {
+                        // ถ้าไม่พบใน nurse ลองดึงจาก users
+                        empRes = await axios.get(`${API_BASE_URL}/api/doctor/users/${employeeId}`, {
+                          headers: { Authorization: `Bearer ${token}` }
+                        });
+                      } else {
+                        throw nurseError;
+                      }
+                    }
+                  } else {
+                    throw doctorError;
+                  }
+                }
+              } else {
+                throw workerError;
+              }
+            }
+
+            if (empRes?.data) {
+              // แปลงข้อมูลจาก backend format เป็น frontend format
+              const backendData = empRes.data;
+              console.log('Backend data received:', backendData); // Debug log
+              
+              // Parse fullname if it's a string
+              let firstName = '', lastName = '';
+              if (typeof backendData.fullname === 'string') {
+                const names = backendData.fullname.split(' ');
+                firstName = names[0] || '';
+                lastName = names.slice(1).join(' ') || '';
+              } else if (Array.isArray(backendData.fullname)) {
+                firstName = backendData.fullname[0] || '';
+                lastName = backendData.fullname.slice(1).join(' ') || '';
+              }
+              
+              const frontendData: Employee = {
+                id: backendData._id || backendData.id || employeeId,
+                prefix: backendData.prefix || 'นพ.',
+                firstNameTh: backendData.firstNameTh || firstName || backendData.username || '',
+                lastNameTh: backendData.lastNameTh || lastName || '',
+                gender: backendData.gender || '',
+                phone: backendData.phone || '',
+                nationalId: backendData.nationalId || backendData.national_id || '',
+                profileImage: backendData.profileImage || '',
+                employeeType: backendData.employeeType || backendData.role || 'staff',
+                departmentId: backendData.departmentId || '',
+                position: backendData.position || backendData.perfession_type || '',
+                licenseNumber: backendData.licenseNumber || '',
+                specialties: backendData.specialties || backendData.specialization || [],
+                startDate: backendData.startDate || backendData.regis_date || '',
+                status: backendData.status || backendData.emt_status || 'active',
+                username: backendData.username || '',
+                password: '', // ไม่แสดงรหัสผ่าน
+                role: backendData.role || 'staff',
+                email: backendData.email || '',
+                address: backendData.address || '',
+                workingDays: backendData.workingDays || [],
+                workingHours: backendData.workingHours || { start: '08:00', end: '16:00' }
+              };
+              console.log('Frontend data mapped:', frontendData); // Debug log
+              setEmployee(frontendData);
+              
+              // หาแผนกของพนักงานนี้หลังจากโหลดข้อมูลแล้ว
+              const foundDept = departments.find(d => d.id === frontendData.departmentId);
+              setDepartment(foundDept || null);
+            }
+          } catch (error: any) {
+            console.error('Error loading employee:', error);
+            setEmployee(null);
+          }
         } else {
           setEmployee(null);
         }
@@ -143,7 +254,15 @@ const DataEmployee: React.FC = () => {
       }
     };
     loadEmployeeData();
-  }, [id, location.state]);
+  }, [id, location.state, navigate]);
+
+  // หาแผนกเมื่อ departments หรือ employee เปลี่ยน
+  useEffect(() => {
+    if (employee && departments.length > 0) {
+      const foundDept = departments.find(d => d.id === employee.departmentId);
+      setDepartment(foundDept || null);
+    }
+  }, [employee, departments]);
 
   const handleEdit = () => {
     navigate('/member/employee/addemployee', {
@@ -161,12 +280,24 @@ const DataEmployee: React.FC = () => {
   const confirmDelete = async () => {
     if (employee) {
       try {
-        await axios.delete(`${API_BASE_URL}/api/worker/${employee.id}`);
-        setSuccess(true);
+        const token = localStorage.getItem('token');
+        if (!token) {
+          alert('กรุณาเข้าสู่ระบบใหม่');
+          navigate('/auth/login');
+          return;
+        }
+
+        // ลบข้อมูลผ่าน API (สำหรับตอนนี้ยังไม่มี delete endpoint ใน backend)
+        // ใช้ชั่วคราวแสดงว่าลบสำเร็จ
+        alert('การลบข้อมูลยังไม่ได้ถูก implement ใน backend');
         setDeleteDialogOpen(false);
-        setTimeout(() => {
-          navigate('/member/employee/searchemployee');
-        }, 2000);
+        navigate('/member/employee/searchemployee');
+        
+        // TODO: Implement delete endpoint in backend
+        // await axios.delete(`${API_BASE_URL}/api/doctor/${employee.id}`, {
+        //   headers: { Authorization: `Bearer ${token}` }
+        // });
+        
       } catch (error) {
         alert('เกิดข้อผิดพลาดในการลบข้อมูล');
       }
@@ -241,31 +372,27 @@ const DataEmployee: React.FC = () => {
 
   return (
     <Box sx={{ maxWidth: 1000, mx: 'auto', p: 3 }}>
-      {success && (
-        <Alert severity="success" sx={{ mb: 3 }}>
-          ลบข้อมูลพนักงานเรียบร้อยแล้ว กำลังกลับไปหน้าค้นหา...
-        </Alert>
-      )}
-
       {/* Header */}
       <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <IconButton
-              onClick={() => navigate('/member/employee/searchemployee')}
-              sx={{ mr: 2 }}
-            >
-              <ArrowBackIcon />
-            </IconButton>
-            <Avatar
-              src={employee.profileImage || undefined}
-              sx={{ width: 80, height: 80, mr: 3, border: '2px solid #e0e0e0' }}
-            />
-            <Box>
-              <Typography variant="h4" fontWeight="bold" gutterBottom>
-                {employee.prefix} {employee.firstNameTh} {employee.lastNameTh}
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'flex-start' }, gap: 2 }}>
+          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, width: '100%' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <IconButton
+                onClick={() => navigate('/member/employee/searchemployee')}
+                size="small"
+              >
+                <ArrowBackIcon />
+              </IconButton>
+              <Avatar
+                src={employee.profileImage ? `${API_BASE_URL}/uploads/${employee.profileImage}` : undefined}
+                sx={{ width: { xs: 60, sm: 80 }, height: { xs: 60, sm: 80 }, border: '2px solid #e0e0e0' }}
+              />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="h4" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1.5rem', sm: '2rem', md: '2.125rem' }, wordBreak: 'break-word' }}>
+                {employee.prefix ? `${employee.prefix} ` : ''}{employee.firstNameTh} {employee.lastNameTh}
               </Typography>
-              <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1 }}>
                 <Chip 
                   label={getEmployeeTypeText(employee.employeeType)} 
                   color="primary" 
@@ -277,23 +404,27 @@ const DataEmployee: React.FC = () => {
                   size="small"
                 />
               </Box>
-              <Typography variant="body1" color="text.secondary">
+              <Typography variant="body1" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
                 {employee.position} • {department?.name || 'ไม่ระบุแผนก'}
               </Typography>
             </Box>
           </Box>
           
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Tooltip title="แก้ไขข้อมูล">
-              <IconButton color="primary" onClick={handleEdit}>
-                <EditIcon />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="ลบข้อมูล">
-              <IconButton color="error" onClick={handleDelete}>
-                <DeleteIcon />
-              </IconButton>
-            </Tooltip>
+          <Box sx={{ display: 'flex', gap: 1, alignSelf: { xs: 'flex-end', md: 'flex-start' } }}>
+            {currentUserRole === 'admin' && (
+              <>
+                <Tooltip title="แก้ไขข้อมูล">
+                  <IconButton color="primary" onClick={handleEdit}>
+                    <EditIcon />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="ลบข้อมูล">
+                  <IconButton color="error" onClick={handleDelete}>
+                    <DeleteIcon />
+                  </IconButton>
+                </Tooltip>
+              </>
+            )}
           </Box>
         </Box>
       </Paper>
@@ -325,7 +456,7 @@ const DataEmployee: React.FC = () => {
                   </ListItemIcon>
                   <ListItemText 
                     primary="เพศ" 
-                    secondary={employee.gender}
+                    secondary={employee.gender || 'ไม่ระบุ'}
                   />
                 </ListItem>
                 <ListItem>
@@ -334,7 +465,7 @@ const DataEmployee: React.FC = () => {
                   </ListItemIcon>
                   <ListItemText 
                     primary="เบอร์โทรศัพท์" 
-                    secondary={employee.phone}
+                    secondary={employee.phone || 'ไม่ระบุ'}
                   />
                 </ListItem>
                 {employee.email && (
@@ -354,7 +485,7 @@ const DataEmployee: React.FC = () => {
                   </ListItemIcon>
                   <ListItemText 
                     primary="หมายเลขบัตรประชาชน" 
-                    secondary={employee.nationalId}
+                    secondary={employee.nationalId || 'ไม่ระบุ'}
                   />
                 </ListItem>
                 {employee.address && (
@@ -400,15 +531,17 @@ const DataEmployee: React.FC = () => {
                   <ListItemText 
                     primary="แผนก" 
                     secondary={
-                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <Box component="span" sx={{ display: 'flex', alignItems: 'center' }}>
                         {department?.color && (
                           <Box 
+                            component="span"
                             sx={{ 
                               width: 12, 
                               height: 12, 
                               borderRadius: '50%', 
                               bgcolor: department.color,
-                              mr: 1
+                              mr: 1,
+                              display: 'inline-block'
                             }} 
                           />
                         )}
@@ -423,7 +556,7 @@ const DataEmployee: React.FC = () => {
                   </ListItemIcon>
                   <ListItemText 
                     primary="ตำแหน่ง" 
-                    secondary={employee.position}
+                    secondary={employee.position || 'ไม่ระบุ'}
                   />
                 </ListItem>
                 {employee.licenseNumber && (
@@ -443,7 +576,7 @@ const DataEmployee: React.FC = () => {
                   </ListItemIcon>
                   <ListItemText 
                     primary="วันที่เริ่มงาน" 
-                    secondary={new Date(employee.startDate).toLocaleDateString('th-TH')}
+                    secondary={employee.startDate ? new Date(employee.startDate).toLocaleDateString('th-TH') : 'ไม่ระบุ'}
                   />
                 </ListItem>
               </List>
@@ -582,14 +715,16 @@ const DataEmployee: React.FC = () => {
         >
           กลับไปหน้าค้นหา
         </Button>
-        <Button
-          variant="contained"
-          startIcon={<EditIcon />}
-          onClick={handleEdit}
-          size="large"
-        >
-          แก้ไขข้อมูล
-        </Button>
+        {currentUserRole === 'admin' && (
+          <Button
+            variant="contained"
+            startIcon={<EditIcon />}
+            onClick={handleEdit}
+            size="large"
+          >
+            แก้ไขข้อมูล
+          </Button>
+        )}
       </Box>
 
       {/* Delete Confirmation Dialog */}
@@ -626,23 +761,6 @@ const DataEmployee: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
-
-      {/* Debug Info (Development Only) */}
-      {process.env.NODE_ENV === 'development' && (
-        <Box sx={{ mt: 4, pt: 3, borderTop: '1px dashed #ccc' }}>
-          <Typography variant="caption" color="text.secondary" gutterBottom>
-            Debug Info (Development Only)
-          </Typography>
-          <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1, maxHeight: 300, overflow: 'auto' }}>
-            <pre style={{ margin: 0, fontSize: '0.75rem' }}>
-              {JSON.stringify({
-                employee,
-                department
-              }, null, 2)}
-            </pre>
-          </Box>
-        </Box>
-      )}
     </Box>
   );
 };

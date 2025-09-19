@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom'; // ใช้ useNavigate สำหรับการเปลี่ยนเส้นทาง
+import { useNavigate } from 'react-router-dom';
 import { Box, TextField, Button, Typography, Paper, Alert } from '@mui/material';
-//import axios from 'axios'; // เพิ่ม import axios
+import axios from 'axios';
 
-const LoginPage = () => {
+const LoginPage: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate(); // ใช้ navigate เพื่อเปลี่ยนเส้นทาง
+  const navigate = useNavigate();
 
   // ตรวจสอบสถานะการเข้าสู่ระบบเมื่อโหลดหน้า
   useEffect(() => {
@@ -24,58 +24,13 @@ const LoginPage = () => {
     setLoading(true);
     setError('');
 
-    // Bypass authentication - allow any username/password combination
-    try {
-      // Simulate a successful login response
-      const mockResponse = {
-        token: 'mock-token-' + Date.now(),
-        user: {
-          id: 1,
-          username: username || 'guest',
-          role: 'user',
-          branchid: '001' // Default branch ID
-        }
-      };
-
-      console.log('Mock login successful:', mockResponse);
-   
-      // บันทึก token และ user ลงใน localStorage
-      localStorage.setItem('token', mockResponse.token); // เก็บ token
-      
-      // เก็บข้อมูลผู้ใช้ (รวมถึง branchid)
-      localStorage.setItem('user', JSON.stringify({
-        id: mockResponse.user.id,
-        username: mockResponse.user.username,
-        role: mockResponse.user.role,
-        branchid: mockResponse.user.branchid // เพิ่ม branchid ในข้อมูลที่เก็บ
-      }));
-      
-      // Log เพื่อตรวจสอบว่า branchid ถูกเก็บหรือไม่
-      console.log('Stored user data:', {
-        id: mockResponse.user.id,
-        username: mockResponse.user.username,
-        role: mockResponse.user.role,
-        branchid: mockResponse.user.branchid
-      });
-   
-      // เปลี่ยนเส้นทางไปหน้า Dashboard
-      navigate('/');
-    } catch (err) {
-      console.error('Error during login:', err);
-      setError('An unexpected error occurred. Please try again later.');
-    } finally {
-      setLoading(false);
-    }
-
-    // Original API call code (commented out for bypass)
-    /*
     try {
       // ใช้ API URL จาก .env
-      const apiUrl = import.meta.env.VITE_API_URL;
-      console.log('API URL:', apiUrl); // แสดง API URL ที่ใช้
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      console.log('API URL:', apiUrl);
      
-      // ใช้ axios.post แทน fetch
-      const response = await axios.post(`${apiUrl}/login`, {
+      // ใช้ axios.post สำหรับการเข้าสู่ระบบ
+      const response = await axios.post(`${apiUrl}/api/auth/login`, {
         username,
         password
       }, {
@@ -84,54 +39,42 @@ const LoginPage = () => {
         }
       });
 
-      // axios จะจัดการ JSON parsing ให้อัตโนมัติ
       const data = response.data;
      
       console.log('Login successful:', data);
    
       // บันทึก token และ user ลงใน localStorage
-      localStorage.setItem('token', data.token); // เก็บ token
+      localStorage.setItem('token', data.token);
       
-      // เก็บข้อมูลผู้ใช้ (รวมถึง branchid)
-      localStorage.setItem('user', JSON.stringify({
-        id: data.user.id,
+      // เก็บข้อมูลผู้ใช้
+      localStorage.setItem('userData', JSON.stringify({
+        _id: data.user._id,
         username: data.user.username,
-        role: data.user.role,
-        branchid: data.user.branchid // เพิ่ม branchid ในข้อมูลที่เก็บ
+        role: data.user.role
       }));
       
-      // Log เพื่อตรวจสอบว่า branchid ถูกเก็บหรือไม่
-      console.log('Stored user data:', {
-        id: data.user.id,
-        username: data.user.username,
-        role: data.user.role,
-        branchid: data.user.branchid
-      });
+      console.log('Stored user data:', data.user);
    
       // เปลี่ยนเส้นทางไปหน้า Dashboard
       navigate('/');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error during login:', err);
      
       // จัดการกับข้อผิดพลาดจาก axios
       if (axios.isAxiosError(err)) {
-        // ถ้ามีข้อมูล response จาก server
         if (err.response) {
-          setError(err.response.data.error || 'Login failed. Please try again.');
+          setError(err.response.data.error || 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
         } else if (err.request) {
-          // ถ้าส่งคำขอแล้วแต่ไม่ได้รับการตอบกลับ
-          setError('No response from server. Please check your connection.');
+          setError('ไม่สามารถติดต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ');
         } else {
-          // มีข้อผิดพลาดอื่นๆ
-          setError('An error occurred. Please try again later.');
+          setError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
         }
       } else {
-        setError('An unexpected error occurred. Please try again later.');
+        setError('เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่อีกครั้ง');
       }
     } finally {
       setLoading(false);
     }
-    */
   };
 
   return (
@@ -141,7 +84,7 @@ const LoginPage = () => {
         justifyContent: 'center',
         alignItems: 'center',
         minHeight: '100vh',
-        backgroundColor: 'var(--bg-primary)', // ใช้สีพื้นหลังจาก theme.css
+        backgroundColor: 'var(--bg-primary)',
         padding: 2,
       }}
     >
@@ -152,8 +95,8 @@ const LoginPage = () => {
           width: '100%',
           maxWidth: 400,
           borderRadius: 3,
-          boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.2)', // เพิ่มเงาให้ดูเด่น
-          backgroundColor: 'var(--primary-light)', // ใช้สีพื้นหลังของ Paper
+          boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.2)',
+          backgroundColor: 'var(--primary-light)',
         }}
       >
         {/* ชื่อเว็บไซต์ */}
@@ -164,7 +107,7 @@ const LoginPage = () => {
           textAlign="center"
           sx={{
             fontWeight: 'bold',
-            color: 'var(--accent-blue)', // ใช้สีจาก theme.css
+            color: 'var(--accent-blue)',
             marginBottom: 3,
           }}
         >
@@ -187,12 +130,8 @@ const LoginPage = () => {
             margin="normal"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="Enter any username"
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                fontFamily: 'var(--font-primary)', // ใช้ฟอนต์จาก theme.css
-              },
-            }}
+            placeholder="Enter your username"
+            required
           />
           <TextField
             fullWidth
@@ -202,31 +141,27 @@ const LoginPage = () => {
             margin="normal"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter any password"
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                fontFamily: 'var(--font-primary)', // ใช้ฟอนต์จาก theme.css
-              },
-            }}
+            placeholder="Enter your password"
+            required
           />
           <Button
             type="submit"
             fullWidth
             variant="contained"
-            disabled={loading} // ปิดปุ่มขณะกำลังโหลด
+            disabled={loading}
             sx={{
               marginTop: 3,
               paddingY: 1.5,
               textTransform: 'none',
               fontSize: '1rem',
               fontWeight: 'bold',
-              backgroundColor: 'var(--accent-blue)', // ใช้สีจาก theme.css
+              backgroundColor: '#1976d2',
               '&:hover': {
-                backgroundColor: 'var(--accent-green)', // ใช้สี hover จาก theme.css
+                backgroundColor: '#1565c0',
               },
             }}
           >
-            {loading ? 'Logging in...' : 'Login (Bypass Mode)'}
+            {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
           </Button>
         </form>
       </Paper>
