@@ -1,10 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
-import { usePageDebug } from '../../../../hooks/usePageDebug';
-import { useDebugContext } from '../../../../contexts/DebugContext';
-import { TableSchema } from '../../../../types/Debug';
 
 interface Patient {
   id: string;
@@ -30,7 +27,6 @@ interface Patient {
   phone: string;
   email?: string;
   profileImage?: string;
-  qrCode?: string;
   
   // ข้อมูลสุขภาพพื้นฐาน
   bloodType?: string;
@@ -74,9 +70,22 @@ interface MedicalRecord {
   queue_id: string;
   visit_date: string;
   chief_complaint: string;
+  present_illness?: string;
+  physical_exam?: string;
+  vital_signs?: {
+    blood_pressure?: string;
+    heart_rate?: string;
+    temperature?: string;
+    respiratory_rate?: string;
+    oxygen_saturation?: string;
+    weight?: string;
+    height?: string;
+  };
   diagnosis: string;
   treatment_plan: string;
   medications: string[];
+  lab_results?: string[];
+  follow_up?: string;
   notes: string;
   queue_info?: {
     queue_no: string;
@@ -94,7 +103,6 @@ const DataPatient: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  const { debugManager } = useDebugContext();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -103,19 +111,17 @@ const DataPatient: React.FC = () => {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [loadingRecords, setLoadingRecords] = useState(false);
   const [activeTab, setActiveTab] = useState<'info' | 'queue-history' | 'medical-records'>('info');
+  const [userRole, setUserRole] = useState<string | null>(null);
   const API_BASE_URL = import.meta.env.VITE_API_URL;
 
-  // Debug setup
-  const requiredTables: TableSchema[] = useMemo(() => [
-    {
-      tableName: 'patients',
-      columns: ['id', 'prefix', 'firstNameTh', 'lastNameTh', 'firstNameEn', 'lastNameEn', 'gender', 'birthDate', 'age', 'nationalId', 'address', 'phone', 'email', 'profileImage', 'qrCode', 'bloodType', 'chronicDiseases', 'allergies', 'currentMedications', 'emergencyContact'],
-      description: 'ข้อมูลผู้ป่วยทั้งหมด'
+  // Check user role for admin functionality
+  useEffect(() => {
+    const userData = localStorage.getItem('userData');
+    if (userData) {
+      const user = JSON.parse(userData);
+      setUserRole(user.role);
     }
-  ], []);
-
-  const debugPageData = usePageDebug('ข้อมูลผู้ป่วย', requiredTables);
-  console.log(debugPageData);
+  }, []);
 
   // ฟังก์ชันโหลดประวัติคิว - ใช้ API ที่มีอยู่แล้วและดึงข้อมูลรายละเอียด
   const loadQueueHistory = async (patientId: string) => {
@@ -369,65 +375,71 @@ const DataPatient: React.FC = () => {
     }
   };
 
-  // ฟังก์ชันโหลดประวัติการรักษา - ใช้ dummy data ไปก่อน
+  // ฟังก์ชันโหลดประวัติการรักษา
   const loadMedicalRecords = async (patientId: string) => {
     if (!patientId) return;
     
     try {
       setLoadingRecords(true);
       console.log(`[DEBUG] Loading medical records for patient: ${patientId}`);
+      console.log(`[DEBUG] API URL: ${API_BASE_URL}/api/medical-records/patient/${patientId}`);
       
-      // สร้าง dummy data สำหรับทดสอบ
-      const dummyRecords: MedicalRecord[] = [
-        {
-          _id: 'record1',
-          queue_id: 'queue1',
-          visit_date: new Date().toISOString(),
-          chief_complaint: 'ปวดหัว และ มีไข้ 38.5 องศา มาแล้ว 2 วัน',
-          diagnosis: 'โรคไข้หวัดใหญ่ (Influenza)',
-          treatment_plan: 'พักผ่อน ดื่มน้ำเยอะๆ รับประทานยาตามที่แพทย์สั่ง',
-          medications: ['Paracetamol 500mg x 3 ครั้ง/วัน', 'Antihistamine 1 เม็ด ก่อนนอน'],
-          notes: 'นัดติดตามอาการใน 7 วัน หากไม่ดีขึ้นให้กลับมาพบแพทย์',
-          queue_info: {
-            queue_no: 'A001',
-            status: 'completed'
-          },
-          room_info: {
-            name: 'ห้องตรวจทั่วไป 1'
-          },
-          department_info: {
-            name: 'แผนกอายุรกรรม'
-          }
-        },
-        {
-          _id: 'record2',
-          queue_id: 'queue2',
-          visit_date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 วันที่แล้ว
-          chief_complaint: 'ตรวจสุขภาพประจำปี',
-          diagnosis: 'ผลตรวจภาพรวมสุขภาพดี',
-          treatment_plan: 'รักษาสุขภาพต่อไป ออกกำลังกายสม่ำเสมอ',
-          medications: ['Vitamin D 1000IU วันละ 1 เม็ด'],
-          notes: 'นัดตรวจสุขภาพครั้งต่อไปในอีก 1 ปี',
-          queue_info: {
-            queue_no: 'C012',
-            status: 'completed'
-          },
-          room_info: {
-            name: 'ห้องตรวจสุขภาพ'
-          },
-          department_info: {
-            name: 'แผนกแพทย์ครอบครัว'
-          }
-        }
-      ];
+      // เรียก API เพื่อดึงประวัติการรักษาจริง
+      const response = await axios.get(`${API_BASE_URL}/api/medical-records/patient/${patientId}`);
+      console.log(`[DEBUG] Medical records response:`, response.data);
       
-      // จำลองการโหลดข้อมูล
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      console.log(`[DEBUG] Loaded ${dummyRecords.length} dummy medical records`);
-      setMedicalRecords(dummyRecords);
+      if (response.data && response.data.success && Array.isArray(response.data.records)) {
+        const records = response.data.records;
+        console.log(`[DEBUG] Found ${records.length} medical records for patient ${patientId}`);
+        
+        // แปลงข้อมูลให้ตรงกับ MedicalRecord interface
+        const mappedRecords: MedicalRecord[] = records.map((record: any) => ({
+          _id: record._id,
+          queue_id: record.queue_id,
+          visit_date: record.visit_date,
+          chief_complaint: record.chief_complaint || '',
+          present_illness: record.present_illness || '',
+          physical_exam: record.physical_exam || '',
+          vital_signs: record.vital_signs ? {
+            blood_pressure: record.vital_signs.blood_pressure || '',
+            heart_rate: record.vital_signs.heart_rate || '',
+            temperature: record.vital_signs.temperature || '',
+            respiratory_rate: record.vital_signs.respiratory_rate || '',
+            oxygen_saturation: record.vital_signs.oxygen_saturation || '',
+            weight: record.vital_signs.weight || '',
+            height: record.vital_signs.height || ''
+          } : undefined,
+          diagnosis: record.diagnosis || '',
+          treatment_plan: record.treatment_plan || '',
+          medications: record.medications || [],
+          lab_results: record.lab_results || [],
+          follow_up: record.follow_up || '',
+          notes: record.notes || '',
+          queue_info: record.queue_info ? {
+            queue_no: record.queue_info.queue_no || '',
+            status: record.queue_info.status || ''
+          } : undefined,
+          room_info: record.room_info ? {
+            name: record.room_info.name || ''
+          } : undefined,
+          department_info: record.department_info ? {
+            name: record.department_info.name || ''
+          } : undefined
+        }));
+        
+        setMedicalRecords(mappedRecords);
+      } else {
+        console.log(`[DEBUG] No medical records found for patient ${patientId}`);
+        setMedicalRecords([]);
+      }
     } catch (error) {
       console.error('[ERROR] Failed to load medical records:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('[ERROR] Status:', error.response?.status);
+        console.error('[ERROR] Response data:', error.response?.data);
+      }
+      
+      // หากเกิดข้อผิดพลาด ให้แสดงข้อมูลว่าง
       setMedicalRecords([]);
     } finally {
       setLoadingRecords(false);
@@ -480,15 +492,11 @@ const DataPatient: React.FC = () => {
     const loadPatientData = async () => {
       try {
         setIsLoading(true);
-        console.log(`[DEBUG] Starting to load patient data...`);
-        console.log(`[DEBUG] Patient ID from URL:`, id);
-        console.log(`[DEBUG] Location state:`, location.state);
         
         // ลองดึงข้อมูลจาก location state ก่อน
         const statePatient = location.state?.patient as Patient;
         
         if (statePatient) {
-          console.log(`[DEBUG] Using patient from location state:`, statePatient);
           setPatient(statePatient);
           setIsLoading(false);
           return;
@@ -497,16 +505,11 @@ const DataPatient: React.FC = () => {
         // ถ้ามี id ใน url ให้ดึงจาก backend
         if (id) {
           try {
-            console.log(`[DEBUG] Fetching patient from backend with ID: ${id}`);
-            console.log(`[DEBUG] API URL: ${API_BASE_URL}/api/patient/${id}`);
-            
             const res = await axios.get(`${API_BASE_URL}/api/patient/${id}`);
-            console.log(`[DEBUG] Patient API response:`, res);
-            console.log(`[DEBUG] Patient data:`, res.data);
-            
             const data = res.data;
-            // แปลงข้อมูลให้ตรงกับ Patient interface ถ้าจำเป็น
-            const mappedPatient = {
+            
+            // แปลงข้อมูลให้ตรงกับ Patient interface
+            const mappedPatient: Patient = {
               id: data._id,
               prefix: data.prefix,
               firstNameTh: data.first_name_th,
@@ -529,7 +532,6 @@ const DataPatient: React.FC = () => {
               phone: data.phone,
               email: data.email,
               profileImage: data.image_path,
-              qrCode: data.qr_code,
               bloodType: data.blood_type,
               chronicDiseases: data.chronic_diseases,
               allergies: data.allergies,
@@ -537,68 +539,19 @@ const DataPatient: React.FC = () => {
               emergencyContact: data.emergency_contact,
             };
             
-            console.log(`[DEBUG] Mapped patient data:`, mappedPatient);
             setPatient(mappedPatient);
             setIsLoading(false);
             return;
           } catch (error) {
-            console.error(`[ERROR] Failed to fetch patient from backend:`, error);
-            if (axios.isAxiosError(error)) {
-              console.error('[ERROR] Status:', error.response?.status);
-              console.error('[ERROR] Response data:', error.response?.data);
-            }
+            console.error('Failed to fetch patient from backend:', error);
             setError('ไม่พบข้อมูลผู้ป่วยหรือเกิดข้อผิดพลาด');
             setIsLoading(false);
             return;
           }
         }
 
-        // ถ้าไม่มีใน state ให้ดึงจาก debug data
-        const patients = debugManager.getData('patients');
-        if (patients.length > 0) {
-          // ใช้ patient แรกเป็นตัวอย่าง หรือจะใช้ ID จาก URL params
-          setPatient(patients[0]);
-        } else {
-          // สร้างข้อมูลตัวอย่าง
-          const samplePatient: Patient = {
-            id: 'P000001',
-            prefix: 'นาย',
-            firstNameTh: 'สมชาย',
-            lastNameTh: 'ใจดี',
-            firstNameEn: 'Somchai',
-            lastNameEn: 'Jaidee',
-            gender: 'ชาย',
-            birthDate: '1990-01-01',
-            age: 34,
-            nationalId: '1234567890123',
-            address: {
-              houseNumber: '123/45',
-              village: 'หมู่บ้านสวยงาม',
-              street: 'ถนนสุขุมวิท',
-              subDistrict: 'บางนา',
-              district: 'บางนา',
-              province: 'กรุงเทพมหานคร',
-              postalCode: '10260'
-            },
-            phone: '081-234-5678',
-            email: 'somchai@email.com',
-            profileImage: '', // จะใส่รูปตัวอย่างถ้ามี
-            qrCode: 'QR123456',
-            bloodType: 'O+',
-            chronicDiseases: ['เบาหวาน', 'ความดันโลหิตสูง'],
-            allergies: ['ยาปฏิชีวนะ Penicillin', 'อาหารทะเล'],
-            currentMedications: ['ยาเบาหวาน', 'ยาลดความดัน'],
-            emergencyContact: {
-              name: 'สมหญิง ใจดี',
-              phone: '081-234-5679',
-              relationship: 'คู่สมรส'
-            }
-          };
-          
-          debugManager.addData('patients', samplePatient);
-          setPatient(samplePatient);
-        }
-        
+        // ถ้าไม่มีข้อมูลจาก state หรือ URL ให้นำทางกลับไปหน้าค้นหา
+        setError('ไม่พบข้อมูลผู้ป่วย');
         setIsLoading(false);
       } catch (err) {
         console.error('Error loading patient data:', err);
@@ -608,20 +561,13 @@ const DataPatient: React.FC = () => {
     };
 
     loadPatientData();
-  }, [location.state, debugManager, id, API_BASE_URL]);
+  }, [location.state, id, API_BASE_URL]);
 
   // เพิ่มการโหลดข้อมูลประวัติเมื่อมี patient
   useEffect(() => {
-    console.log(`[DEBUG] Patient changed, triggering history load...`);
-    console.log(`[DEBUG] Patient:`, patient);
-    console.log(`[DEBUG] Patient ID:`, patient?.id);
-    
     if (patient && patient.id) {
-      console.log(`[DEBUG] Loading history for patient ID: ${patient.id}`);
       loadQueueHistory(patient.id);
       loadMedicalRecords(patient.id);
-    } else {
-      console.log(`[DEBUG] No patient or patient ID available for history loading`);
     }
   }, [patient]);
 
@@ -638,7 +584,53 @@ const DataPatient: React.FC = () => {
 
   const handleEdit = () => {
     if (patient) {
-      navigate('/member/patient/add', { state: { patient: patient, isEdit: true } });
+      navigate(`/member/patient/edit/${patient.id}`, { state: { patient: patient, isEdit: true } });
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!patient || !patient.id) return;
+
+    const confirmed = window.confirm(
+      `คุณแน่ใจหรือไม่ที่จะลบข้อมูลผู้ป่วย "${patient.prefix} ${patient.firstNameTh} ${patient.lastNameTh}"?\n\nการกระทำนี้ไม่สามารถย้อนกลับได้`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert('กรุณาเข้าสู่ระบบใหม่');
+        navigate('/login');
+        return;
+      }
+
+      const response = await axios.delete(`${API_BASE_URL}/api/patient/delete/${patient.id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.status === 200) {
+        alert('ลบข้อมูลผู้ป่วยเรียบร้อยแล้ว');
+        navigate('/member/patient/searchpatient');
+      }
+    } catch (error: any) {
+      console.error('Error deleting patient:', error);
+      
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 403) {
+          alert('คุณไม่มีสิทธิ์ในการลบข้อมูลผู้ป่วย (เฉพาะ Admin เท่านั้น)');
+        } else if (error.response?.status === 401) {
+          alert('กรุณาเข้าสู่ระบบใหม่');
+          navigate('/login');
+        } else {
+          alert('เกิดข้อผิดพลาดในการลบข้อมูล: ' + (error.response?.data?.message || error.message));
+        }
+      } else {
+        alert('เกิดข้อผิดพลาดในการลบข้อมูล');
+      }
     }
   };
 
@@ -743,9 +735,6 @@ const DataPatient: React.FC = () => {
                   <p className="text-blue-100 text-lg">{getFullNameEn(patient)}</p>
                 )}
                 <p className="text-blue-100">รหัสผู้ป่วย: {patient.id}</p>
-                {patient.qrCode && (
-                  <p className="text-blue-100 text-sm">QR Code: {patient.qrCode}</p>
-                )}
               </div>
             </div>
             
@@ -759,6 +748,17 @@ const DataPatient: React.FC = () => {
                 </svg>
                 แก้ไข
               </button>
+              {userRole === 'admin' && (
+                <button
+                  onClick={handleDelete}
+                  className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  ลบ
+                </button>
+              )}
               <button
                 onClick={handleBack}
                 className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2"
@@ -1274,6 +1274,49 @@ const DataPatient: React.FC = () => {
                           </div>
                         )}
 
+                        {record.present_illness && (
+                          <div>
+                            <h4 className="font-medium text-gray-700 mb-1">ประวัติอาการปัจจุบัน</h4>
+                            <p className="text-gray-600 bg-blue-50 p-3 rounded">{record.present_illness}</p>
+                          </div>
+                        )}
+
+                        {record.physical_exam && (
+                          <div>
+                            <h4 className="font-medium text-gray-700 mb-1">การตรวจร่างกาย</h4>
+                            <p className="text-gray-600 bg-purple-50 p-3 rounded">{record.physical_exam}</p>
+                          </div>
+                        )}
+
+                        {record.vital_signs && Object.values(record.vital_signs).some(val => val) && (
+                          <div>
+                            <h4 className="font-medium text-gray-700 mb-1">สัญญาณชีพ</h4>
+                            <div className="bg-orange-50 p-3 rounded grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                              {record.vital_signs.blood_pressure && (
+                                <div><span className="font-medium">ความดัน:</span> {record.vital_signs.blood_pressure}</div>
+                              )}
+                              {record.vital_signs.heart_rate && (
+                                <div><span className="font-medium">ชีพจร:</span> {record.vital_signs.heart_rate}</div>
+                              )}
+                              {record.vital_signs.temperature && (
+                                <div><span className="font-medium">อุณหภูมิ:</span> {record.vital_signs.temperature}</div>
+                              )}
+                              {record.vital_signs.respiratory_rate && (
+                                <div><span className="font-medium">อัตราการหายใจ:</span> {record.vital_signs.respiratory_rate}</div>
+                              )}
+                              {record.vital_signs.oxygen_saturation && (
+                                <div><span className="font-medium">ออกซิเจน:</span> {record.vital_signs.oxygen_saturation}</div>
+                              )}
+                              {record.vital_signs.weight && (
+                                <div><span className="font-medium">น้ำหนัก:</span> {record.vital_signs.weight}</div>
+                              )}
+                              {record.vital_signs.height && (
+                                <div><span className="font-medium">ส่วนสูง:</span> {record.vital_signs.height}</div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
                         {record.diagnosis && (
                           <div>
                             <h4 className="font-medium text-gray-700 mb-1">การวินิจฉัย</h4>
@@ -1301,6 +1344,26 @@ const DataPatient: React.FC = () => {
                           </div>
                         )}
 
+                        {record.lab_results && record.lab_results.length > 0 && (
+                          <div>
+                            <h4 className="font-medium text-gray-700 mb-1">ผลแล็บ</h4>
+                            <div className="bg-indigo-50 p-3 rounded">
+                              <ul className="list-disc list-inside space-y-1">
+                                {record.lab_results.map((result, index) => (
+                                  <li key={index} className="text-gray-600">{result}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        )}
+
+                        {record.follow_up && (
+                          <div>
+                            <h4 className="font-medium text-gray-700 mb-1">การนัดครั้งต่อไป</h4>
+                            <p className="text-gray-600 bg-teal-50 p-3 rounded">{record.follow_up}</p>
+                          </div>
+                        )}
+
                         {record.notes && (
                           <div>
                             <h4 className="font-medium text-gray-700 mb-1">หมายเหตุ</h4>
@@ -1315,27 +1378,6 @@ const DataPatient: React.FC = () => {
             </div>
           )}
 
-          {/* QR Code Section */}
-          {patient.qrCode && activeTab === 'info' && (
-            <div className="mb-8">
-              <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">QR Code</h2>
-              <div className="bg-gray-50 p-6 rounded-lg text-center">
-                <div className="inline-block p-4 bg-white rounded-lg shadow-md">
-                  {/* สามารถใส่ QR Code generator library ตรงนี้ */}
-                  <div className="w-32 h-32 bg-gray-200 flex items-center justify-center rounded-lg">
-                    <div className="text-center">
-                      <svg className="w-12 h-12 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                      </svg>
-                      <p className="text-sm text-gray-500">QR Code</p>
-                    </div>
-                  </div>
-                </div>
-                <p className="mt-4 text-gray-600">รหัส: {patient.qrCode}</p>
-              </div>
-            </div>
-          )}
-
           {/* Action Buttons */}
           <div className="flex justify-center gap-4 pt-6 border-t">
             <button
@@ -1347,6 +1389,18 @@ const DataPatient: React.FC = () => {
               </svg>
               แก้ไขข้อมูล
             </button>
+            
+            {userRole === 'admin' && (
+              <button
+                onClick={handleDelete}
+                className="px-8 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                ลบข้อมูล
+              </button>
+            )}
             
             <button
               onClick={() => window.print()}
@@ -1367,26 +1421,6 @@ const DataPatient: React.FC = () => {
               </svg>
               กลับไปค้นหา
             </button>
-
-            {/* Debug Button - เฉพาะ development mode */}
-            {import.meta.env.MODE === 'development' && (
-              <button
-                onClick={() => {
-                  console.log('=== DEBUG INFO ===');
-                  console.log('Patient:', patient);
-                  console.log('Queue History:', queueHistory);
-                  console.log('Medical Records:', medicalRecords);
-                  console.log('Loading History:', loadingHistory);
-                  console.log('Loading Records:', loadingRecords);
-                  console.log('API Base URL:', API_BASE_URL);
-                  console.log('Patient ID from URL:', id);
-                  alert('ตรวจสอบ Console สำหรับ Debug Info');
-                }}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
-              >
-                🐛 Debug
-              </button>
-            )}
           </div>
         </div>
       </div>

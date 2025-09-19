@@ -167,18 +167,6 @@ const ShowQueue: React.FC = () => {
                 const deptResponse = await axios.get(`${API_BASE_URL}/api/workplace/department/${roomMaster.departmentId}`);
                 roomDetails.department_name = deptResponse.data.name || '';
               }
-              
-              // ดึงข้อมูลอาคาร
-              if (roomMaster.buildingId) {
-                const buildingResponse = await axios.get(`${API_BASE_URL}/api/workplace/building/${roomMaster.buildingId}`);
-                roomDetails.building_name = buildingResponse.data.name || '';
-              }
-              
-              // ดึงข้อมูลชั้น
-              if (roomMaster.floorId) {
-                const floorResponse = await axios.get(`${API_BASE_URL}/api/workplace/floor/${roomMaster.floorId}`);
-                roomDetails.floor_name = floorResponse.data.name || '';
-              }
             }
           } catch (error) {
             console.error('Error fetching room details:', error);

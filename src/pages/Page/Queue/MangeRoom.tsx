@@ -104,7 +104,6 @@ const DAYS_OF_WEEK = [
 ];
 
 const ManageRoom: React.FC = () => {
-  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [dataLoading, setDataLoading] = useState<{
     departments: boolean;
     employees: boolean;
@@ -158,8 +157,6 @@ const ManageRoom: React.FC = () => {
 
   // โหลดข้อมูลทั้งหมดจาก backend แบบ lazy loading
   const loadData = useCallback(async () => {
-    setIsLoading(true);
-    
     // โหลด departments ก่อน (จำเป็นสำหรับ UI)
     try {
       setDataLoading(prev => ({ ...prev, departments: true }));
@@ -218,8 +215,6 @@ const ManageRoom: React.FC = () => {
     ]).catch(error => {
       console.error('Error in parallel loading:', error);
       showSnackbar('เกิดข้อผิดพลาดในการโหลดข้อมูลบางส่วน', 'warning');
-    }).finally(() => {
-      setIsLoading(false);
     });
   }, [API_BASE_URL, selectedDate]);
 

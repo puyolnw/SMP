@@ -12,7 +12,7 @@ import {
 } from '@mui/material';
 import { ExpandLess, ExpandMore } from '@mui/icons-material';
 import { useTheme, useMediaQuery } from '@mui/material';
-import { menuItems } from './MenuSidebar';
+import { getMenuItems } from './MenuSidebar';
 
 function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => void }) {
   const navigate = useNavigate();
@@ -22,6 +22,9 @@ function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => 
 
   // State to manage the open/close state of collapsible menus
   const [openMenus, setOpenMenus] = useState<{ [key: string]: boolean }>({});
+
+  // Get menu items dynamically
+  const menuItems = getMenuItems();
 
   const handleToggle = (itemText: string) => {
     setOpenMenus((prev) => ({ ...prev, [itemText]: !prev[itemText] }));

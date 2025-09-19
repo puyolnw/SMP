@@ -4,7 +4,6 @@ import Dashboard from '../pages/Dashboard/dashboard';
 import Layout from '../components/Layout';
 import EmLayout from '../components/EmLayout';
 import AuthenLayout from '../components/Auth/AuthenLayout';
-import LoginPage from '../pages/Auth/Login/login';
 import ProtectedRoute from '../components/Auth/ProtectedRoute'; // นำเข้า ProtectedRoute
 
 // Lazy load components
@@ -25,6 +24,9 @@ const AddEmployee = lazy(() => import('../pages/Page/Member/Employee/AddEmployee
 const DataEmployee = lazy(() => import('../pages/Page/Member/Employee/DataEmployee'));
 const SearchEmployee = lazy(() => import('../pages/Page/Member/Employee/SearchEmployee'));
 const ManageRoom = lazy(() => import('../pages/Page/Queue/MangeRoom'));
+const ProfilePage = lazy(() => import('../pages/Auth/Profile/profile'));
+const LoginPage = lazy(() => import('../pages/Auth/Login/login'));
+
 import {
   Dashboard as DashboardIcon,
 } from '@mui/icons-material';
@@ -76,6 +78,20 @@ export const routes = [
             path: '/Member/Patient/AddPatient',
             name: 'Add New Patient',
             nameTH: 'เพิ่มผู้ป่วยใหม่',
+            icon: DashboardIcon,
+            element: <AddPatient />
+          },
+          {
+            path: '/member/patient/add',
+            name: 'Add Patient',
+            nameTH: 'เพิ่มผู้ป่วย',
+            icon: DashboardIcon,
+            element: <AddPatient />
+          },
+          {
+            path: '/member/patient/edit/:id',
+            name: 'Edit Patient',
+            nameTH: 'แก้ไขผู้ป่วย',
             icon: DashboardIcon,
             element: <AddPatient />
           },
@@ -148,50 +164,62 @@ export const routes = [
             element: <DataEmployee />
           },
           {
+            path: '/member/employee/dataemployee/:id',
+            name: 'dataemployee-detail',
+            nameTH: 'ข้อมูลบุคลากร',
+            element: <DataEmployee />
+          },
+          {
             path: '/Queue/Manage/room',
             name: 'QManageRoom',
             nameTH: 'จัดการห้อง',
             element: <ManageRoom/>
           },
+          {
+            path: '/profile/:id',
+            name: 'Profile',
+            nameTH: 'โปรไฟล์',
+            icon: DashboardIcon,
+            element: <ProfilePage />
+          },
 
 
         ]
-      },
-       {
-        path: '/',
-        element: <EmLayout />, // Layout หลักสำหรับหน้า Dashboard และอื่นๆ
-        children: [
- {
-          path: '/Queue/ShowQueue',
-            name: 'Queue',
-            nameTH: 'การแสดงคิว',
-            icon: DashboardIcon,
-            element: <ShowQueue />
-      },
-
-
-       {
-          path: '/welcome',
-            name: 'WelcomeQr',
-            nameTH: 'ยินดีต้อนรับ',
-            icon: DashboardIcon,
-            element: <Welcome />
-      },
+      }
+    ]
+  },
   {
-            path: '/Screening/AuthenPatient2',
-            name: 'AuthenPatient',
-            nameTH: 'ยืนยันตัวตนผู้ป่วย',
-            icon: DashboardIcon,
-            element: <AuthenPatient />
-          },
-{
-            path: '/Screening/Patient2',
-            name: 'AuthenPatient',
-            nameTH: 'หน้าคัดกรอง',
-            icon: DashboardIcon,
-            element: <AllProcess />
-          },
-       ] },
+    path: '/',
+    element: <EmLayout />, // Layout สำหรับหน้าที่ไม่ต้อง login
+    children: [
+      {
+        path: '/Queue/ShowQueue',
+        name: 'Queue',
+        nameTH: 'การแสดงคิว',
+        icon: DashboardIcon,
+        element: <ShowQueue />
+      },
+      {
+        path: '/welcome',
+        name: 'WelcomeQr',
+        nameTH: 'ยินดีต้อนรับ',
+        icon: DashboardIcon,
+        element: <Welcome />
+      },
+      {
+        path: '/Screening/AuthenPatient2',
+        name: 'AuthenPatient',
+        nameTH: 'ยืนยันตัวตนผู้ป่วย',
+        icon: DashboardIcon,
+        element: <AuthenPatient />
+      },
+      {
+        path: '/Screening/Patient2',
+        name: 'AuthenPatient',
+        nameTH: 'หน้าคัดกรอง',
+        icon: DashboardIcon,
+        element: <AllProcess />
+      },
     ]
   },
   {

@@ -26,7 +26,6 @@ interface Patient {
   phone: string;
   email?: string;
   profileImage?: string;
-  qrCode?: string;
   bloodType?: string;
   chronicDiseases?: string[];
   allergies?: string[];
@@ -301,7 +300,6 @@ function mapPatientFromApi(apiPatient: unknown): Patient {
     phone: (p.phone as string) || '',
     email: (p.email as string) || '',
     profileImage: (p.image_path as string) || '',
-    qrCode: (p.qr_code as string) || '',
     bloodType: (p.blood_type as string) || '',
     chronicDiseases: (p.chronic_diseases as string[]) || [],
     allergies: (p.allergies as string[]) || [],

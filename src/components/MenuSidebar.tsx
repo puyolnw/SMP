@@ -1,13 +1,12 @@
 import {
   PersonSearch,
-  WavingHand,
   HealthAndSafety,
   MeetingRoom,
   AdminPanelSettings,
   People,
   Badge,
   EventNote,
-
+  AccountCircle,
   FactCheck,
   Grading,
   MonitorHeart,
@@ -17,11 +16,40 @@ import {
   PersonAdd,
   ManageAccounts,
   Business,
-  Smartphone,
   Home,
 } from '@mui/icons-material';
 
-export const menuItems = [
+// Helper function to get user ID from localStorage
+const getUserId = () => {
+  try {
+    const userData = localStorage.getItem('userData');
+    if (userData) {
+      const user = JSON.parse(userData);
+      return user._id || user.id || '';
+    }
+    return '';
+  } catch (error) {
+    console.error('getUserId - Error:', error);
+    return '';
+  }
+};
+
+// Helper function to get user role from localStorage
+const getUserRole = () => {
+  try {
+    const userData = localStorage.getItem('userData');
+    if (userData) {
+      const user = JSON.parse(userData);
+      return user.role || '';
+    }
+    return '';
+  } catch (error) {
+    console.error('getUserRole - Error:', error);
+    return '';
+  }
+};
+
+export const getMenuItems = () => [
   {
     text: 'หน้าหลัก',
     icon: Home,
@@ -61,12 +89,13 @@ export const menuItems = [
         path: '/member/employee/searchemployee',
         nameTH: 'ค้นหาบุคลากร',
       },
-      {
+      // เฉพาะ admin เท่านั้นที่เห็นเมนู "เพิ่มบุคลากร"
+      ...(getUserRole() === 'admin' ? [{
         text: 'เพิ่มบุคลากร',
         icon: Badge,
         path: '/member/employee/addemployee',
         nameTH: 'เพิ่มบุคลากร',
-      },
+      }] : []),
     ],
   },
   {
@@ -135,17 +164,12 @@ export const menuItems = [
     ],
   },
   {
-    text: 'ระบบผู้ป่วย',
-    icon: Smartphone,
-    path: '/dat',
-    nameTH: 'ระบบผู้ป่วย',
-    children: [
-      {
-        text: 'ยินดีต้อนรับ',
-        icon: WavingHand,
-        path: '/welcome',
-        nameTH: 'ยินดีต้อนรับ',
-      },
-    ],
+    text: 'โปรไฟล์',
+    icon: AccountCircle,
+    path: `/profile/${getUserId()}`,
+    nameTH: 'โปรไฟล์ผู้ใช้',
   },
 ];
+
+// Keep the old export for backward compatibility
+export const menuItems = getMenuItems();

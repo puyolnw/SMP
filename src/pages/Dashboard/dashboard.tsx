@@ -44,7 +44,6 @@ import {
   Refresh as RefreshIcon,
   ArrowForward as ArrowIcon
 } from '@mui/icons-material';
-import { DebugManager } from '../../utils/Debuger';
 
 const StyledPaper = styled(Paper)(({ theme }) => ({
   padding: theme.spacing(3),
@@ -74,7 +73,6 @@ const StyledCard = styled(Card)(({ theme }) => ({
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const debugManager = DebugManager.getInstance();
   const [stats, setStats] = useState({
     emergency: 0,
     waiting: 0,
@@ -84,185 +82,130 @@ const Dashboard: React.FC = () => {
     activeRooms: 0
   });
   const [recentPatients, setRecentPatients] = useState<any[]>([]);
+  const [departmentStats, setDepartmentStats] = useState<any>({});
+  const [systemInfo, setSystemInfo] = useState<any>({});
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  // ฟังก์ชันดึงจำนวนห้องที่เปิดจาก API จริง
-  const fetchActiveRooms = async () => {
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+  // ฟังก์ชันดึงข้อมูล dashboard จาก API
+  const fetchDashboardData = async () => {
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-      const res = await axios.get(`${API_BASE_URL}/api/workplace/room_schedule`);
-      const openRooms = res.data.filter((room: any) => room.isOpen);
-      return openRooms.length;
+      console.log('🔄 Fetching dashboard data from API...');
+      const response = await axios.get(`${API_BASE_URL}/api/queue-logs/dashboard/stats`);
+      
+      console.log('📊 API Response:', response.data);
+      
+      if (response.data.success) {
+        const { stats: apiStats, recent_patients, department_stats, system_info } = response.data;
+        
+        setStats({
+          emergency: apiStats.emergency || 0,
+          waiting: apiStats.waiting || 0,
+          screened: apiStats.screened || 0,
+          inQueue: apiStats.inQueue || 0,
+          totalPatients: apiStats.totalPatients || 0,
+          activeRooms: apiStats.activeRooms || 0
+        });
+        
+        setRecentPatients(recent_patients || []);
+        setDepartmentStats(department_stats || {});
+        setSystemInfo(system_info || {});
+        
+        console.log('✅ Dashboard data loaded successfully from API');
+        return true;
+      } else {
+        throw new Error(response.data.error || 'API returned success: false');
+      }
     } catch (err) {
-      console.error('โหลดข้อมูลห้องตรวจล้มเหลว', err);
-      return 0;
+      console.error('❌ API Error:', err);
+      
+      // ถ้า API ไม่ทำงาน ให้ใช้ mock data เป็น fallback
+      console.log('🔄 Using fallback mock data...');
+      const mockStats = {
+        emergency: 2,
+        waiting: 5,
+        screened: 10,
+        inQueue: 7,
+        totalPatients: 20,
+        activeRooms: 3
+      };
+      setStats(mockStats);
+      
+      // Mock recent patients
+      setRecentPatients([
+        {
+          id: '1',
+          prefix: 'นาย',
+          firstNameTh: 'สมชาย',
+          lastNameTh: 'ใจดี',
+          age: 35,
+          gender: 'ชาย',
+          phone: '0812345678',
+          bloodType: 'O',
+          chronicDiseases: ['เบาหวาน'],
+          profileImage: '',
+          queue_number: 'A001',
+          queue_status: 'waiting',
+          queue_priority: 2
+        },
+        {
+          id: '2',
+          prefix: 'นางสาว',
+          firstNameTh: 'สายใจ',
+          lastNameTh: 'สุขใจ',
+          age: 28,
+          gender: 'หญิง',
+          phone: '0898765432',
+          bloodType: 'A',
+          chronicDiseases: [],
+          profileImage: '',
+          queue_number: 'A002',
+          queue_status: 'waiting',
+          queue_priority: 3
+        }
+      ]);
+      
+      setDepartmentStats({});
+      setSystemInfo({ system_status: 'offline' });
+      
+      console.log('⚠️ Fallback to mock data completed');
+      return false;
     }
   };
 
   useEffect(() => {
-    const load = async () => {
+    const loadData = async () => {
       setLoading(true);
-      // mock ข้อมูลสถิติ
-      const mockStats = {
-        emergency: 2,
-        waiting: 5,
-        screened: 10,
-        inQueue: 7,
-        totalPatients: 20,
-        activeRooms: 0 // จะอัปเดตจาก API จริง
-      };
-      mockStats.activeRooms = await fetchActiveRooms();
-      setStats(mockStats);
-      // mock recentPatients
-      setRecentPatients([
-        {
-          id: '1',
-          prefix: 'นาย',
-          firstNameTh: 'สมชาย',
-          lastNameTh: 'ใจดี',
-          age: 35,
-          gender: 'ชาย',
-          phone: '0812345678',
-          bloodType: 'O',
-          chronicDiseases: ['เบาหวาน'],
-          profileImage: '',
-        },
-        {
-          id: '2',
-          prefix: 'นางสาว',
-          firstNameTh: 'สายใจ',
-          lastNameTh: 'สุขใจ',
-          age: 28,
-          gender: 'หญิง',
-          phone: '0898765432',
-          bloodType: 'A',
-          chronicDiseases: [],
-          profileImage: '',
-        },
-        {
-          id: '3',
-          prefix: 'เด็กชาย',
-          firstNameTh: 'ภูผา',
-          lastNameTh: 'เขียวสด',
-          age: 10,
-          gender: 'ชาย',
-          phone: '0823456789',
-          bloodType: 'B',
-          chronicDiseases: ['หอบหืด'],
-          profileImage: '',
-        },
-        {
-          id: '4',
-          prefix: 'นาง',
-          firstNameTh: 'จันทร์เพ็ญ',
-          lastNameTh: 'ทองดี',
-          age: 52,
-          gender: 'หญิง',
-          phone: '0865432198',
-          bloodType: 'AB',
-          chronicDiseases: ['ความดันโลหิตสูง'],
-          profileImage: '',
-        },
-        {
-          id: '5',
-          prefix: 'นาย',
-          firstNameTh: 'วีระ',
-          lastNameTh: 'แสงทอง',
-          age: 40,
-          gender: 'ชาย',
-          phone: '0834567890',
-          bloodType: 'O',
-          chronicDiseases: [],
-          profileImage: '',
-        },
-      ]);
-      setLastUpdated(new Date());
-      setLoading(false);
+      try {
+        await fetchDashboardData();
+      } catch (error) {
+        console.error('Error loading dashboard data:', error);
+      } finally {
+        setLastUpdated(new Date());
+        setLoading(false);
+      }
     };
-    load();
+    
+    loadData();
+    
+    // Auto refresh every 30 seconds
+    const interval = setInterval(loadData, 30000);
+    
+    return () => clearInterval(interval);
   }, []);
 
-  const handleRefresh = () => {
-    // เรียก load ใหม่
-    const load = async () => {
-      setLoading(true);
-      const mockStats = {
-        emergency: 2,
-        waiting: 5,
-        screened: 10,
-        inQueue: 7,
-        totalPatients: 20,
-        activeRooms: 0
-      };
-      mockStats.activeRooms = await fetchActiveRooms();
-      setStats(mockStats);
-      setRecentPatients([
-        {
-          id: '1',
-          prefix: 'นาย',
-          firstNameTh: 'สมชาย',
-          lastNameTh: 'ใจดี',
-          age: 35,
-          gender: 'ชาย',
-          phone: '0812345678',
-          bloodType: 'O',
-          chronicDiseases: ['เบาหวาน'],
-          profileImage: '',
-        },
-        {
-          id: '2',
-          prefix: 'นางสาว',
-          firstNameTh: 'สายใจ',
-          lastNameTh: 'สุขใจ',
-          age: 28,
-          gender: 'หญิง',
-          phone: '0898765432',
-          bloodType: 'A',
-          chronicDiseases: [],
-          profileImage: '',
-        },
-        {
-          id: '3',
-          prefix: 'เด็กชาย',
-          firstNameTh: 'ภูผา',
-          lastNameTh: 'เขียวสด',
-          age: 10,
-          gender: 'ชาย',
-          phone: '0823456789',
-          bloodType: 'B',
-          chronicDiseases: ['หอบหืด'],
-          profileImage: '',
-        },
-        {
-          id: '4',
-          prefix: 'นาง',
-          firstNameTh: 'จันทร์เพ็ญ',
-          lastNameTh: 'ทองดี',
-          age: 52,
-          gender: 'หญิง',
-          phone: '0865432198',
-          bloodType: 'AB',
-          chronicDiseases: ['ความดันโลหิตสูง'],
-          profileImage: '',
-        },
-        {
-          id: '5',
-          prefix: 'นาย',
-          firstNameTh: 'วีระ',
-          lastNameTh: 'แสงทอง',
-          age: 40,
-          gender: 'ชาย',
-          phone: '0834567890',
-          bloodType: 'O',
-          chronicDiseases: [],
-          profileImage: '',
-        },
-      ]);
+  const handleRefresh = async () => {
+    setLoading(true);
+    try {
+      await fetchDashboardData();
+    } catch (error) {
+      console.error('Error refreshing dashboard data:', error);
+    } finally {
       setLastUpdated(new Date());
       setLoading(false);
-    };
-    load();
+    }
   };
 
   const navigateTo = (path: string) => {
@@ -499,7 +442,7 @@ const Dashboard: React.FC = () => {
                             <Button 
                               variant="outlined" 
                               size="small"
-                              onClick={() => navigateTo(`/member/patient/data?id=${patient.id}`)}
+                              onClick={() => navigateTo(`/member/patient/dataPatient/${patient.id}`)}
                             >
                               ดูข้อมูล
                             </Button>
@@ -529,6 +472,32 @@ const Dashboard: React.FC = () => {
                                   เบอร์โทร: {patient.phone}
                                   {patient.bloodType && ` | กรุ๊ปเลือด: ${patient.bloodType}`}
                                 </Typography>
+                                {/* แสดงข้อมูลคิว */}
+                                {patient.queue_number && (
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+                                    <Chip 
+                                      label={`คิว: ${patient.queue_number}`}
+                                      size="small"
+                                      color={patient.queue_status === 'waiting' ? 'warning' : 
+                                             patient.queue_status === 'in_progress' ? 'info' : 'default'}
+                                    />
+                                    {patient.queue_priority === 1 && (
+                                      <Chip 
+                                        label="ฉุกเฉิน"
+                                        size="small"
+                                        color="error"
+                                        icon={<UrgentIcon />}
+                                      />
+                                    )}
+                                    {patient.queue_priority === 2 && (
+                                      <Chip 
+                                        label="เร่งด่วน"
+                                        size="small"
+                                        color="warning"
+                                      />
+                                    )}
+                                  </Box>
+                                )}
                                 {patient.chronicDiseases && patient.chronicDiseases.length > 0 && (
                                   <Box sx={{ mt: 0.5 }}>
                                     {patient.chronicDiseases.slice(0, 2).map((disease: string, i: number) => (
@@ -618,6 +587,39 @@ const Dashboard: React.FC = () => {
               </Box>
             </Paper>
 
+            {/* Department Stats */}
+            {Object.keys(departmentStats).length > 0 && (
+              <>
+                <Typography variant="h5" sx={{ mb: 2, fontWeight: 'medium' }}>
+                  สถิติตามแผนก
+                </Typography>
+                <Paper elevation={2} sx={{ p: 3, mb: 4 }}>
+                  {Object.entries(departmentStats).map(([deptId, dept]: [string, any]) => (
+                    <Box key={deptId} sx={{ mb: 2, pb: 2, borderBottom: '1px solid #e0e0e0' }}>
+                      <Typography variant="subtitle1" fontWeight="medium" gutterBottom>
+                        {dept.name}
+                      </Typography>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="body2" color="text.secondary">
+                            คิวรอ: {dept.waiting_count} | วันนี้: {dept.total_today} | ห้องเปิด: {dept.active_rooms}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          {dept.waiting_count > 5 && (
+                            <Chip label="คิวเยอะ" size="small" color="warning" />
+                          )}
+                          {dept.active_rooms === 0 && (
+                            <Chip label="ปิดบริการ" size="small" color="error" />
+                          )}
+                        </Box>
+                      </Box>
+                    </Box>
+                  ))}
+                </Paper>
+              </>
+            )}
+
             {/* Quick Links */}
             <Typography variant="h5" sx={{ mb: 2, fontWeight: 'medium' }}>
               ลิงก์ด่วน
@@ -669,6 +671,21 @@ const Dashboard: React.FC = () => {
               <Typography variant="body2" paragraph>
                 ระบบคัดกรองและจัดคิวผู้ป่วยอัตโนมัติ ช่วยให้การบริหารจัดการผู้ป่วยมีประสิทธิภาพมากขึ้น
               </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="body2">สถานะระบบ:</Typography>
+                <Chip 
+                  label={systemInfo.system_status === 'online' ? 'ออนไลน์' : 'ออฟไลน์'} 
+                  size="small" 
+                  color={systemInfo.system_status === 'online' ? 'success' : 'error'}
+                  sx={{ bgcolor: 'white', color: systemInfo.system_status === 'online' ? 'green' : 'red' }}
+                />
+              </Box>
+              {systemInfo.total_logs_today && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="body2">กิจกรรมวันนี้:</Typography>
+                  <Typography variant="body2" fontWeight="bold">{systemInfo.total_logs_today} รายการ</Typography>
+                </Box>
+              )}
               <Typography variant="body2">
                 เวอร์ชัน: 1.0.0 | อัพเดทล่าสุด: {new Date().toLocaleDateString('th-TH')}
               </Typography>

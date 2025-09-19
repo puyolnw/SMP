@@ -1,8 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { usePageDebug } from '../../../../hooks/usePageDebug';
-import { TableSchema } from '../../../../types/Debug';
-import { DebugManager } from '../../../../utils/Debuger';
 import {
   Box,
   Paper,
@@ -85,23 +82,6 @@ const AddEmployee: React.FC = () => {
   const location = useLocation();
   const isEdit = location.state?.isEdit || false;
   const existingEmployee = location.state?.employee as Employee;
-  const debugManager = DebugManager.getInstance();
-  
-  // Debug setup
-  const requiredTables: TableSchema[] = [
-    {
-      tableName: 'employees',
-      columns: ['id', 'prefix', 'firstNameTh', 'lastNameTh', 'gender', 'phone', 'nationalId', 'profileImage', 'employeeType', 'departmentId', 'position', 'licenseNumber', 'specialties', 'startDate', 'status', 'username', 'password', 'role', 'email', 'address', 'workingDays', 'workingHours'],
-      description: 'ข้อมูลพนักงานทั้งหมด (หมอ พยาบาล เจ้าหน้าที่)'
-    },
-    {
-      tableName: 'departments',
-      columns: ['id', 'name', 'description', 'color', 'isActive'],
-      description: 'แผนกต่างๆ ในโรงพยาบาล'
-    }
-  ];
-
-  usePageDebug('เพิ่มพนักงานใหม่', requiredTables);
 
   const [formData, setFormData] = useState<Employee>({
     id: '',
@@ -134,8 +114,6 @@ const AddEmployee: React.FC = () => {
   // States
   const [newSpecialty, setNewSpecialty] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
-  console.log('profileImageFile:', profileImageFile);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [success, setSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -175,14 +153,25 @@ const AddEmployee: React.FC = () => {
   useEffect(() => {
     // โหลดข้อมูลแผนกจาก backend
     axios.get(`${API_BASE_URL}/api/workplace/department`).then(res => {
-      setDepartments(res.data || []);
+      const deptData = res.data || [];
+      setDepartments(deptData);
+      
+      if (isEdit && existingEmployee) {
+        // ตรวจสอบว่า departmentId ที่มีอยู่นั้นมีใน options หรือไม่
+        const validDeptId = deptData.find((d: Department) => d.id === existingEmployee.departmentId) 
+          ? existingEmployee.departmentId 
+          : '';
+        
+        setFormData({
+          ...existingEmployee,
+          departmentId: validDeptId,
+          password: '' // ไม่แสดงรหัสผ่านเดิม
+        });
+      } else {
+        const newId = 'E' + Date.now().toString().slice(-6);
+        setFormData(prev => ({ ...prev, id: newId }));
+      }
     });
-    if (isEdit && existingEmployee) {
-      setFormData(existingEmployee);
-    } else {
-      const newId = 'E' + Date.now().toString().slice(-6);
-      setFormData(prev => ({ ...prev, id: newId }));
-    }
   }, [isEdit, existingEmployee]);
 
   // Validate National ID (simple checksum)
@@ -259,7 +248,6 @@ const AddEmployee: React.FC = () => {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setProfileImageFile(file);
       const reader = new FileReader();
       reader.onload = (event) => {
         setFormData(prev => ({
@@ -337,8 +325,13 @@ const AddEmployee: React.FC = () => {
   const validateForm = (): boolean => {
     const required = [
       'prefix', 'firstNameTh', 'lastNameTh', 'gender', 'phone', 'nationalId',
-      'employeeType', 'departmentId', 'position', 'startDate', 'username', 'password'
+      'employeeType', 'departmentId', 'position', 'startDate', 'username'
     ];
+
+    // เพิ่ม password ให้ required เฉพาะกรณีที่เป็นการเพิ่มพนักงานใหม่
+    if (!isEdit) {
+      required.push('password');
+    }
 
     for (const field of required) {
       if (!formData[field as keyof Employee]) {
@@ -372,33 +365,94 @@ const AddEmployee: React.FC = () => {
     }
     setIsLoading(true);
     try {
-      let payload = { ...formData };
-      // ถ้ามีไฟล์รูป profileImageFile ให้ส่งเป็น multipart/form-data
-      let response;
-      if (profileImageFile) {
-        const form = new FormData();
-        Object.entries(payload).forEach(([key, value]) => {
-          if (typeof value === 'object' && value !== null) {
-            form.append(key, JSON.stringify(value));
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert('กรุณาเข้าสู่ระบบใหม่');
+        navigate('/auth/login');
+        return;
+      }
+
+      // สร้าง payload สำหรับ employees collection
+      const payload = {
+        id: formData.id,
+        prefix: formData.prefix,
+        firstNameTh: formData.firstNameTh,
+        lastNameTh: formData.lastNameTh,
+        gender: formData.gender,
+        phone: formData.phone,
+        nationalId: formData.nationalId,
+        profileImage: formData.profileImage,
+        employeeType: formData.employeeType,
+        departmentId: formData.departmentId,
+        position: formData.position,
+        licenseNumber: formData.licenseNumber,
+        specialties: formData.specialties || [],
+        startDate: formData.startDate,
+        status: formData.status,
+        ...((!isEdit) && { username: formData.username }), // เพิ่ม username เฉพาะเมื่อไม่ใช่การแก้ไข
+        ...((!isEdit) && { password: formData.password }), // เพิ่ม password เฉพาะเมื่อไม่ใช่การแก้ไข
+        role: formData.role,
+        email: formData.email,
+        address: formData.address,
+        workingDays: formData.workingDays || [],
+        workingHours: formData.workingHours || { start: '08:00', end: '16:00' }
+      };
+
+      
+      // ในโหมดแก้ไข ให้ใช้ worker endpoint (employees collection) เป็นหลัก
+      if (isEdit) {
+        try {
+          // ลองแก้ไขใน employees collection ก่อน
+          await axios.put(`${API_BASE_URL}/api/worker/${formData.id}`, payload, {
+            headers: { 
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json' 
+            }
+          });
+        } catch (workerError: any) {
+          // ถ้าแก้ไขใน employees ไม่ได้ ลองแก้ไขใน collection อื่น
+          if (workerError.response?.status === 404) {
+            if (formData.employeeType === 'doctor') {
+              await axios.put(`${API_BASE_URL}/api/doctor/${formData.id}`, payload, {
+                headers: { 
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json' 
+                }
+              });
+            } else if (formData.employeeType === 'nurse') {
+              await axios.put(`${API_BASE_URL}/api/doctor/nurses/${formData.id}`, payload, {
+                headers: { 
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json' 
+                }
+              });
+            } else {
+              await axios.put(`${API_BASE_URL}/api/doctor/${formData.id}`, payload, {
+                headers: { 
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json' 
+                }
+              });
+            }
           } else {
-            form.append(key, value as any);
+            throw workerError;
           }
-        });
-        form.append('profileImage', profileImageFile);
-        if (isEdit) {
-          response = await axios.put(`${API_BASE_URL}/api/worker/${formData.id}`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
-        } else {
-          response = await axios.post(`${API_BASE_URL}/api/worker/`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
         }
       } else {
-        if (isEdit) {
-          response = await axios.put(`${API_BASE_URL}/api/worker/${formData.id}`, payload);
-        } else {
-          response = await axios.post(`${API_BASE_URL}/api/worker/`, payload);
-        }
+        // สำหรับการเพิ่มพนักงานใหม่ ให้ใช้ worker endpoint (employees collection)
+        await axios.post(`${API_BASE_URL}/api/worker/`, payload, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json' 
+          }
+        });
       }
+
       setSuccess(true);
+      alert(isEdit ? 'แก้ไขข้อมูลพนักงานสำเร็จ' : 'เพิ่มพนักงานใหม่สำเร็จ');
+      
       if (!isEdit) {
+        // Reset form for new entry
         const newId = 'E' + Date.now().toString().slice(-6);
         setFormData({
           id: newId,
@@ -852,10 +906,12 @@ const AddEmployee: React.FC = () => {
                         required
                         fullWidth
                         size="small"
+                        disabled={isEdit}
                         error={!!usernameError}
-                        helperText={usernameError || 'ใช้สำหรับเข้าสู่ระบบ'}
+                        helperText={isEdit ? 'ไม่สามารถเปลี่ยนชื่อผู้ใช้ได้' : (usernameError || 'ใช้สำหรับเข้าสู่ระบบ')}
                         InputProps={{
-                          endAdornment: (
+                          readOnly: isEdit,
+                          endAdornment: !isEdit ? (
                             <InputAdornment position="end">
                               <Button
                                 size="small"
@@ -865,42 +921,53 @@ const AddEmployee: React.FC = () => {
                                 สร้างอัตโนมัติ
                               </Button>
                             </InputAdornment>
-                          ),
+                          ) : undefined,
                         }}
                       />
                     </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        label="รหัสผ่าน *"
-                        name="password"
-                        type={showPassword ? 'text' : 'password'}
-                        value={formData.password}
-                        onChange={handleInputChange}
-                        required
-                        fullWidth
-                        size="small"
-                        InputProps={{
-                          endAdornment: (
-                            <InputAdornment position="end">
-                              <IconButton
-                                onClick={() => setShowPassword(!showPassword)}
-                                edge="end"
-                                size="small"
-                              >
-                                {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                              </IconButton>
-                              <Button
-                                size="small"
-                                onClick={generatePassword}
-                                sx={{ ml: 1 }}
-                              >
-                                สร้าง
-                              </Button>
-                            </InputAdornment>
-                          ),
-                        }}
-                      />
-                    </Grid>
+                    {!isEdit && (
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          label="รหัสผ่าน *"
+                          name="password"
+                          type={showPassword ? 'text' : 'password'}
+                          value={formData.password}
+                          onChange={handleInputChange}
+                          required
+                          fullWidth
+                          size="small"
+                          InputProps={{
+                            endAdornment: (
+                              <InputAdornment position="end">
+                                <IconButton
+                                  onClick={() => setShowPassword(!showPassword)}
+                                  edge="end"
+                                  size="small"
+                                >
+                                  {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                                </IconButton>
+                                <Button
+                                  size="small"
+                                  onClick={generatePassword}
+                                  sx={{ ml: 1 }}
+                                >
+                                  สร้าง
+                                </Button>
+                              </InputAdornment>
+                            ),
+                          }}
+                        />
+                      </Grid>
+                    )}
+                    {isEdit && (
+                      <Grid item xs={12} sm={6}>
+                        <Alert severity="info" sx={{ display: 'flex', alignItems: 'center' }}>
+                          <Typography variant="body2">
+                            การเปลี่ยนรหัสผ่านต้องทำในหน้าโปรไฟล์ของพนักงาน
+                          </Typography>
+                        </Alert>
+                      </Grid>
+                    )}
                     <Grid item xs={12} sm={6}>
                       <TextField
                         select
@@ -1014,37 +1081,6 @@ const AddEmployee: React.FC = () => {
             </Button>
           </Box>
         </form>
-
-        {/* Debug Info (Development Only) */}
-        {process.env.NODE_ENV === 'development' && (
-          <Box sx={{ mt: 4, pt: 3, borderTop: '1px dashed #ccc' }}>
-            <Typography variant="caption" color="text.secondary" gutterBottom>
-              Debug Info (Development Only)
-            </Typography>
-            <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 1, maxHeight: 200, overflow: 'auto' }}>
-              <pre style={{ margin: 0, fontSize: '0.75rem' }}>
-                {JSON.stringify({
-                  formValid: validateForm(),
-                  usernameError,
-                  requiredFields: {
-                    prefix: !!formData.prefix,
-                    firstNameTh: !!formData.firstNameTh,
-                    lastNameTh: !!formData.lastNameTh,
-                    gender: !!formData.gender,
-                    phone: !!formData.phone,
-                    nationalId: !!formData.nationalId && validateNationalId(formData.nationalId),
-                    employeeType: !!formData.employeeType,
-                    departmentId: !!formData.departmentId,
-                    position: !!formData.position,
-                    username: !!formData.username,
-                    password: !!formData.password,
-                    licenseRequired: (formData.employeeType === 'doctor' || formData.employeeType === 'nurse') ? !!formData.licenseNumber : true
-                  }
-                }, null, 2)}
-              </pre>
-            </Box>
-          </Box>
-        )}
       </Paper>
     </Box>
   );
