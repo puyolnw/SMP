@@ -95,7 +95,26 @@ interface Room {
   capacity?: number;
   description?: string;
   isActive: boolean;
+  room_type?: string; // เพิ่ม room_type field
 }
+
+// ประเภทห้องตรวจที่รองรับ
+const ROOM_TYPES = [
+  { value: 'general', label: 'ห้องตรวจโรคทั่วไป', color: '#4caf50' },
+  { value: 'orthopedic', label: 'ห้องตรวจแผนกกระดูกและข้อ', color: '#ff9800' },
+  { value: 'pediatric', label: 'ห้องตรวจกุมารเวช', color: '#2196f3' },
+  { value: 'cardiology', label: 'ห้องตรวจแผนกอายุรกรรมโรคหัวใจ', color: '#f44336' },
+  { value: 'eye', label: 'ห้องตรวจแผนกจักษุกรรม', color: '#9c27b0' },
+  { value: 'ent', label: 'ห้องตรวจแผนกหู คอ จมูก', color: '#00bcd4' },
+  { value: 'obgyn', label: 'ห้องตรวจแผนกสูตินรีเวช', color: '#e91e63' },
+  { value: 'emergency', label: 'ห้องฉุกเฉิน', color: '#d32f2f' }
+];
+
+// Helper function เพื่อหาข้อมูลประเภทห้อง
+const getRoomTypeInfo = (roomType: string) => {
+  return ROOM_TYPES.find(type => type.value === roomType) || 
+         { value: roomType, label: roomType, color: '#757575' };
+};
 
 const Departments: React.FC = () => {
   const navigate = useNavigate();
@@ -175,7 +194,12 @@ const Departments: React.FC = () => {
       case 'room': {
         const room = rooms.find(r => r.id === id);
         if (room) {
-          setEditedRoom(room);
+          // ตั้งค่า room_type เริ่มต้นเป็น 'general' หากยังไม่มี
+          const roomWithType = {
+            ...room,
+            room_type: room.room_type || 'general'
+          };
+          setEditedRoom(roomWithType);
           setEditRoomDialog(true);
         }
         break;
@@ -788,6 +812,18 @@ const Departments: React.FC = () => {
                                   sx={{ ml: 1 }}
                                 />
                               )}
+                              {room.room_type && (
+                                <Chip 
+                                  label={getRoomTypeInfo(room.room_type).label} 
+                                  size="small" 
+                                  sx={{ 
+                                    ml: 1, 
+                                    bgcolor: getRoomTypeInfo(room.room_type).color,
+                                    color: 'white',
+                                    fontSize: '0.75rem'
+                                  }}
+                                />
+                              )}
                             </Box>
                           }
                           secondary={`${getDepartmentName(room.departmentId)} • ${getFloorName(room.floorId)}`}
@@ -1147,6 +1183,33 @@ const Departments: React.FC = () => {
               onChange={(e) => setEditedRoom(prev => prev ? {...prev, capacity: parseInt(e.target.value)} : null)}
               InputProps={{ inputProps: { min: 0 } }}
             />
+            <TextField
+              select
+              label="ประเภทห้องตรวจ"
+              fullWidth
+              margin="normal"
+              value={editedRoom?.room_type || 'general'}
+              onChange={(e) => setEditedRoom(prev => prev ? {...prev, room_type: e.target.value} : null)}
+              required
+              helperText="กำหนดประเภทห้องเพื่อให้ระบบจัดคิวได้ถูกต้อง"
+            >
+              {ROOM_TYPES.map((roomType) => (
+                <MenuItem key={roomType.value} value={roomType.value}>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <Box 
+                      sx={{ 
+                        width: 16, 
+                        height: 16, 
+                        borderRadius: '50%', 
+                        bgcolor: roomType.color,
+                        mr: 1
+                      }} 
+                    />
+                    {roomType.label}
+                  </Box>
+                </MenuItem>
+              ))}
+            </TextField>
             <TextField
               label="รายละเอียด"
               fullWidth

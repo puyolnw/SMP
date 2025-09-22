@@ -87,7 +87,7 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const API_BASE_URL = import.meta.env.VITE_API_URL;
 
   // ฟังก์ชันดึงข้อมูล dashboard จาก API
   const fetchDashboardData = async () => {
@@ -435,7 +435,7 @@ const Dashboard: React.FC = () => {
                 ) : recentPatients.length > 0 ? (
                   <List>
                     {recentPatients.map((patient, index) => (
-                      <React.Fragment key={patient.id || index}>
+                      <React.Fragment key={`patient-${patient.id || 'unknown'}-${index}`}>
                         <ListItem 
                           alignItems="flex-start"
                           secondaryAction={
@@ -502,7 +502,7 @@ const Dashboard: React.FC = () => {
                                   <Box sx={{ mt: 0.5 }}>
                                     {patient.chronicDiseases.slice(0, 2).map((disease: string, i: number) => (
                                       <Chip 
-                                        key={i} 
+                                        key={`${patient.id || 'unknown'}-disease-${i}-${disease}`} 
                                         label={disease} 
                                         size="small" 
                                         color="primary" 
@@ -512,6 +512,7 @@ const Dashboard: React.FC = () => {
                                     ))}
                                     {patient.chronicDiseases.length > 2 && (
                                       <Chip 
+                                        key={`${patient.id || 'unknown'}-more-diseases`}
                                         label={`+${patient.chronicDiseases.length - 2}`} 
                                         size="small" 
                                         color="default" 
@@ -595,7 +596,7 @@ const Dashboard: React.FC = () => {
                 </Typography>
                 <Paper elevation={2} sx={{ p: 3, mb: 4 }}>
                   {Object.entries(departmentStats).map(([deptId, dept]: [string, any]) => (
-                    <Box key={deptId} sx={{ mb: 2, pb: 2, borderBottom: '1px solid #e0e0e0' }}>
+                    <Box key={`dept-${deptId}`} sx={{ mb: 2, pb: 2, borderBottom: '1px solid #e0e0e0' }}>
                       <Typography variant="subtitle1" fontWeight="medium" gutterBottom>
                         {dept.name}
                       </Typography>
