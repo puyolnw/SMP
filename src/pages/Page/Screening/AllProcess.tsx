@@ -52,7 +52,17 @@ const loadCameraSizeSettings = () => {
     weight: null, height: null, bmi: null, systolic: null, diastolic: null, pulse: null, age: null
   });
   const [errorMessage, setErrorMessage] = useState('');
-  const [patientToken] = useState<string | null>(localStorage.getItem('patient_token'));
+  
+  // Get patient token from location state or localStorage
+  const getPatientToken = (): string | null => {
+    const stateToken = location.state?.token;
+    const localToken = localStorage.getItem('patient_token');
+    console.log('Getting patient token - state:', stateToken, 'localStorage:', localToken);
+    return stateToken || localToken;
+  };
+  
+  const [patientToken] = useState<string | null>(getPatientToken());
+  
   const CAMERASETTINGS_KEY = 'camerasettings';
   // Audio recording states
   const [isRecording, setIsRecording] = useState(false);
@@ -194,12 +204,17 @@ const speak = (text: string) => {
     return Math.max(0, Math.min(120, calculatedAge)); // จำกัดอายุ 0-120 ปี
   };
 
-  // Patient data
+  // Patient data with cache management
   const getPatientData = (): PatientData => {
+    // 1. ลำดับความสำคัญ: location.state (ข้อมูลใหม่จาก AuthenPatient)
     if (location.state?.patient) {
       console.log('Patient data received from location.state:', location.state.patient);
+      // บันทึกข้อมูลใหม่ลง localStorage และ clear cache เก่า
+      localStorage.setItem('authenticatedPatient', JSON.stringify(location.state.patient));
       return location.state.patient;
     }
+    
+    // 2. ถ้าไม่มีใน location.state ให้ดูใน localStorage
     const storedPatient = localStorage.getItem('authenticatedPatient');
     if (storedPatient) {
       const patient = JSON.parse(storedPatient);
@@ -211,17 +226,82 @@ const speak = (text: string) => {
       }
       return patient;
     }
+    
+    // 3. Fallback data
     console.log('Using fallback patient data');
     return {
       id: 'P001234',
       name: 'นายสมชาย ใจดี',
       nationalId: '1234567890123',
-      birthDate: '1990-01-01', // เพิ่ม birthDate สำหรับการคำนวณอายุ
-      age: calculateAge('1234567890123', '1990-01-01') // คำนวณอายุจาก nationalId และ birthDate
+      birthDate: '1990-01-01',
+      age: calculateAge('1234567890123', '1990-01-01')
     };
   };
   
-  const [patientData] = useState<PatientData>(getPatientData());
+  // Patient data state with refresh capability
+  const [patientData, setPatientData] = useState<PatientData>(getPatientData());
+  
+  // Function to refresh patient data
+  const refreshPatientData = () => {
+    const newPatientData = getPatientData();
+    setPatientData(newPatientData);
+    console.log('Patient data refreshed:', newPatientData);
+    return newPatientData;
+  };
+
+  // Auto-refresh patient data when component mounts or location changes
+  useEffect(() => {
+    console.log('Location or patient data changed, refreshing...');
+    refreshPatientData();
+  }, [location.state]);
+
+  // Save token to localStorage if received from state
+  useEffect(() => {
+    const stateToken = location.state?.token;
+    if (stateToken) {
+      console.log('Saving token from state to localStorage:', stateToken);
+      localStorage.setItem('patient_token', stateToken);
+    }
+  }, [location.state?.token]);
+
+  // Reset function to clear all cache and restart process
+  const resetAllData = () => {
+    // Clear all localStorage cache
+    localStorage.removeItem('authenticatedPatient');
+    localStorage.removeItem('patient_token');
+    localStorage.removeItem('queueInfo');
+    
+    // Reset all states
+    setCurrentStep('weight');
+    setVitalSigns({
+      weight: null, height: null, bmi: null, 
+      systolic: null, diastolic: null, pulse: null, age: null
+    });
+    setErrorMessage('');
+    setSymptomsText('');
+    setAudioBlob(null);
+    setQueueInfo(null);
+    setScanCount(0);
+    setManualInputMode(false);
+    
+    // Close cameras
+    closeCamera();
+    
+    console.log('All data reset, redirecting to authentication...');
+    speak('ระบบได้รีเซ็ตข้อมูลแล้ว กรุณาเริ่มต้นใหม่');
+    
+    // Redirect to authentication page after a short delay
+    setTimeout(() => {
+      navigate('/Screening/AuthenPatient', { replace: true });
+    }, 2000);
+  };
+
+  // Function to clear only patient cache and refresh
+  const clearPatientCache = () => {
+    localStorage.removeItem('authenticatedPatient');
+    const newPatientData = refreshPatientData();
+    speak(`ข้อมูลผู้ป่วยถูกรีเฟรช ชื่อ ${newPatientData.name}`);
+  };
 
   // ตั้งค่าอายุเริ่มต้นใน vitalSigns
   useEffect(() => {
@@ -234,6 +314,16 @@ const speak = (text: string) => {
       console.log('Age set in vitalSigns:', patientData.age);
     }
   }, [patientData.age, vitalSigns.age]);
+
+  // Debug token status
+  useEffect(() => {
+    console.log('AllProcess - Token status:', {
+      patientToken,
+      stateToken: location.state?.token,
+      localStorageToken: localStorage.getItem('patient_token'),
+      patientData: patientData.name
+    });
+  }, [patientToken, location.state?.token, patientData]);
 
   // Debug input states
   const [debugWeight, setDebugWeight] = useState('');
@@ -1175,6 +1265,31 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
         >
           ✕
         </button>
+      </div>
+      
+      {/* Cache Management Section */}
+      <div className="border-b pb-4 mb-4">
+        <h4 className="font-semibold text-sm mb-2 text-blue-600">Cache Management</h4>
+        <div className="space-y-2">
+          <button
+            onClick={clearPatientCache}
+            className="w-full bg-yellow-500 text-white p-2 rounded hover:bg-yellow-600 text-xs"
+          >
+            🔄 Clear Patient Cache
+          </button>
+          <button
+            onClick={resetAllData}
+            className="w-full bg-red-500 text-white p-2 rounded hover:bg-red-600 text-xs"
+          >
+            🗑️ Reset All Data
+          </button>
+        </div>
+        <div className="mt-2 text-xs text-gray-600">
+          <p>Patient: {patientData.name}</p>
+          <p>ID: {patientData.nationalId}</p>
+          <p>Token: {patientToken ? '✅ มี' : '❌ ไม่มี'}</p>
+          <p>Token (first 10): {patientToken ? patientToken.substring(0, 10) + '...' : 'N/A'}</p>
+        </div>
       </div>
       
       {currentStep === 'weight' ? (

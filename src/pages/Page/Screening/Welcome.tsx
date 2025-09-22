@@ -13,7 +13,7 @@ interface PatientQueue {
   floor?: string;
   currentQueue?: string;
   totalWaiting?: number;
-  status: 'waiting' | 'ready' | 'missed' | 'completed' | 'skipped' | 'in_progress';
+  status: 'waiting' | 'ready' | 'missed' | 'completed' | 'skipped' | 'in_progress' | 'cancelled';
   symptoms?: string;
   // เพิ่ม field ที่ backend ส่งมา
   queue_no?: string;
@@ -77,25 +77,147 @@ const Welcome: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [waitingBefore, setWaitingBefore] = useState<number>(0);
+  const [showSkippedAlert, setShowSkippedAlert] = useState(false);
+  const [loadingRoomDetails, setLoadingRoomDetails] = useState(false); // เพิ่ม loading state สำหรับข้อมูลห้อง
+  
+  // เพิ่ม state สำหรับข้อมูลห้อง
   const [roomSchedule, setRoomSchedule] = useState<any>(null);
   const [roomMaster, setRoomMaster] = useState<any>(null);
+  const [departmentInfo, setDepartmentInfo] = useState<any>(null);
   const [buildingInfo, setBuildingInfo] = useState<any>(null);
   const [floorInfo, setFloorInfo] = useState<any>(null);
-  const [departmentInfo, setDepartmentInfo] = useState<any>(null);
-  const [showSkippedAlert, setShowSkippedAlert] = useState(false);
   
   // เพิ่ม state สำหรับระบบแจ้งเตือนและประวัติ
   const [showQueueReadyAlert, setShowQueueReadyAlert] = useState(false);
   const [showQueueCompletedAlert, setShowQueueCompletedAlert] = useState(false);
   const [queueHistory, setQueueHistory] = useState<PatientQueue[]>([]);
 
+  // เพิ่ม state สำหรับการจัดการคิวใหม่
+  const [showCancelQueueModal, setShowCancelQueueModal] = useState(false);
+  const [hasActiveQueue, setHasActiveQueue] = useState(false);
+  const [queueActionLoading, setQueueActionLoading] = useState(false);
+  
+
+
   // รับ token/queue_id จาก query string
   const token = searchParams.get('token');
   const queueId = searchParams.get('queue_id');
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-  // เพิ่มฟังก์ชันแปลงข้อมูลคิวให้รองรับ field name จาก backend
-  function mapQueueData(raw: any): PatientQueue {
-    console.log('Mapping queue data:', raw);
+  
+  // ฟังก์ชันดึงข้อมูลห้องแบบครบ
+  const fetchRoomDetails = async (roomId: string) => {
+    if (!roomId) return { roomSchedule: null, roomMaster: null, departmentInfo: null, buildingInfo: null, floorInfo: null };
+    
+    setLoadingRoomDetails(true);
+    let roomSchedule = null;
+    let roomMaster = null;
+    let departmentInfo = null;
+    let buildingInfo = null;
+    let floorInfo = null;
+    
+    try {
+      // ดึงข้อมูล room_schedule
+      const roomScheduleRes = await axios.get(`${API_BASE_URL}/api/workplace/room_schedule/${roomId}`);
+      roomSchedule = roomScheduleRes.data;
+      
+      // ดึงข้อมูล room master ถ้ามี roomId
+      if (roomSchedule?.roomId) {
+        try {
+          const roomRes = await axios.get(`${API_BASE_URL}/api/workplace/room/${roomSchedule.roomId}`);
+          roomMaster = roomRes.data;
+          
+          // ดึงข้อมูลแผนกถ้ามี departmentId
+          if (roomMaster?.departmentId) {
+            try {
+              const deptRes = await axios.get(`${API_BASE_URL}/api/workplace/department/${roomMaster.departmentId}`);
+              departmentInfo = deptRes.data;
+            } catch (err) {
+              console.warn(`[WARN] Failed to fetch department ${roomMaster.departmentId}:`, err);
+              // สร้างข้อมูล fallback
+              departmentInfo = {
+                id: roomMaster.departmentId,
+                name: 'แผนกทั่วไป',
+                type: 'department'
+              };
+            }
+          }
+
+          // ดึงข้อมูลอาคารถ้ามี buildingId
+          if (roomMaster?.buildingId) {
+            try {
+              const buildingRes = await axios.get(`${API_BASE_URL}/api/workplace/building/${roomMaster.buildingId}`);
+              buildingInfo = buildingRes.data;
+            } catch (err) {
+              console.warn(`[WARN] Failed to fetch building ${roomMaster.buildingId}:`, err);
+              // ลองหาข้อมูลอาคารที่มีจริงในฐานข้อมูล
+              try {
+                const allBuildingsRes = await axios.get(`${API_BASE_URL}/api/workplace/building`);
+                if (allBuildingsRes.data && allBuildingsRes.data.length > 0) {
+                  buildingInfo = allBuildingsRes.data[0]; // ใช้อาคารแรกที่พบ
+                } else {
+                  // สร้างข้อมูล fallback
+                  buildingInfo = {
+                    id: roomMaster.buildingId,
+                    name: 'อาคารผู้ป่วยนอก',
+                    type: 'building'
+                  };
+                }
+              } catch (fallbackErr) {
+                console.warn('Failed to fetch all buildings:', fallbackErr);
+                buildingInfo = {
+                  id: roomMaster.buildingId,
+                  name: 'อาคารผู้ป่วยนอก',
+                  type: 'building'
+                };
+              }
+            }
+          }
+
+          // ดึงข้อมูลชั้นถ้ามี floorId
+          if (roomMaster?.floorId) {
+            try {
+              const floorRes = await axios.get(`${API_BASE_URL}/api/workplace/floor/${roomMaster.floorId}`);
+              floorInfo = floorRes.data;
+            } catch (err) {
+              console.warn(`[WARN] Failed to fetch floor ${roomMaster.floorId}:`, err);
+              // ลองหาข้อมูลชั้นที่มีจริงในฐานข้อมูล
+              try {
+                const allFloorsRes = await axios.get(`${API_BASE_URL}/api/workplace/floor`);
+                if (allFloorsRes.data && allFloorsRes.data.length > 0) {
+                  floorInfo = allFloorsRes.data[0]; // ใช้ชั้นแรกที่พบ
+                } else {
+                  // สร้างข้อมูล fallback
+                  floorInfo = {
+                    id: roomMaster.floorId,
+                    name: 'ชั้น 1',
+                    type: 'floor'
+                  };
+                }
+              } catch (fallbackErr) {
+                console.warn('Failed to fetch all floors:', fallbackErr);
+                floorInfo = {
+                  id: roomMaster.floorId,
+                  name: 'ชั้น 1',
+                  type: 'floor'
+                };
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`[WARN] Failed to fetch room master ${roomSchedule.roomId}:`, err);
+        }
+      }
+    } catch (err) {
+      console.warn(`[WARN] Failed to fetch room schedule ${roomId}:`, err);
+    } finally {
+      setLoadingRoomDetails(false);
+    }
+    
+    return { roomSchedule, roomMaster, departmentInfo, buildingInfo, floorInfo };
+  };
+  
+  // เพิ่มฟังก์ชันแปลงข้อมูลคิวให้รองรับ field name จาก backend (สอดคล้องกับ DataPatient.tsx)
+  function mapQueueData(raw: any, roomSchedule?: any, roomMaster?: any, departmentInfo?: any, buildingInfo?: any, floorInfo?: any): PatientQueue {
     return {
       id: raw._id || raw.id,
       _id: raw._id,
@@ -111,34 +233,52 @@ const Welcome: React.FC = () => {
       priority: raw.priority,
       room_id: raw.room_id,
       symptoms: raw.symptoms,
-      // ข้อมูลรายละเอียดเพิ่มเติม - ลำดับความสำคัญ: API response > room info > fallback
-      room_name: raw.room_name || raw.room_info?.room_name || raw.room,
-      department_name: raw.department_name || raw.room_info?.department_name || raw.department,
-      building_name: raw.building_name || raw.room_info?.building_name || raw.building,
-      floor_name: raw.floor_name || raw.room_info?.floor_name || raw.floor,
-      room_schedule: raw.room_schedule,
-      room_master: raw.room_master,
-      department_info: raw.department_info,
-      building_info: raw.building_info,
-      floor_info: raw.floor_info,
+      
+      // ข้อมูลรายละเอียดเพิ่มเติม - ใช้ข้อมูลที่มีหรือค่า default
+      room_name: roomMaster?.name || roomSchedule?.roomId || raw.room_name || raw.room || 'ห้องตรวจ 1',
+      department_name: departmentInfo?.name || roomMaster?.department || raw.department_name || raw.department || 'แผนกทั่วไป',
+      building_name: buildingInfo?.name || buildingInfo?.address || roomMaster?.building || raw.building_name || raw.building || 'อาคารผู้ป่วยนอก',
+      floor_name: floorInfo?.name || roomMaster?.floor || raw.floor_name || raw.floor || 'ชั้น 1',
+      
+      room_schedule: roomSchedule || raw.room_schedule,
+      room_master: roomMaster || raw.room_master,
+      department_info: departmentInfo || raw.department_info,
+      building_info: buildingInfo || raw.building_info,
+      floor_info: floorInfo || raw.floor_info,
+      
       // เพิ่ม logs และ actions
       logs: raw.logs || [],
       actions: raw.actions || {},
-      // สำหรับ UI เดิม
+      
+      // สำหรับ UI เดิม - ใช้ข้อมูลที่ map แล้ว
       queueNumber: raw.queue_no,
-      department: raw.department_name || raw.room_info?.department_name || raw.department,
-      room: raw.room_name || raw.room_info?.room_name || raw.room,
+      department: departmentInfo?.name || roomMaster?.department || raw.department_name || raw.department || 'แผนกทั่วไป',
+      room: roomMaster?.name || roomSchedule?.roomId || raw.room_name || raw.room || 'ห้องตรวจ 1',
       estimatedTime: raw.estimatedTime,
       patientName: raw.patientName,
       appointmentType: raw.appointmentType,
-      building: raw.building_name || raw.room_info?.building_name || raw.building,
-      floor: raw.floor_name || raw.room_info?.floor_name || raw.floor,
+      building: buildingInfo?.name || buildingInfo?.address || roomMaster?.building || raw.building_name || raw.building || 'อาคารผู้ป่วยนอก',
+      floor: floorInfo?.name || roomMaster?.floor || raw.floor_name || raw.floor || 'ชั้น 1',
       currentQueue: raw.currentQueue,
       totalWaiting: raw.totalWaiting,
     };
   }
   // ใน useEffect ที่ fetch ข้อมูลคิว ให้ map ข้อมูลด้วยฟังก์ชันนี้
   useEffect(() => {
+    // ตรวจสอบคิวที่ต่ออยู่ก่อน
+    if (token && !queueId) {
+      checkActiveQueue().then((activeQueue) => {
+        if (activeQueue) {
+          // มีคิวที่ต่ออยู่ ให้ redirect ไปที่คิวนั้น
+          setHasActiveQueue(true);
+          window.location.href = `/screening/welcome?token=${token}&queue_id=${activeQueue._id}`;
+          return;
+        } else {
+          setHasActiveQueue(false);
+        }
+      });
+    }
+
     if (token && queueId) {
       setLoading(true);
       setError(null);
@@ -146,15 +286,41 @@ const Welcome: React.FC = () => {
       axios.get(`${API_BASE_URL}/api/queue/queue/${queueId}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
-        .then(res => {
-          console.log('Raw backend response:', res.data); // <<<<< เพิ่ม log ตรงนี้
-          console.log('Room info:', res.data.room_schedule, res.data.room_master, res.data.building_info, res.data.floor_info, res.data.department_info);
-          const q = res.data.queue ? mapQueueData(res.data.queue) : null;
-          console.log('Mapped queue:', q);
-          setAssignedQueue(q);
+        .then(async res => {
+          const queue = res.data.queue;
+          
+          if (queue && queue.room_id) {
+            // ดึงข้อมูลห้องแบบครบถ้วน
+            const roomDetails = await fetchRoomDetails(queue.room_id);
+            console.log('📦 Room details received:', roomDetails);
+            
+            setRoomSchedule(roomDetails.roomSchedule);
+            setRoomMaster(roomDetails.roomMaster);
+            setDepartmentInfo(roomDetails.departmentInfo);
+            setBuildingInfo(roomDetails.buildingInfo);
+            setFloorInfo(roomDetails.floorInfo);
+            
+            const q = mapQueueData(
+              queue,
+              roomDetails.roomSchedule,
+              roomDetails.roomMaster,
+              roomDetails.departmentInfo,
+              roomDetails.buildingInfo,
+              roomDetails.floorInfo
+            );
+            
+            setAssignedQueue(q);
+            setHasActiveQueue(true); // มีคิวที่กำลังใช้งาน
+          } else {
+            // หากไม่มี room_id ให้ใช้ข้อมูลเดิม
+            const mappedQueue = mapQueueData(queue);
+            setAssignedQueue(mappedQueue);
+            setHasActiveQueue(mappedQueue ? true : false); // อัปเดตสถานะตามการมีคิว
+          }
           
           // ตรวจสอบถ้าคิวถูกข้าม
-          if (q?.status === 'skipped') {
+          const finalQueue = queue ? (queue.room_id ? setAssignedQueue : setAssignedQueue) : null;
+          if (finalQueue && assignedQueue?.status === 'skipped') {
             setShowSkippedAlert(true);
             // เล่นเสียงแจ้งเตือน
             playSkippedQueueSound();
@@ -173,28 +339,49 @@ const Welcome: React.FC = () => {
           } else {
             setPatientData(null);
           }
-          setSymptoms(q?.symptoms || '');
+          setSymptoms(queue?.symptoms || '');
           setWaitingBefore(res.data.waiting_before ?? 0);
-          // set roomSchedule, roomMaster ถ้ามีข้อมูล
-          if (res.data.room_schedule) setRoomSchedule(res.data.room_schedule);
-          if (res.data.room_master) setRoomMaster(res.data.room_master);
-          if (res.data.building_info) setBuildingInfo(res.data.building_info);
-          if (res.data.floor_info) setFloorInfo(res.data.floor_info);
-          if (res.data.department_info) setDepartmentInfo(res.data.department_info);
         })
         .catch(() => {
           setError('ไม่สามารถดึงข้อมูลคิวได้');
+          setHasActiveQueue(false); // ไม่มีคิวเมื่อเกิดข้อผิดพลาด
         })
         .finally(() => setLoading(false));
     } else if (location.state?.queue) {
-      const mappedQueue = mapQueueData(location.state.queue);
-      setAssignedQueue(mappedQueue);
+      const queue = location.state.queue;
+      
+      // ถ้ามี room_id ให้ดึงข้อมูลห้องใหม่
+      if (queue.room_id) {
+        fetchRoomDetails(queue.room_id).then(roomDetails => {
+          setRoomSchedule(roomDetails.roomSchedule);
+          setRoomMaster(roomDetails.roomMaster);
+          setDepartmentInfo(roomDetails.departmentInfo);
+          setBuildingInfo(roomDetails.buildingInfo);
+          setFloorInfo(roomDetails.floorInfo);
+          
+          const mappedQueue = mapQueueData(
+            queue,
+            roomDetails.roomSchedule,
+            roomDetails.roomMaster,
+            roomDetails.departmentInfo,
+            roomDetails.buildingInfo,
+            roomDetails.floorInfo
+          );
+          setAssignedQueue(mappedQueue);
+          setHasActiveQueue(true); // มีคิวจาก location state
+        });
+      } else {
+        const mappedQueue = mapQueueData(queue);
+        setAssignedQueue(mappedQueue);
+        setHasActiveQueue(true); // มีคิวจาก location state
+      }
+      
       setPatientData(location.state.patient);
       setSymptoms(location.state.symptoms || '');
       setWaitingBefore(0);
       
       // ตรวจสอบถ้าคิวถูกข้าม
-      if (mappedQueue?.status === 'skipped') {
+      if (queue?.status === 'skipped') {
         setShowSkippedAlert(true);
         // เล่นเสียงแจ้งเตือน
         playSkippedQueueSound();
@@ -209,12 +396,23 @@ const Welcome: React.FC = () => {
   useEffect(() => {
     if (!token || !queueId) return;
     
-    const interval = setInterval(() => {
-      axios.get(`${API_BASE_URL}/api/queue/queue/${queueId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-        .then(res => {
-          const q = res.data.queue ? mapQueueData(res.data.queue) : null;
+    const interval = setInterval(async () => {
+      try {
+        const res = await axios.get(`${API_BASE_URL}/api/queue/queue/${queueId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        const queue = res.data.queue;
+        if (queue && queue.room_id) {
+          // ดึงข้อมูลห้องใหม่สำหรับ polling
+          const roomDetails = await fetchRoomDetails(queue.room_id);
+          const q = mapQueueData(
+            queue,
+            roomDetails.roomSchedule,
+            roomDetails.roomMaster,
+            roomDetails.departmentInfo
+          );
+          
           if (q && q.status !== assignedQueue?.status) {
             setAssignedQueue(q);
             
@@ -225,107 +423,18 @@ const Welcome: React.FC = () => {
               playSkippedQueueSound();
             }
           }
-        })
-        .catch(err => {
-          console.error('Error polling queue status:', err);
-        });
+        }
+      } catch (err) {
+        console.error('Error polling queue status:', err);
+      }
     }, 30000); // ตรวจสอบทุก 30 วินาที
 
     return () => clearInterval(interval);
   }, [token, queueId, assignedQueue?.status, showSkippedAlert]);
 
-  useEffect(() => {
-    if (assignedQueue?.room_id) {
-      console.log('Fetching room data for room_id:', assignedQueue.room_id);
-      
-      // ดึงข้อมูล room_schedule จาก room_id (ObjectId)
-      axios.get(`${API_BASE_URL}/api/workplace/room_schedule/${assignedQueue.room_id}`)
-        .then(res => {
-          console.log('Room schedule data:', res.data);
-          setRoomSchedule(res.data);
-          
-          // ถ้ามี roomId ใน room_schedule ให้ดึงข้อมูล room เพิ่มเติม
-          if (res.data.roomId) {
-            console.log('Fetching room data for roomId:', res.data.roomId);
-            axios.get(`${API_BASE_URL}/api/workplace/room/${res.data.roomId}`)
-              .then(roomRes => {
-                console.log('Room data:', roomRes.data);
-                setRoomMaster(roomRes.data);
-                
-                // ดึงข้อมูล floor จาก floorId
-                if (roomRes.data.floorId) {
-                  console.log('Fetching floor data for floorId:', roomRes.data.floorId);
-                  axios.get(`${API_BASE_URL}/api/workplace/floor/${roomRes.data.floorId}`)
-                    .then(floorRes => {
-                      console.log('Floor data:', floorRes.data);
-                      setFloorInfo(floorRes.data);
-                      
-                      // ดึงข้อมูล building จาก buildingId
-                      if (floorRes.data.buildingId) {
-                        console.log('Fetching building data for buildingId:', floorRes.data.buildingId);
-                        axios.get(`${API_BASE_URL}/api/workplace/building/${floorRes.data.buildingId}`)
-                          .then(buildingRes => {
-                            console.log('Building data:', buildingRes.data);
-                            setBuildingInfo(buildingRes.data);
-                          })
-                          .catch(err => {
-                            console.error('Error fetching building data:', err);
-                            setBuildingInfo(null);
-                          });
-                      }
-                    })
-                    .catch(err => {
-                      console.error('Error fetching floor data:', err);
-                      setFloorInfo(null);
-                    });
-                }
-                
-                // ดึงข้อมูล department จาก departmentId
-                if (roomRes.data.departmentId) {
-                  console.log('Fetching department data for departmentId:', roomRes.data.departmentId);
-                  axios.get(`${API_BASE_URL}/api/workplace/department/${roomRes.data.departmentId}`)
-                    .then(deptRes => {
-                      console.log('Department data:', deptRes.data);
-                      setDepartmentInfo(deptRes.data);
-                    })
-                    .catch(err => {
-                      console.error('Error fetching department data:', err);
-                      setDepartmentInfo(null);
-                    });
-                }
-              })
-              .catch(err => {
-                console.error('Error fetching room data:', err);
-                setRoomMaster(null);
-              });
-          } else {
-            console.log('No roomId found in room_schedule data');
-            setRoomMaster(null);
-          }
-        })
-        .catch(err => {
-          console.error('Error fetching room schedule:', err);
-          setRoomSchedule(null);
-          setRoomMaster(null);
-        });
-    } else {
-      console.log('No room_id found in assignedQueue');
-      setRoomSchedule(null);
-      setRoomMaster(null);
-      setBuildingInfo(null);
-      setFloorInfo(null);
-      setDepartmentInfo(null);
-    }
-  }, [assignedQueue?.room_id]);
-
   // Handle queue completion
   const handleCompleteQueue = () => {
     setCurrentStep('completed');
-  };
-
-  // Handle new queue (กลับไปหน้าคัดกรอง)
-  const handleNewQueue = () => {
-    navigate('/screening');
   };
 
   // เล่นเสียงแจ้งเตือนเมื่อคิวถูกข้าม
@@ -464,20 +573,36 @@ const Welcome: React.FC = () => {
   useEffect(() => {
     if (!token || !queueId) return;
     
-    const interval = setInterval(() => {
-      axios.get(`${API_BASE_URL}/api/queue/queue/${queueId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-        .then(res => {
-          const q = res.data.queue ? mapQueueData(res.data.queue) : null;
+    const interval = setInterval(async () => {
+      try {
+        const res = await axios.get(`${API_BASE_URL}/api/queue/queue/${queueId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        const queue = res.data.queue;
+        if (queue) {
+          let q;
+          if (queue.room_id) {
+            // ดึงข้อมูลห้องใหม่
+            const roomDetails = await fetchRoomDetails(queue.room_id);
+            q = mapQueueData(
+              queue,
+              roomDetails.roomSchedule,
+              roomDetails.roomMaster,
+              roomDetails.departmentInfo
+            );
+          } else {
+            q = mapQueueData(queue);
+          }
+          
           if (q && q.status !== assignedQueue?.status) {
             checkQueueStatusChange(q.status, assignedQueue?.status || '');
             setAssignedQueue(q);
           }
-        })
-        .catch(err => {
-          console.error('Error polling queue status:', err);
-        });
+        }
+      } catch (err) {
+        console.error('Error polling queue status:', err);
+      }
     }, 30000); // ตรวจสอบทุก 30 วินาที
 
     return () => clearInterval(interval);
@@ -485,17 +610,11 @@ const Welcome: React.FC = () => {
 
   // ฟังก์ชันดึงประวัติคิว - พร้อมรายละเอียด logs
   const fetchQueueHistory = async () => {
-    
     try {
-      console.log(`[DEBUG] Fetching queue history from API: ${API_BASE_URL}/api/queue/all_queues`);
-      
       // ใช้ API all_queues โดยตรง
       const response = await axios.get(`${API_BASE_URL}/api/queue/all_queues`);
-      console.log(`[DEBUG] API response:`, response.data);
       
       if (response.data && Array.isArray(response.data) && response.data.length > 0) {
-        console.log(`[DEBUG] First queue sample:`, response.data[0]);
-        
         const detailedHistory = response.data.map((queue: any) => {
           // คำนวณเวลารอ
           let waitTime = 0;
@@ -508,8 +627,6 @@ const Welcome: React.FC = () => {
             const now = new Date();
             waitTime = Math.round((now.getTime() - queueTime.getTime()) / (1000 * 60));
           }
-          
-          console.log(`[DEBUG] Processing queue ${queue._id}: room_name=${queue.room_name}, department_name=${queue.department_name}, building_name=${queue.building_name}, floor_name=${queue.floor_name}`);
           
           return {
             _id: queue._id,
@@ -534,18 +651,12 @@ const Welcome: React.FC = () => {
         // เรียงลำดับตามวันที่ล่าสุด
         detailedHistory.sort((a, b) => new Date(b.created_at || b.queue_time).getTime() - new Date(a.created_at || a.queue_time).getTime());
         const mappedHistory = detailedHistory.map(mapQueueData);
-        console.log(`[DEBUG] Mapped queue history:`, mappedHistory);
-        console.log(`[DEBUG] First mapped queue sample:`, mappedHistory[0]);
         setQueueHistory(mappedHistory);
-        console.log(`[DEBUG] Successfully loaded ${detailedHistory.length} queue history entries`);
       } else {
         throw new Error('No real queue data available');
       }
     } catch (error) {
-      console.error('[ERROR] Failed to load queue history:', error);
-      
       // สร้างข้อมูลจำลองที่หลากหลายสำหรับทดสอบ
-      console.log(`[DEBUG] Creating comprehensive sample data for testing`);
       const sampleHistory = [
         {
           _id: 'sample_current',
@@ -554,10 +665,10 @@ const Welcome: React.FC = () => {
           status: assignedQueue?.status || 'waiting',
           triage_level: assignedQueue?.triage_level || 2,
           priority: assignedQueue?.priority || 2,
-          room_name: assignedQueue?.room_name || roomMaster?.name || roomSchedule?.name || 'ห้องตรวจทั่วไป 1',
-          department_name: assignedQueue?.department_name || departmentInfo?.name || 'แผนกผู้ป่วยนอก',
-          building_name: assignedQueue?.building_name || buildingInfo?.address || buildingInfo?.name || 'อาคาร A',
-          floor_name: assignedQueue?.floor_name || floorInfo?.name || 'ชั้น 1',
+          room_name: assignedQueue?.room_name || 'ห้องตรวจทั่วไป 1',
+          department_name: assignedQueue?.department_name || 'แผนกผู้ป่วยนอก',
+          building_name: assignedQueue?.building_name || 'อาคาร A',
+          floor_name: assignedQueue?.floor_name || 'ชั้น 1',
           symptoms: assignedQueue?.symptoms || symptoms || 'เป็นไข้ มีอาการปวดหัว คลื่นไส้',
           created_at: new Date().toISOString(),
           completed_at: assignedQueue?.status === 'completed' ? new Date().toISOString() : undefined,
@@ -650,6 +761,45 @@ const Welcome: React.FC = () => {
     return mins > 0 ? `${hours} ชม. ${mins} นาที` : `${hours} ชม.`;
   };
 
+  // ฟังก์ชันจัดรูปแบบเวลาทำการ
+  const formatOperatingTime = (timeString: string) => {
+    if (!timeString) return '';
+    
+    // ถ้าเป็นรูปแบบ HH:MM
+    if (timeString.match(/^\d{2}:\d{2}$/)) {
+      return timeString;
+    }
+    
+    // ถ้าเป็นรูปแบบอื่น ลองแปลงเป็น Date แล้วจัดรูปแบบ
+    try {
+      const date = new Date(`2000-01-01T${timeString}`);
+      return date.toLocaleTimeString('th-TH', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+    } catch {
+      return timeString;
+    }
+  };
+
+  // ฟังก์ชันสร้างข้อความเวลาทำการ
+  const getOperatingHoursText = (roomSchedule: any) => {
+    if (!roomSchedule) return '';
+    
+    const openTime = formatOperatingTime(roomSchedule.openTime);
+    const closeTime = formatOperatingTime(roomSchedule.closeTime);
+    
+    if (!openTime && !closeTime) return '';
+    
+    // กรณีเปิด 24 ชั่วโมง
+    if (openTime === '00:00' && closeTime === '23:59') {
+      return 'เปิดให้บริการ 24 ชั่วโมง';
+    }
+    
+    return `${openTime || '08:00'} - ${closeTime || '17:00'}`;
+  };
+
   // Get current time
   const getCurrentTime = () => {
     return new Date().toLocaleTimeString('th-TH', { 
@@ -658,10 +808,278 @@ const Welcome: React.FC = () => {
     });
   };
 
+  // ฟังก์ชันตรวจสอบคิวที่ต่ออยู่
+  const checkActiveQueue = async () => {
+    if (!token) return false;
+    
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/queue/patient/check-active-queue`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (response.data.has_active_queue) {
+        setHasActiveQueue(true);
+        return response.data.queue;
+      } else {
+        setHasActiveQueue(false);
+        return null;
+      }
+    } catch (error) {
+      console.error('Error checking active queue:', error);
+      setHasActiveQueue(false);
+      return null;
+    }
+  };
+
+  // ฟังก์ชันยกเลิกคิว
+  const handleCancelQueue = async () => {
+    if (!token) {
+      setError('ไม่พบ token การยืนยันตัวตน');
+      return;
+    }
+    
+    // ตรวจสอบสถานะคิวก่อนยกเลิก
+    if (!hasActiveQueue || !assignedQueue) {
+      setError('ไม่พบคิวที่สามารถยกเลิกได้');
+      setShowCancelQueueModal(false);
+      return;
+    }
+    
+    if (assignedQueue?.status === 'in_progress') {
+      setError('คิวของคุณกำลังถูกเรียกตรวจ ไม่สามารถยกเลิกได้ กรุณารอให้การตรวจเสร็จสิ้น');
+      setShowCancelQueueModal(false);
+      return;
+    }
+    
+    setQueueActionLoading(true);
+    try {
+      // ตรวจสอบสถานะคิวล่าสุดจาก server ก่อน
+      const checkResponse = await axios.get(
+        `${API_BASE_URL}/api/queue/patient/check-active-queue`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      if (!checkResponse.data.has_active_queue) {
+        setError('ไม่พบคิวที่สามารถยกเลิกได้ คิวอาจถูกยกเลิกหรือเสร็จสิ้นแล้ว');
+        setHasActiveQueue(false);
+        setShowCancelQueueModal(false);
+        setQueueActionLoading(false);
+        return;
+      }
+      
+      const currentQueue = checkResponse.data.queue;
+      console.log('Current queue from server:', currentQueue);
+      console.log('Current queue status:', currentQueue.status);
+      
+      // อัปเดตสถานะคิวจาก server เสมอ
+      if (assignedQueue && currentQueue._id === assignedQueue._id) {
+        setAssignedQueue(prev => prev ? { 
+          ...prev, 
+          status: currentQueue.status,
+          // อัปเดตข้อมูลอื่นๆ จาก server ด้วย
+          queue_no: currentQueue.queue_no,
+          priority: currentQueue.priority,
+          triage_level: currentQueue.triage_level
+        } : null);
+      }
+      
+      if (currentQueue.status === 'in_progress') {
+        setError('คิวของคุณกำลังถูกเรียกตรวจ ไม่สามารถยกเลิกได้ กรุณารอให้การตรวจเสร็จสิ้น');
+        setShowCancelQueueModal(false);
+        setQueueActionLoading(false);
+        return;
+      }
+      
+      if (!['waiting'].includes(currentQueue.status)) {
+        setError(`ไม่สามารถยกเลิกคิวที่มีสถานะ "${currentQueue.status}" ได้`);
+        setShowCancelQueueModal(false);
+        setQueueActionLoading(false);
+        return;
+      }
+      
+      console.log('Cancelling queue with token:', token);
+      console.log('Current queue state from server:', currentQueue);
+      
+      const response = await axios.post(
+        `${API_BASE_URL}/api/queue/queue/cancel`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      console.log('Cancel queue response:', response.data);
+      
+      if (response.data.success) {
+        // อัปเดตสถานะ
+        setHasActiveQueue(false);
+        if (assignedQueue) {
+          setAssignedQueue({
+            ...assignedQueue,
+            status: 'cancelled' as any
+          });
+        }
+        alert('ยกเลิกคิวเรียบร้อยแล้ว คุณสามารถขอคิวใหม่ได้');
+        
+        // ไม่เปิด modal อัตโนมัติ ให้ผู้ใช้กดปุ่มเอง
+      }
+    } catch (error: any) {
+      console.error('Error cancelling queue:', error);
+      console.error('Error response:', error.response?.data);
+      console.error('Error status:', error.response?.status);
+      
+      // Handle specific error cases
+      if (error.response?.status === 400) {
+        const errorData = error.response.data;
+        const errorMessage = errorData?.error || errorData?.message;
+        
+        if (errorMessage === 'ไม่พบคิวที่สามารถยกเลิกได้') {
+          setError('ไม่พบคิวที่สามารถยกเลิกได้ อาจเป็นเพราะคิวถูกยกเลิกแล้วหรือเสร็จสิ้นแล้ว');
+          setHasActiveQueue(false);
+          setAssignedQueue(null);
+        } else if (errorMessage === 'ไม่สามารถยกเลิกคิวที่กำลังตรวจอยู่ได้' || errorMessage?.includes('กำลังตรวจอยู่')) {
+          setError('คิวของคุณกำลังถูกเรียกตรวจ ไม่สามารถยกเลิกได้ กรุณารอให้การตรวจเสร็จสิ้น');
+          // อัปเดตสถานะคิวเป็น in_progress
+          setAssignedQueue(prev => prev ? { ...prev, status: 'in_progress' } : null);
+        } else {
+          setError(errorMessage || 'ไม่สามารถยกเลิกคิวได้');
+        }
+      } else if (error.response?.status === 401) {
+        setError('การยืนยันตัวตนหมดอายุ กรุณาล็อกอินใหม่');
+        // นำไปหน้า login หลังจาก delay
+        setTimeout(() => {
+          navigate('/screening');
+        }, 2000);
+      } else if (error.response?.status === 500) {
+        setError('เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์ กรุณาลองใหม่อีกครั้ง');
+      } else {
+        setError('เกิดข้อผิดพลาดในการติดต่อเซิร์ฟเวอร์ กรุณาตรวจสอบการเชื่อมต่อ');
+      }
+    } finally {
+      setQueueActionLoading(false);
+      setShowCancelQueueModal(false);
+    }
+  };
+
   // Queue Display Step
   if (currentStep === 'queue-display') {
+    // แสดง loading state
+    if (loading) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-500 via-purple-600 to-pink-500 flex flex-col px-4 py-6 relative overflow-hidden">
+          <div className="absolute inset-0">
+            <div className="absolute top-10 right-10 w-20 h-20 bg-white/10 rounded-full animate-bounce delay-500"></div>
+            <div className="absolute bottom-20 left-10 w-16 h-16 bg-white/10 rounded-full animate-bounce delay-1000"></div>
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-white/5 rounded-full animate-pulse"></div>
+          </div>
+          
+          <div className="relative z-10 flex flex-col items-center justify-center h-full">
+            <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-white/30 text-center">
+              <div className="w-16 h-16 mx-auto mb-4">
+                <div className="w-16 h-16 border-4 border-blue-300 border-t-blue-600 rounded-full animate-spin"></div>
+              </div>
+              <h2 className="text-xl font-bold text-gray-800 mb-2">กำลังโหลดข้อมูลคิว...</h2>
+              <p className="text-gray-600">กรุณารอสักครู่</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // แสดง error state
+    if (error) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-red-500 via-pink-600 to-purple-500 flex flex-col px-4 py-6 relative overflow-hidden">
+          <div className="absolute inset-0">
+            <div className="absolute top-10 right-10 w-20 h-20 bg-white/10 rounded-full animate-bounce delay-500"></div>
+            <div className="absolute bottom-20 left-10 w-16 h-16 bg-white/10 rounded-full animate-bounce delay-1000"></div>
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-white/5 rounded-full animate-pulse"></div>
+          </div>
+          
+          <div className="relative z-10 flex flex-col items-center justify-center h-full">
+            <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-white/30 text-center max-w-md">
+              <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+                <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-bold text-gray-800 mb-2">เกิดข้อผิดพลาด</h2>
+              <p className="text-gray-600 mb-4">{error}</p>
+              <div className="space-y-3">
+                <button
+                  onClick={() => window.location.reload()}
+                  className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg hover:shadow-xl active:scale-95 transition-all"
+                >
+                  ลองใหม่อีกครั้ง
+                </button>
+                <button
+                  onClick={() => navigate('/')}
+                  disabled={queueActionLoading}
+                  className="w-full bg-white border-2 border-gray-300 hover:bg-gray-50 disabled:bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-xl transition-all"
+                >
+                  {queueActionLoading ? '⏳ กำลังดำเนินการ...' : 'กลับไปหน้าหลัก'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-500 via-purple-600 to-pink-500 flex flex-col px-4 py-6 relative overflow-hidden">
+      <>
+        {/* Cancel Queue Modal */}
+        {showCancelQueueModal && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold text-gray-800 mb-2">ยกเลิกคิว</h3>
+                <p className="text-gray-600 text-sm">คุณแน่ใจหรือไม่ที่ต้องการยกเลิกคิวนี้?</p>
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-6">
+                <div className="flex items-start space-x-3">
+                  <svg className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="text-yellow-800 text-sm">
+                    <p className="font-medium mb-1">คิวหมายเลข: {assignedQueue?.queue_no}</p>
+                    <p>หากยกเลิกแล้ว คุณสามารถขอคิวใหม่ได้ทันที</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowCancelQueueModal(false)}
+                  disabled={queueActionLoading}
+                  className="flex-1 bg-gray-100 text-gray-700 font-bold py-3 px-4 rounded-xl hover:bg-gray-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  ไม่ยกเลิก
+                </button>
+                <button
+                  onClick={handleCancelQueue}
+                  disabled={queueActionLoading}
+                  className="flex-1 bg-gradient-to-r from-red-500 to-red-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg hover:shadow-xl active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {queueActionLoading ? (
+                    <div className="flex items-center justify-center space-x-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>กำลังยกเลิก...</span>
+                    </div>
+                  ) : (
+                    'ยืนยันยกเลิก'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="min-h-screen bg-gradient-to-br from-blue-500 via-purple-600 to-pink-500 flex flex-col px-4 py-6 relative overflow-hidden">
         {/* Background Effects */}
         <div className="absolute inset-0">
           <div className="absolute top-10 right-10 w-20 h-20 bg-white/10 rounded-full animate-bounce delay-500"></div>
@@ -692,7 +1110,7 @@ const Welcome: React.FC = () => {
                 </svg>
                 <div className="flex-1">
                   <p className="text-green-800 font-bold text-lg">🔔 ถึงคิวแล้ว!</p>
-                  <p className="text-green-700 text-sm">คิว {assignedQueue?.queue_no} กรุณาเข้าพบแพทย์ที่ห้อง {roomMaster?.name}</p>
+                  <p className="text-green-700 text-sm">คิว {assignedQueue?.queue_no} กรุณาเข้าพบแพทย์ที่ห้อง {assignedQueue?.room_name || 'ห้องตรวจ'}</p>
                 </div>
                 <button
                   onClick={() => setShowQueueReadyAlert(false)}
@@ -749,22 +1167,13 @@ const Welcome: React.FC = () => {
                   </svg>
                 </button>
               </div>
-              <div className="mt-3 flex flex-col sm:flex-row gap-2">
-                <button
-                  onClick={() => navigate('/screening')}
-                  className="flex-1 bg-red-600 text-white font-bold py-2 px-4 rounded-xl hover:bg-red-700 transition-colors flex items-center justify-center space-x-2"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  <span>ขอรับคิวใหม่</span>
-                </button>
+              <div className="mt-3 flex justify-center">
                 <button
                   onClick={() => {
                     // Navigate to contact or help page
                     window.location.href = 'tel:1111';
                   }}
-                  className="flex-1 bg-white border-2 border-red-300 text-red-700 font-bold py-2 px-4 rounded-xl hover:bg-red-50 transition-colors flex items-center justify-center space-x-2"
+                  className="bg-white border-2 border-red-300 text-red-700 font-bold py-2 px-6 rounded-xl hover:bg-red-50 transition-colors flex items-center justify-center space-x-2"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
@@ -791,17 +1200,29 @@ const Welcome: React.FC = () => {
           )}
 
           {/* Queue Number Display */}
-          <div className={`${assignedQueue?.status === 'skipped' 
-            ? 'bg-gradient-to-r from-red-600 to-red-700' 
-            : 'bg-gradient-to-r from-blue-600 to-purple-700'
+          <div className={`${
+            assignedQueue?.status === 'cancelled' ? 'bg-gradient-to-r from-red-600 to-red-700' :
+            assignedQueue?.status === 'skipped' ? 'bg-gradient-to-r from-orange-600 to-orange-700' :
+            'bg-gradient-to-r from-blue-600 to-purple-700'
           } rounded-3xl p-8 mb-6 text-center shadow-2xl border border-white/30`}>
             <p className="text-white/80 text-lg mb-3 font-medium">
-              {assignedQueue?.status === 'skipped' ? 'คิวที่ถูกข้าม' : 'หมายเลขคิวของคุณ'}
+              {assignedQueue?.status === 'cancelled' ? 'คิวที่ถูกยกเลิก' :
+               assignedQueue?.status === 'skipped' ? 'คิวที่ถูกข้าม' : 
+               'หมายเลขคิวของคุณ'}
             </p>
-            <div className="text-6xl font-black text-white mb-4 tracking-wider drop-shadow-lg">
+            <div className={`text-6xl font-black mb-4 tracking-wider drop-shadow-lg ${
+              assignedQueue?.status === 'cancelled' ? 'text-red-400' :
+              assignedQueue?.status === 'skipped' ? 'text-orange-400' :
+              'text-white'
+            }`}>
               {assignedQueue?.queue_no || 'A001'}
             </div>
-            {assignedQueue?.status === 'skipped' ? (
+            {assignedQueue?.status === 'cancelled' ? (
+              <div className="bg-red-800/30 rounded-2xl p-4 mb-4">
+                <p className="text-white font-semibold text-lg mb-2">❌ คิวนี้ถูกยกเลิกแล้ว</p>
+                <p className="text-white/90 text-sm">กรุณาไปสแกนและคัดกรองใหม่ที่จุดบริการ</p>
+              </div>
+            ) : assignedQueue?.status === 'skipped' ? (
               <div className="bg-red-800/30 rounded-2xl p-4 mb-4">
                 <p className="text-white font-semibold text-lg mb-2">❌ คิวนี้ถูกข้ามแล้ว</p>
                 <p className="text-white/90 text-sm">กรุณาติดต่อเจ้าหน้าที่หรือขอรับคิวใหม่</p>
@@ -836,7 +1257,7 @@ const Welcome: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="font-bold text-gray-800 text-xl">
-                    {assignedQueue?.department_name || assignedQueue?.department || departmentInfo?.name || roomMaster?.department || roomSchedule?.room_type || 'แผนกทั่วไป'}
+                    {assignedQueue?.department_name || assignedQueue?.department || 'แผนกทั่วไป'}
                   </h3>
                   <p className="text-gray-600 text-sm">แผนกที่ AI แนะนำ</p>
                 </div>
@@ -855,25 +1276,49 @@ const Welcome: React.FC = () => {
                     <div className="flex justify-between">
                       <span className="text-gray-600">อาคาร:</span>
                       <span className="font-semibold text-blue-600">
-                        {assignedQueue?.building_name || assignedQueue?.building || buildingInfo?.name || roomMaster?.building || 'อาคารหลัก'}
+                        {assignedQueue?.building_name || assignedQueue?.building || 'อาคารหลัก'}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">ชั้น:</span>
                       <span className="font-semibold text-blue-600">
-                        {assignedQueue?.floor_name || assignedQueue?.floor || floorInfo?.name || roomMaster?.floor || 'ชั้น 1'}
+                        {assignedQueue?.floor_name || assignedQueue?.floor || 'ชั้น 1'}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">ห้อง:</span>
                       <span className="font-semibold text-blue-600">
-                        {assignedQueue?.room_name || assignedQueue?.room || roomMaster?.name || roomSchedule?.roomId || 'ห้องตรวจ 1'}
+                        {loadingRoomDetails ? (
+                          <span className="flex items-center">
+                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            กำลังโหลด...
+                          </span>
+                        ) : (
+                          <>
+                            {assignedQueue?.room_name || assignedQueue?.room || 'ห้องตรวจ 1'}
+                          </>
+                        )}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">แผนก:</span>
                       <span className="font-semibold text-blue-600">
-                        {assignedQueue?.department_name || assignedQueue?.department || departmentInfo?.name || roomMaster?.department || roomSchedule?.room_type || 'แผนกทั่วไป'}
+                        {loadingRoomDetails ? (
+                          <span className="flex items-center">
+                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            กำลังโหลด...
+                          </span>
+                        ) : (
+                          <>
+                            {assignedQueue?.department_name || assignedQueue?.department || 'แผนกทั่วไป'}
+                          </>
+                        )}
                       </span>
                     </div>
                   </div>
@@ -886,24 +1331,55 @@ const Welcome: React.FC = () => {
                     เวลาเปิดให้บริการ
                   </p>
                   <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">เปิด:</span>
-                      <span className="font-semibold text-green-600">{roomSchedule?.openTime || '08:00'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">ปิด:</span>
-                      <span className="font-semibold text-red-600">{roomSchedule?.closeTime || '17:00'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">วันที่:</span>
-                      <span className="font-semibold text-blue-600">{roomSchedule?.date || new Date().toLocaleDateString('th-TH')}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">สถานะ:</span>
-                      <span className={`font-semibold ${roomSchedule?.isActive ? 'text-green-600' : 'text-red-600'}`}>
-                        {roomSchedule?.isActive ? 'เปิดให้บริการ' : 'ปิดให้บริการ'}
-                      </span>
-                    </div>
+                    {(roomSchedule || assignedQueue?.room_schedule) ? (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">เปิด:</span>
+                          <span className="font-semibold text-green-600">
+                            {(roomSchedule || assignedQueue?.room_schedule)?.openTime || '08:00'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">ปิด:</span>
+                          <span className="font-semibold text-red-600">
+                            {(roomSchedule || assignedQueue?.room_schedule)?.closeTime || '17:00'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">วันที่:</span>
+                          <span className="font-semibold text-blue-600">{new Date().toLocaleDateString('th-TH')}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">สถานะ:</span>
+                          <span className="font-semibold text-green-600">
+                            {(roomSchedule || assignedQueue?.room_schedule)?.isActive ? 
+                              getOperatingHoursText(roomSchedule || assignedQueue?.room_schedule) : 
+                              'ปิดให้บริการ'}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">เปิด:</span>
+                          <span className="font-semibold text-green-600">08:00</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">ปิด:</span>
+                          <span className="font-semibold text-red-600">17:00</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">วันที่:</span>
+                          <span className="font-semibold text-blue-600">{new Date().toLocaleDateString('th-TH')}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">สถานะ:</span>
+                          <span className="font-semibold text-green-600">
+                            เปิดให้บริการ
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -966,7 +1442,11 @@ const Welcome: React.FC = () => {
                   <div className="grid grid-cols-1 gap-2">
                     <div className="flex justify-between">
                       <span className="text-gray-600">หมายเลขคิว:</span>
-                      <span className="font-semibold text-blue-600">{assignedQueue?.queue_no || assignedQueue?.queueNumber || 'A001'}</span>
+                      <span className={`font-semibold ${
+                        assignedQueue?.status === 'cancelled' ? 'text-red-600' :
+                        assignedQueue?.status === 'skipped' ? 'text-orange-600' :
+                        'text-blue-600'
+                      }`}>{assignedQueue?.queue_no || assignedQueue?.queueNumber || 'A001'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">สถานะ:</span>
@@ -974,12 +1454,14 @@ const Welcome: React.FC = () => {
                         assignedQueue?.status === 'waiting' ? 'text-yellow-600' :
                         assignedQueue?.status === 'in_progress' ? 'text-blue-600' :
                         assignedQueue?.status === 'completed' ? 'text-green-600' :
-                        assignedQueue?.status === 'skipped' ? 'text-red-600' :
+                        assignedQueue?.status === 'cancelled' ? 'text-red-600' :
+                        assignedQueue?.status === 'skipped' ? 'text-orange-600' :
                         'text-gray-600'
                       }`}>
                         {assignedQueue?.status === 'waiting' ? 'รอเรียก' :
                          assignedQueue?.status === 'in_progress' ? 'กำลังตรวจ' :
                          assignedQueue?.status === 'completed' ? 'เสร็จสิ้น' :
+                         assignedQueue?.status === 'cancelled' ? 'ยกเลิกแล้ว' :
                          assignedQueue?.status === 'skipped' ? 'ถูกข้าม' :
                          'ไม่ทราบสถานะ'}
                       </span>
@@ -1124,10 +1606,15 @@ const Welcome: React.FC = () => {
                               queue.status === 'completed' ? 'bg-green-500' :
                               queue.status === 'in_progress' ? 'bg-blue-500' :
                               queue.status === 'waiting' ? 'bg-yellow-500' :
-                              queue.status === 'skipped' ? 'bg-red-500' :
+                              queue.status === 'cancelled' ? 'bg-red-500' :
+                              queue.status === 'skipped' ? 'bg-orange-500' :
                               'bg-gray-500'
                             }`}></div>
-                            <h4 className="font-bold text-gray-800">คิว {queue.queue_no}</h4>
+                            <h4 className={`font-bold ${
+                              queue.status === 'cancelled' ? 'text-red-600' :
+                              queue.status === 'skipped' ? 'text-orange-600' :
+                              'text-gray-800'
+                            }`}>คิว {queue.queue_no}</h4>
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                               queue.priority === 1 ? 'bg-red-100 text-red-800' :
                               queue.priority === 2 ? 'bg-yellow-100 text-yellow-800' :
@@ -1136,7 +1623,7 @@ const Welcome: React.FC = () => {
                             }`}>
                               {queue.priority === 1 ? 'เร่งด่วน' :
                                queue.priority === 2 ? 'ด่วน' :
-                               queue.priority === 3 ? 'ปกติ' : 'ไม่ระบุ'}
+                               queue.priority === 3 ? 'ปกติ' : 'ปกติ'}
                             </span>
                           </div>
                           <div className="text-right">
@@ -1145,12 +1632,15 @@ const Welcome: React.FC = () => {
                               queue.status === 'in_progress' ? 'text-blue-600' :
                               queue.status === 'waiting' ? 'text-yellow-600' :
                               queue.status === 'skipped' ? 'text-red-600' :
-                              'text-gray-600'
+                              queue.status === 'cancelled' ? 'text-red-600' 
+
+                              : 'text-gray-600'
                             }`}>
                               {queue.status === 'completed' ? 'เสร็จสิ้น' :
                                queue.status === 'in_progress' ? 'กำลังตรวจ' :
-                               queue.status === 'waiting' ? 'รอตรวจ' :
-                               queue.status === 'skipped' ? 'ข้าม' : 'ไม่ระบุ'}
+                               queue.status === 'waiting' ? 'รอเรียก' :
+                               queue.status === 'skipped' ? 'ข้าม' : 
+                               queue.status === 'cancelled' ? 'ยกเลิกแล้ว' : 'ไม่ทราบสถานะ'}
                             </div>
                             {queue.queue_time && (
                               <div className="text-xs text-gray-500">
@@ -1271,6 +1761,10 @@ const Welcome: React.FC = () => {
                     <span className="bg-yellow-200 text-yellow-800 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold mr-3 mt-0.5 flex-shrink-0">4</span>
                     <span>หากมีอาการเปลี่ยนแปลงหรือเร่งด่วน แจ้งเจ้าหน้าที่ทันที</span>
                   </li>
+                  <li className="flex items-start">
+                    <span className="bg-yellow-200 text-yellow-800 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold mr-3 mt-0.5 flex-shrink-0">5</span>
+                    <span>เวลาทำการ: <strong>{(roomSchedule || assignedQueue?.room_schedule) ? getOperatingHoursText(roomSchedule || assignedQueue?.room_schedule) : 'เปิดให้บริการ 24 ชั่วโมง'}</strong></span>
+                  </li>
                 </ul>
               </div>
             )}
@@ -1289,19 +1783,70 @@ const Welcome: React.FC = () => {
                 </svg>
                 <span>เสร็จสิ้น</span>
               </button>
+
+              {/* Queue management buttons - เหลือเฉพาะปุ่มยกเลิกคิว */}
+              {(hasActiveQueue && assignedQueue?.status && ['waiting'].includes(assignedQueue.status)) && (
+                <div className="flex justify-center">
+                  <button
+                    onClick={() => setShowCancelQueueModal(true)}
+                    className="bg-gradient-to-r from-red-500 to-red-600 text-white font-bold py-4 px-6 rounded-2xl shadow-xl hover:shadow-2xl active:scale-95 transition-all flex items-center justify-center space-x-2 border border-white/30"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    <span>ยกเลิกคิว</span>
+                  </button>
+                </div>
+              )}
+              
+              {/* แสดงข้อความเมื่อไม่มีคิวหรือคิวถูกยกเลิก */}
+              {(!hasActiveQueue || assignedQueue?.status === 'cancelled') && (
+                <div className={`${
+                  assignedQueue?.status === 'cancelled' 
+                    ? 'bg-red-100 border-2 border-red-300' 
+                    : 'bg-blue-100 border-2 border-blue-300'
+                } rounded-xl p-4`}>
+                  <div className="flex flex-col items-center space-y-3">
+                    <svg className={`w-8 h-8 ${
+                      assignedQueue?.status === 'cancelled' ? 'text-red-600' : 'text-blue-600'
+                    }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    <p className={`${
+                      assignedQueue?.status === 'cancelled' ? 'text-red-800' : 'text-blue-800'
+                    } font-medium text-center`}>
+                      {assignedQueue?.status === 'cancelled' 
+                        ? 'คิวของคุณถูกยกเลิกแล้ว กรุณาไปสแกนใหม่ที่จุดบริการ' 
+                        : 'คุณไม่มีคิวในขณะนี้ กรุณาไปสแกนที่จุดบริการ'}
+                    </p>
+                  </div>
+                </div>
+              )}
+              
+              {/* แสดงข้อความเมื่อกำลังตรวจ */}
+              {hasActiveQueue && assignedQueue?.status === 'in_progress' && (
+                <div className="bg-green-100 border-2 border-green-300 rounded-xl p-4">
+                  <div className="flex items-center justify-center space-x-2">
+                    <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-green-800 font-medium">กำลังตรวจอยู่ - ไม่สามารถจัดการคิวได้</span>
+                  </div>
+                </div>
+              )}
+              
+              {/* แสดงข้อความเมื่อคิวเสร็จสิ้น */}
+              {(hasActiveQueue && assignedQueue?.status === 'completed') && (
+                <div className="bg-green-100 border-2 border-green-300 rounded-xl p-4">
+                  <div className="flex flex-col items-center space-y-3">
+                    <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-green-800 font-medium text-center">การตรวจเสร็จสิ้นแล้ว กรุณาไปสแกนใหม่ที่จุดบริการ</p>
+                  </div>
+                </div>
+              )}
               
               {/* Additional action buttons */}
-              <div className="grid grid-cols-3 gap-3">
-                <button
-                  onClick={() => navigate('/screening')}
-                  className="bg-white/20 backdrop-blur-sm text-white font-semibold py-3 px-4 rounded-xl border border-white/30 hover:bg-white/30 active:scale-95 transition-all flex items-center justify-center space-x-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                  <span>คิวใหม่</span>
-                </button>
-                
+              <div className="grid grid-cols-2 gap-3">
                 <button
                   onClick={fetchQueueHistory}
                   className="bg-white/20 backdrop-blur-sm text-white font-semibold py-3 px-4 rounded-xl border border-white/30 hover:bg-white/30 active:scale-95 transition-all flex items-center justify-center space-x-2"
@@ -1342,11 +1887,12 @@ const Welcome: React.FC = () => {
               </a>
             </div>
             <p className="text-white/50 text-xs">
-              Smart Medical AI System v2.0.0
+              Smart Inpatient Screening Queueing System
             </p>
           </div>
         </div>
-      </div>
+        </div>
+      </>
     );
   }
 
@@ -1401,55 +1947,17 @@ const Welcome: React.FC = () => {
             </div>
           </div>
 
-          {/* Rating Section */}
-          <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-6 mb-8 shadow-xl border border-white/30">
-            <h3 className="text-gray-800 font-bold text-lg mb-4">ให้คะแนนการบริการ</h3>
-            <div className="flex justify-center space-x-2 mb-4">
-              {[1, 2, 3, 4, 5].map((star) => (
-                <button
-                  key={star}
-                  className="w-10 h-10 text-yellow-400 hover:text-yellow-500 transition-colors"
-                >
-                  <svg fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                  </svg>
-                </button>
-              ))}
-            </div>
-            <p className="text-gray-600 text-sm">แตะดาวเพื่อให้คะแนน</p>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="space-y-4">
-            <button
-              onClick={handleNewQueue}
-              className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white font-bold py-4 px-6 rounded-2xl shadow-xl hover:shadow-2xl active:scale-95 transition-all flex items-center justify-center space-x-3 border border-white/30"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              <span>รับคิวใหม่</span>
-            </button>
-            
-            <button
-              onClick={() => navigate('/')}
-              className="w-full bg-white/20 backdrop-blur-sm text-white font-bold py-3 px-6 rounded-xl hover:bg-white/30 transition-all border border-white/30"
-            >
-              กลับหน้าหลัก
-            </button>
-          </div>
-
           {/* Thank You Message */}
           <div className="mt-8 space-y-3">
             <p className="text-white/80 text-lg font-medium">
               ขอบคุณที่ไว้วางใจ
             </p>
             <p className="text-white/60 text-sm">
-              Smart Medical AI System
+              Smart Inpatient Screening Queueing System
             </p>
             <div className="flex justify-center space-x-4 text-white/50 text-xs">
-              <span>🏥 โรงพยาบาลคุณภาพ</span>
-              <span>⭐ บริการเป็นเลิศ</span>
+              {/* <span>🏥 โรงพยาบาลคุณภาพ</span>
+              <span>⭐ บริการเป็นเลิศ</span> */}
             </div>
           </div>
         </div>
@@ -1468,28 +1976,61 @@ const Welcome: React.FC = () => {
     );
   }
 
-  // Debug panel (dev only)
-  const DebugPanel = () => (
-    <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999, background: 'rgba(255,255,255,0.97)', border: '1px solid #ddd', borderRadius: 8, padding: 16, maxWidth: 400, maxHeight: '80vh', overflow: 'auto', fontSize: 12 }}>
-      <div style={{ fontWeight: 'bold', color: '#b91c1c', marginBottom: 8 }}>DEBUG PANEL</div>
-      <div><b>assignedQueue:</b><pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{JSON.stringify(assignedQueue, null, 2)}</pre></div>
-      <div><b>patientData:</b><pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{JSON.stringify(patientData, null, 2)}</pre></div>
-      <div><b>roomSchedule:</b><pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{JSON.stringify(roomSchedule, null, 2)}</pre></div>
-      <div><b>roomMaster:</b><pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{JSON.stringify(roomMaster, null, 2)}</pre></div>
-      <div><b>buildingInfo:</b><pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{JSON.stringify(buildingInfo, null, 2)}</pre></div>
-      <div><b>floorInfo:</b><pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{JSON.stringify(floorInfo, null, 2)}</pre></div>
-      <div><b>departmentInfo:</b><pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{JSON.stringify(departmentInfo, null, 2)}</pre></div>
-      <div><b>waitingBefore:</b> {waitingBefore}</div>
-      <div><b>error:</b> {error}</div>
-      <div><b>loading:</b> {String(loading)}</div>
-      <div><b>token:</b> {token}</div>
-      <div><b>queueId:</b> {queueId}</div>
-    </div>
-  );
-
   return (
     <>
-      {import.meta.env.MODE === 'development' && <DebugPanel />}
+      {/* Cancel Queue Modal */}
+      {showCancelQueueModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-bold text-gray-800 mb-2">ยกเลิกคิว</h3>
+              <p className="text-gray-600 text-sm">คุณแน่ใจหรือไม่ที่ต้องการยกเลิกคิวนี้?</p>
+            </div>
+
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-6">
+              <div className="flex items-start space-x-3">
+                <svg className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div className="text-yellow-800 text-sm">
+                  <p className="font-medium mb-1">คิวหมายเลข: {assignedQueue?.queue_no}</p>
+                  <p>หากยกเลิกแล้ว คุณสามารถขอคิวใหม่ได้ทันที</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowCancelQueueModal(false)}
+                disabled={queueActionLoading}
+                className="flex-1 bg-gray-100 text-gray-700 font-bold py-3 px-4 rounded-xl hover:bg-gray-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                ไม่ยกเลิก
+              </button>
+              <button
+                onClick={handleCancelQueue}
+                disabled={queueActionLoading}
+                className="flex-1 bg-gradient-to-r from-red-500 to-red-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg hover:shadow-xl active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {queueActionLoading ? (
+                  <div className="flex items-center justify-center space-x-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>กำลังยกเลิก...</span>
+                  </div>
+                ) : (
+                  'ยืนยันยกเลิก'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {currentStep === 'queue-display' && (
         <div className="min-h-screen bg-gradient-to-br from-blue-500 via-purple-600 to-pink-500 flex flex-col px-4 py-6 relative overflow-hidden">
           {/* Background Effects */}
@@ -1526,7 +2067,11 @@ const Welcome: React.FC = () => {
             {/* Queue Number Display */}
             <div className="bg-gradient-to-r from-blue-600 to-purple-700 rounded-3xl p-8 mb-6 text-center shadow-2xl border border-white/30">
               <p className="text-white/80 text-lg mb-3 font-medium">หมายเลขคิวของคุณ</p>
-              <div className="text-6xl font-black text-white mb-4 tracking-wider drop-shadow-lg">
+              <div className={`text-6xl font-black mb-4 tracking-wider drop-shadow-lg ${
+                assignedQueue?.status === 'cancelled' ? 'text-red-400' :
+                assignedQueue?.status === 'skipped' ? 'text-orange-400' :
+                'text-white'
+              }`}>
                 {assignedQueue?.queue_no || 'A001'}
               </div>
               <div className="flex items-center justify-center space-x-6 text-white/90 text-sm">
@@ -1556,8 +2101,8 @@ const Welcome: React.FC = () => {
                     </svg>
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-800 text-xl">{departmentInfo?.name || 'แผนกผู้ป่วยนอก'}</h3>
-                    <p className="text-gray-600 text-sm">{roomMaster?.name || roomSchedule?.name || 'ห้องตรวจโรคทั่วไป'}</p>
+                    <h3 className="font-bold text-gray-800 text-xl">{departmentInfo?.name || assignedQueue?.department_name || 'แผนกผู้ป่วยนอก'}</h3>
+                    <p className="text-gray-600 text-sm">{roomMaster?.name || assignedQueue?.room_name || 'ห้องตรวจโรคทั่วไป'}</p>
                   </div>
                 </div>
                 
@@ -1565,22 +2110,26 @@ const Welcome: React.FC = () => {
                   <div className="bg-gray-50 rounded-xl p-3">
                     <p className="text-gray-600 mb-1 font-medium">ตำแหน่ง</p>
                     <p className="text-gray-800 font-semibold">
-                      {assignedQueue?.building_name || buildingInfo?.address || buildingInfo?.name || 'อาคาร B'}
+                      {buildingInfo?.name || buildingInfo?.address || assignedQueue?.building_name || 'อาคาร B'}
                     </p>
                     <p className="text-gray-800 font-semibold">
-                      ชั้น: {assignedQueue?.floor_name || floorInfo?.name || 'ล็อบบี้'}
+                      ชั้น: {floorInfo?.name || assignedQueue?.floor_name || 'ล็อบบี้'}
                     </p>
                     <p className="text-gray-800 font-semibold">
-                      ห้อง: {assignedQueue?.room_name || roomMaster?.name || roomSchedule?.name || 'ห้องตรวจโรคทั่วไป'}
+                      ห้อง: {roomMaster?.name || assignedQueue?.room_name || 'ห้องตรวจโรคทั่วไป'}
                     </p>
                     <p className="text-gray-800 font-semibold">
-                      แผนก: {assignedQueue?.department_name || departmentInfo?.name || 'แผนกทั่วไป'}
+                      แผนก: {departmentInfo?.name || assignedQueue?.department_name || 'แผนกทั่วไป'}
                     </p>
                   </div>
                   <div className="bg-gray-50 rounded-xl p-3">
                     <p className="text-gray-600 mb-1 font-medium">แผนก</p>
-                    <p className="text-gray-800 font-semibold">{departmentInfo?.name || 'แผนกผู้ป่วยนอก'}</p>
-                    <p className="text-gray-800 font-semibold">เวลา: {roomSchedule?.openTime || '08:00'} - {roomSchedule?.closeTime || '17:00'}</p>
+                    <p className="text-gray-800 font-semibold">{departmentInfo?.name || assignedQueue?.department_name || 'แผนกผู้ป่วยนอก'}</p>
+                    <p className="text-gray-800 font-semibold">เวลา: {(roomSchedule || assignedQueue?.room_schedule) ? getOperatingHoursText(roomSchedule || assignedQueue?.room_schedule) : '08:00 - 17:00'}</p>
+                    <p className="text-gray-800 font-semibold">วันที่: {(roomSchedule?.date || assignedQueue?.room_schedule?.date) ? new Date(roomSchedule?.date || assignedQueue?.room_schedule?.date).toLocaleDateString('th-TH') : new Date().toLocaleDateString('th-TH')}</p>
+                    <p className={`font-semibold ${(roomSchedule?.isActive ?? assignedQueue?.room_schedule?.isActive) ? 'text-green-600' : 'text-red-600'}`}>
+                      สถานะ: {(roomSchedule?.isActive ?? assignedQueue?.room_schedule?.isActive) ? 'เปิดให้บริการ' : 'ปิดให้บริการ'}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -1627,7 +2176,20 @@ const Welcome: React.FC = () => {
                       <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      <span>AI แนะนำแผนก: {assignedQueue?.department}</span>
+                      <span>AI แนะนำแผนก: {departmentInfo?.name || assignedQueue?.department || 'แผนกทั่วไป'}</span>
+                    </div>
+                    <div className="flex items-center mt-2 text-purple-600 text-sm">
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>ห้อง: {roomMaster?.name || roomSchedule?.roomId || 'ห้องตรวจ'}</span>
+                    </div>
+                    <div className="flex items-center mt-1 text-purple-600 text-sm">
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      <span>เวลาทำการ: {(roomSchedule || assignedQueue?.room_schedule) ? getOperatingHoursText(roomSchedule || assignedQueue?.room_schedule) : 'เปิดให้บริการ 24 ชั่วโมง'}</span>
                     </div>
                   </div>
                 </div>
@@ -1644,7 +2206,7 @@ const Welcome: React.FC = () => {
                 <ul className="space-y-3 text-yellow-800 text-sm">
                   <li className="flex items-start">
                     <span className="bg-yellow-200 text-yellow-800 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold mr-3 mt-0.5 flex-shrink-0">1</span>
-                    <span>ไปที่ <strong>{buildingInfo?.address || 'อาคาร B'} ชั้น {floorInfo?.name || 'ล็อบบี้'} ห้อง {roomMaster?.name || 'ห้องตรวจโรคทั่วไป'}</strong></span>
+                    <span>ไปที่ <strong>{buildingInfo?.name || buildingInfo?.address || assignedQueue?.building_name || 'อาคาร B'} ชั้น {floorInfo?.name || assignedQueue?.floor_name || 'ล็อบบี้'} ห้อง {roomMaster?.name || assignedQueue?.room_name || 'ห้องตรวจโรคทั่วไป'}</strong></span>
                   </li>
                   <li className="flex items-start">
                     <span className="bg-yellow-200 text-yellow-800 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold mr-3 mt-0.5 flex-shrink-0">2</span>
@@ -1658,6 +2220,10 @@ const Welcome: React.FC = () => {
                     <span className="bg-yellow-200 text-yellow-800 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold mr-3 mt-0.5 flex-shrink-0">4</span>
                     <span>หากมีอาการเปลี่ยนแปลงหรือเร่งด่วน แจ้งเจ้าหน้าที่ทันที</span>
                   </li>
+                  <li className="flex items-start">
+                    <span className="bg-yellow-200 text-yellow-800 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold mr-3 mt-0.5 flex-shrink-0">5</span>
+                    <span>เวลาทำการ: <strong>{(roomSchedule || assignedQueue?.room_schedule) ? getOperatingHoursText(roomSchedule || assignedQueue?.room_schedule) : 'เปิดให้บริการ 24 ชั่วโมง'}</strong></span>
+                  </li>
                 </ul>
               </div>
             </div>
@@ -1666,15 +2232,6 @@ const Welcome: React.FC = () => {
             <div className="space-y-4">
               {assignedQueue?.status === 'skipped' ? (
                 <div className="grid grid-cols-1 gap-4">
-                  <button
-                    onClick={() => navigate('/screening')}
-                    className="bg-gradient-to-r from-red-500 to-red-600 text-white font-bold py-4 px-6 rounded-2xl shadow-xl hover:shadow-2xl active:scale-95 transition-all flex items-center justify-center space-x-2 border border-white/30"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    <span>ขอรับคิวใหม่</span>
-                  </button>
                   <button
                     onClick={() => window.location.href = 'tel:1111'}
                     className="bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold py-3 px-6 rounded-2xl shadow-xl hover:shadow-2xl active:scale-95 transition-all flex items-center justify-center space-x-2 border border-white/30"
@@ -1717,7 +2274,7 @@ const Welcome: React.FC = () => {
                 </a>
               </div>
               <p className="text-white/50 text-xs">
-                Smart Medical AI System v2.0.0
+                Smart Inpatient Screening Queueing System
               </p>
             </div>
           </div>
@@ -1772,55 +2329,17 @@ const Welcome: React.FC = () => {
               </div>
             </div>
 
-            {/* Rating Section */}
-            <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-6 mb-8 shadow-xl border border-white/30">
-              <h3 className="text-gray-800 font-bold text-lg mb-4">ให้คะแนนการบริการ</h3>
-              <div className="flex justify-center space-x-2 mb-4">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    className="w-10 h-10 text-yellow-400 hover:text-yellow-500 transition-colors"
-                  >
-                    <svg fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                    </svg>
-                  </button>
-                ))}
-              </div>
-              <p className="text-gray-600 text-sm">แตะดาวเพื่อให้คะแนน</p>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="space-y-4">
-              <button
-                onClick={handleNewQueue}
-                className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white font-bold py-4 px-6 rounded-2xl shadow-xl hover:shadow-2xl active:scale-95 transition-all flex items-center justify-center space-x-3 border border-white/30"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                <span>รับคิวใหม่</span>
-              </button>
-              
-              <button
-                onClick={() => navigate('/')}
-                className="w-full bg-white/20 backdrop-blur-sm text-white font-bold py-3 px-6 rounded-xl hover:bg-white/30 transition-all border border-white/30"
-              >
-                กลับหน้าหลัก
-              </button>
-            </div>
-
             {/* Thank You Message */}
             <div className="mt-8 space-y-3">
               <p className="text-white/80 text-lg font-medium">
                 ขอบคุณที่ไว้วางใจ
               </p>
               <p className="text-white/60 text-sm">
-                Smart Medical AI System
+                Smart Inpatient Screening Queueing System
               </p>
               <div className="flex justify-center space-x-4 text-white/50 text-xs">
-                <span>🏥 โรงพยาบาลคุณภาพ</span>
-                <span>⭐ บริการเป็นเลิศ</span>
+                {/* <span>🏥 โรงพยาบาลคุณภาพ</span>
+                <span>⭐ บริการเป็นเลิศ</span> */}
               </div>
             </div>
           </div>
@@ -1837,8 +2356,12 @@ const Welcome: React.FC = () => {
           </div>
         </div>
       )}
-
-      {/* Notifications Panel */}
+      
+      {currentStep === 'completed' && (
+        <div className="min-h-screen bg-gradient-to-br from-green-400 via-emerald-500 to-teal-600 flex flex-col items-center justify-center px-4 py-6 relative overflow-hidden">
+          {/* Completed Step content here */}
+        </div>
+      )}
     </>
   );
 };

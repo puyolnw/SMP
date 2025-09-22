@@ -64,6 +64,11 @@ interface User {
   profileImage?: string;
   employeeType?: 'doctor' | 'nurse' | 'staff';
   departmentId?: string;
+  departmentDetails?: {
+    id: string;
+    name: string;
+    description?: string;
+  };
   licenseNumber?: string;
   specialties?: string[];
   startDate?: string;
@@ -363,7 +368,7 @@ const ProfilePage: React.FC = () => {
                     )}
                   </Box>
                   <Typography variant="body1" color="text.secondary">
-                    {user.position || user.perfession_type} • {user.department || 'ไม่ระบุแผนก'}
+                    {user.position || user.perfession_type} • {user.department || user.departmentId || 'ไม่ระบุแผนก'}
                   </Typography>
                   {user.specialization && user.specialization.length > 0 && (
                     <Chip 
@@ -408,7 +413,7 @@ const ProfilePage: React.FC = () => {
                         <BadgeIcon fontSize="small" />
                       </ListItemIcon>
                       <ListItemText 
-                        primary="รหัสพนักงาน" 
+                        primary="รหัสบุคลากร" 
                         secondary={user.id || user._id}
                       />
                     </ListItem>
@@ -497,7 +502,22 @@ const ProfilePage: React.FC = () => {
                       </ListItemIcon>
                       <ListItemText 
                         primary="แผนก" 
-                        secondary={user.department || 'ไม่ระบุ'}
+                        secondary={
+                          user.department ? (
+                            <Box>
+                              <Typography variant="body2" component="div">
+                                {user.department}
+                              </Typography>
+                              {user.departmentDetails?.description && (
+                                <Typography variant="caption" color="text.secondary">
+                                  {user.departmentDetails.description}
+                                </Typography>
+                              )}
+                            </Box>
+                          ) : (
+                            user.departmentId || 'ไม่ระบุ'
+                          )
+                        }
                       />
                     </ListItem>
                     <ListItem>

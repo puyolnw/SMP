@@ -64,6 +64,12 @@ interface QueueItem {
   };
   symptoms?: string;
   vital_signs?: any;
+  // เพิ่ม properties สำหรับการแสดงผล
+  patient_name?: string;
+  medical_condition?: string;
+  queue_code?: string;
+  priority_level?: string;
+  estimated_time?: string;
 }
 
 interface Department {
@@ -110,6 +116,8 @@ const ManageQueue: React.FC = () => {
   // State สำหรับการกรอกประวัติการรักษา
   const [showMedicalRecordDialog, setShowMedicalRecordDialog] = useState<boolean>(false);
   const [selectedQueueForMedicalRecord, setSelectedQueueForMedicalRecord] = useState<QueueItem | null>(null);
+  const [selectedPatientData, setSelectedPatientData] = useState<any>(null); // เพิ่ม state สำหรับข้อมูลผู้ป่วย
+  const [patientDataLoading, setPatientDataLoading] = useState<boolean>(false); // loading สำหรับโหลดข้อมูลผู้ป่วย
   const [medicalRecordData, setMedicalRecordData] = useState({
     chief_complaint: '',
     diagnosis: '',
@@ -118,6 +126,8 @@ const ManageQueue: React.FC = () => {
     notes: ''
   });
   const [medicalRecordLoading, setMedicalRecordLoading] = useState<boolean>(false);
+  const [autoCallEnabled, setAutoCallEnabled] = useState<boolean>(true); // สถานะระบบอัตโนมัติ
+  const [lastAutoCallTime, setLastAutoCallTime] = useState<Date | null>(null); // เวลาล่าสุดที่รันอัตโนมัติ
   
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -318,9 +328,24 @@ const ManageQueue: React.FC = () => {
       });
       console.log('[DEBUG] Created room statuses:', rooms);
       
-      // เลือกห้องแรกถ้ายังไม่ได้เลือก
-      if (!selectedRoom && rooms.length > 0) {
-        setSelectedRoom(rooms[0].room);
+      // เลือกห้องแรกถ้ายังไม่ได้เลือก และยังไม่เคยเลือกมาก่อน (selectedRoom เป็น null หรือ undefined)
+      if (selectedRoom === null || selectedRoom === undefined) {
+        if (rooms.length > 0) {
+          console.log('[DEBUG] Auto-selecting first room:', rooms[0].room);
+          setSelectedRoom(rooms[0].room);
+        }
+      } else if (selectedRoom !== "" && rooms.length > 0) {
+        // ถ้าเลือกห้องเฉพาะ ตรวจสอบว่าห้องที่เลือกยังมีอยู่ไหม
+        const roomExists = rooms.some((r: RoomStatus) => r.room === selectedRoom);
+        if (!roomExists) {
+          console.log('[DEBUG] Selected room no longer exists, selecting first room');
+          setSelectedRoom(rooms[0].room);
+        } else {
+          console.log('[DEBUG] Keeping selected room:', selectedRoom);
+        }
+      } else if (selectedRoom === "") {
+        // ถ้าเลือก "ทั้งหมด" ก็คงไว้
+        console.log('[DEBUG] Keeping "All rooms" selection');
       }
       
       // แปลงข้อมูลคิวถัดไป
@@ -409,6 +434,44 @@ const ManageQueue: React.FC = () => {
     return () => clearInterval(interval);
   }, [selectedDepartment]);
 
+  // Background Auto-Call every 15 seconds
+  useEffect(() => {
+    console.log('[DEBUG] Setting up background auto-call interval');
+    const autoCallInterval = setInterval(async () => {
+      if (selectedDepartment && autoCallEnabled) {
+        try {
+          console.log('[DEBUG] Background auto-call triggered');
+          setLastAutoCallTime(new Date()); // อัปเดตเวลาล่าสุด
+          
+          const response = await axios.post(`${API_BASE_URL}/api/queue/queues/auto-manage`);
+          console.log('[DEBUG] Background auto-call completed:', response.data);
+          
+          // แสดงแจ้งเตือนเฉพาะเมื่อมีการทำงานจริง
+          const results = response.data;
+          if (results.assigned_rooms > 0 || results.progressed_queues > 0 || results.called_immediate_queues > 0) {
+            let message = '🔄 ระบบอัตโนมัติ: ';
+            const actions = [];
+            
+            if (results.assigned_rooms > 0) actions.push(`จัดห้อง ${results.assigned_rooms} คิว`);
+            if (results.progressed_queues > 0) actions.push(`เปลี่ยนสถานะ ${results.progressed_queues} คิว`);
+            if (results.called_immediate_queues > 0) actions.push(`เรียกฉุกเฉิน ${results.called_immediate_queues} คิว`);
+            
+            message += actions.join(', ');
+            showSnackbar(message, 'success');
+            
+            // รีเฟรชข้อมูลทันทีหลังจากมีการเปลี่ยนแปลง
+            setTimeout(() => loadQueueData(), 1000);
+          }
+        } catch (error) {
+          console.warn('[WARN] Background auto-call failed:', error);
+          // ไม่แสดง error message เพื่อไม่รบกวนผู้ใช้
+        }
+      }
+    }, 15000); // ทุก 15 วินาที
+    
+    return () => clearInterval(autoCallInterval);
+  }, [selectedDepartment, autoCallEnabled]);
+
   const getCurrentDepartment = () => {
     const dept = departments.find(dept => dept.id === selectedDepartment) || departments[0];
     console.log('[DEBUG] getCurrentDepartment - selectedDepartment:', selectedDepartment, 'found:', dept);
@@ -448,7 +511,36 @@ const ManageQueue: React.FC = () => {
 
     // เปิด dialog กรอกประวัติการรักษาก่อนเสร็จสิ้นคิว
     setSelectedQueueForMedicalRecord(currentQueue);
+    setSelectedPatientData(null); // รีเซ็ตข้อมูลผู้ป่วยเก่า
     setShowMedicalRecordDialog(true);
+
+    // โหลดข้อมูลผู้ป่วยแยก
+    await loadPatientData(currentQueue.patient_id);
+  };
+
+  // ฟังก์ชันโหลดข้อมูลผู้ป่วย
+  const loadPatientData = async (patientId: string) => {
+    try {
+      setPatientDataLoading(true);
+      console.log('[DEBUG] Loading patient data for ID:', patientId);
+      
+      const response = await axios.get(`${API_BASE_URL}/api/patient/${patientId}`);
+      const patientData = response.data;
+      
+      console.log('[DEBUG] Patient data loaded:', patientData);
+      setSelectedPatientData(patientData);
+      
+    } catch (error) {
+      console.error('Error loading patient data:', error);
+      showSnackbar('ไม่สามารถโหลดข้อมูลผู้ป่วยได้', 'error');
+      setSelectedPatientData({
+        first_name_th: 'ไม่สามารถโหลดข้อมูล',
+        last_name_th: '',
+        national_id: 'ไม่ระบุ'
+      });
+    } finally {
+      setPatientDataLoading(false);
+    }
   };
 
   // ฟังก์ชันเสร็จสิ้นคิวหลังจากกรอกประวัติ
@@ -491,6 +583,7 @@ const ManageQueue: React.FC = () => {
       // ปิด dialog และรีเซ็ตข้อมูล
       setShowMedicalRecordDialog(false);
       setSelectedQueueForMedicalRecord(null);
+      setSelectedPatientData(null);
       resetMedicalRecordData();
 
     } catch (err) {
@@ -538,19 +631,35 @@ const ManageQueue: React.FC = () => {
 
   const handleCallQueue = async (queue: QueueItem) => {
     try {
+      setLoading(true); // เพิ่ม loading indicator
       await axios.post(`${API_BASE_URL}/api/queue/queue/${queue._id}/call`);
       
       // Reload data to get updated state
       await loadQueueData();
       showSnackbar(`เรียกคิว: ${queue.queue_no}`, 'success');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error calling queue:', err);
-      showSnackbar('ไม่สามารถเรียกคิวได้', 'error');
+      
+      // ตรวจสอบว่าเป็น error เรื่องห้องไม่ว่าง
+      if (err.response && err.response.status === 409) {
+        const errorData = err.response.data;
+        const occupiedBy = errorData.occupied_by;
+        
+        showSnackbar(
+          `ไม่สามารถเรียกคิวได้: ห้องมีคิว ${occupiedBy?.queue_no || 'ไม่ระบุ'} (${occupiedBy?.patient_name || 'ไม่ระบุชื่อ'}) กำลังตรวจอยู่`, 
+          'warning'
+        );
+      } else {
+        showSnackbar('ไม่สามารถเรียกคิวได้', 'error');
+      }
+    } finally {
+      setLoading(false); // ปิด loading indicator
     }
   };
 
   const handleAutoCall = async () => {
     try {
+      setLoading(true); // เพิ่ม loading indicator
       console.log('[DEBUG] Running comprehensive auto management...');
       
       // รันระบบจัดการคิวอัตโนมัติทั้งหมด
@@ -571,6 +680,8 @@ const ManageQueue: React.FC = () => {
     } catch (err) {
       console.error('Error in auto management:', err);
       showSnackbar('ไม่สามารถรันระบบอัตโนมัติได้', 'error');
+    } finally {
+      setLoading(false); // ปิด loading indicator
     }
   };
 
@@ -582,6 +693,7 @@ const ManageQueue: React.FC = () => {
   const confirmAbsent = async () => {
     if (selectedQueueForAbsent) {
       try {
+        setLoading(true); // เพิ่ม loading indicator
         await axios.post(`${API_BASE_URL}/api/queue/queue/${selectedQueueForAbsent._id}/skip`, {
           reason: absentReason
         });
@@ -590,12 +702,14 @@ const ManageQueue: React.FC = () => {
         await loadQueueData();
         showSnackbar(`บันทึกการไม่มา: ${selectedQueueForAbsent.queue_no} - ${absentReason}`, 'warning');
       
-      setShowAbsentDialog(false);
-      setSelectedQueueForAbsent(null);
-      setAbsentReason('');
+        setShowAbsentDialog(false);
+        setSelectedQueueForAbsent(null);
+        setAbsentReason('');
       } catch (err) {
         console.error('Error marking absent:', err);
         showSnackbar('ไม่สามารถบันทึกการไม่มาได้', 'error');
+      } finally {
+        setLoading(false); // ปิด loading indicator
       }
     }
   };
@@ -662,9 +776,37 @@ const ManageQueue: React.FC = () => {
     <Box sx={{ 
       minHeight: '100vh', 
       bgcolor: currentDept?.bgColor || '#e3f2fd',
-      p: 3
+      p: 3,
+      position: 'relative' // เพิ่มเพื่อรองรับ loading overlay
     }}>
       <Container maxWidth="xl">
+        
+        {/* Loading Overlay */}
+        {loading && (
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              bgcolor: 'rgba(255, 255, 255, 0.8)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000,
+              borderRadius: '16px'
+            }}
+          >
+            <Box sx={{ textAlign: 'center' }}>
+              <CircularProgress size={60} />
+              <Typography variant="h6" sx={{ mt: 2 }}>
+                กำลังประมวลผล...
+              </Typography>
+            </Box>
+          </Box>
+        )}
+        
         {/* Header */}
         <Card elevation={3} sx={{ borderRadius: '16px', mb: 3 }}>
           <CardContent sx={{ p: 3 }}>
@@ -744,6 +886,16 @@ const ManageQueue: React.FC = () => {
                     เรียกคิวอัตโนมัติ
                   </Button>
                   
+                  <Button
+                    onClick={() => setAutoCallEnabled(!autoCallEnabled)}
+                    variant={autoCallEnabled ? "contained" : "outlined"}
+                    color={autoCallEnabled ? "success" : "inherit"}
+                    startIcon={autoCallEnabled ? <CheckIcon /> : <CancelIcon />}
+                    sx={{ mr: 1 }}
+                  >
+                    {autoCallEnabled ? "Auto: ON" : "Auto: OFF"}
+                  </Button>
+                  
                   <IconButton 
                     onClick={loadQueueData}
                     color="primary"
@@ -779,6 +931,25 @@ const ManageQueue: React.FC = () => {
                 {currentDept?.name || 'กำลังโหลด...'} 
                 {selectedRoom ? ` - ${selectedRoom}` : ' - ทั้งหมด'}
               </Typography>
+              
+              {/* แสดงสถานะระบบอัตโนมัติ */}
+              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2, mt: 1 }}>
+                <Chip 
+                  label={autoCallEnabled ? "🤖 ระบบอัตโนมัติ: เปิด" : "⏸️ ระบบอัตโนมัติ: ปิด"}
+                  color={autoCallEnabled ? "success" : "primary"}
+                  size="small"
+                  sx={{ 
+                    bgcolor: autoCallEnabled ? 'rgba(76, 175, 80, 0.8)' : 'rgba(255, 255, 255, 0.2)',
+                    color: 'white',
+                    fontWeight: 'bold'
+                  }}
+                />
+                {lastAutoCallTime && autoCallEnabled && (
+                  <Typography variant="caption" sx={{ opacity: 0.8 }}>
+                    ล่าสุด: {lastAutoCallTime.toLocaleTimeString('th-TH')}
+                  </Typography>
+                )}
+              </Box>
             </CardContent>
           </Card>
         )}
@@ -788,7 +959,7 @@ const ManageQueue: React.FC = () => {
           {roomStatuses
             .filter(room => !selectedRoom || room.room === selectedRoom)
             .map((roomStatus, index) => (
-            <Grid item xs={12} md={6} lg={4} key={roomStatus.room}>
+            <Grid item xs={12} md={6} lg={4} key={`${roomStatus.room_id || index}-${roomStatus.room}`}>
               <Card 
                 elevation={4}
                 sx={{ 
@@ -825,14 +996,30 @@ const ManageQueue: React.FC = () => {
                       
                       <Box sx={{ mb: 2 }}>
                         <Typography variant="body1" fontWeight="medium">
-                          ชื่อ: {roomStatus.currentQueue.patient?.first_name_th} {roomStatus.currentQueue.patient?.last_name_th}
+                          👤 ชื่อ: {roomStatus.currentQueue.patient?.first_name_th && roomStatus.currentQueue.patient?.last_name_th 
+                            ? `${roomStatus.currentQueue.patient.first_name_th} ${roomStatus.currentQueue.patient.last_name_th}`
+                            : roomStatus.currentQueue.patient_name || 'ไม่ระบุชื่อ'
+                          }
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
-                          อาการ: {roomStatus.currentQueue.symptoms || 'ไม่ระบุอาการ'}
+                          💬 อาการ: {roomStatus.currentQueue.symptoms || roomStatus.currentQueue.medical_condition || 'ไม่ระบุอาการ'}
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
-                          เวลา: {formatQueueTime(roomStatus.currentQueue.queue_time)}
+                          🕐 เวลาเข้าคิว: {formatQueueTime(roomStatus.currentQueue.queue_time)}
                         </Typography>
+                        
+                        {/* แสดงสัญญาณชีพถ้ามี */}
+                        {roomStatus.currentQueue.vital_signs && (
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                            📊 สัญญาณชีพ: 
+                            {roomStatus.currentQueue.vital_signs.systolic && roomStatus.currentQueue.vital_signs.diastolic && 
+                              ` ความดัน ${roomStatus.currentQueue.vital_signs.systolic}/${roomStatus.currentQueue.vital_signs.diastolic} mmHg`}
+                            {roomStatus.currentQueue.vital_signs.pulse && 
+                              ` ชีพจร ${roomStatus.currentQueue.vital_signs.pulse} ครั้ง/นาที`}
+                            {roomStatus.currentQueue.vital_signs.weight && 
+                              ` น้ำหนัก ${roomStatus.currentQueue.vital_signs.weight} กก.`}
+                          </Typography>
+                        )}
                       </Box>
 
                       <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mb: 2 }}>
@@ -851,20 +1038,47 @@ const ManageQueue: React.FC = () => {
                         />
                       </Box>
 
-                      <Button
-                        fullWidth
-                        variant="contained"
-                        color="success"
-                        startIcon={<CheckIcon />}
-                        onClick={() => handleCompleteQueue(index)}
-                        sx={{ 
-                          borderRadius: '12px',
-                          py: 1.5,
-                          fontWeight: 'bold'
-                        }}
-                      >
-                        ตรวจเสร็จแล้ว
-                      </Button>
+                      <Box sx={{ display: 'flex', gap: 1, flexDirection: 'column' }}>
+                        <Button
+                          fullWidth
+                          variant="contained"
+                          color="success"
+                          startIcon={<CheckIcon />}
+                          onClick={() => handleCompleteQueue(index)}
+                          sx={{ 
+                            borderRadius: '12px',
+                            py: 1.5,
+                            fontWeight: 'bold'
+                          }}
+                        >
+                          ตรวจเสร็จแล้ว
+                        </Button>
+                        
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <Button
+                            variant="outlined"
+                            color="info"
+                            size="small"
+                            onClick={() => roomStatus.currentQueue && handleViewLogs(roomStatus.currentQueue)}
+                            startIcon={<RefreshIcon />}
+                            sx={{ flex: 1, borderRadius: '8px' }}
+                            disabled={!roomStatus.currentQueue}
+                          >
+                            ประวัติ
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            color="warning"
+                            size="small"
+                            onClick={() => roomStatus.currentQueue && handleMarkAbsent(roomStatus.currentQueue)}
+                            startIcon={<CancelIcon />}
+                            sx={{ flex: 1, borderRadius: '8px' }}
+                            disabled={!roomStatus.currentQueue}
+                          >
+                            ไม่มา
+                          </Button>
+                        </Box>
+                      </Box>
                     </Box>
                   ) : (
                     <Box sx={{ textAlign: 'center', py: 4 }}>
@@ -917,11 +1131,14 @@ const ManageQueue: React.FC = () => {
                         
                         <Box sx={{ flex: 1 }}>
                           <Typography variant="body1" fontWeight="medium">
-                            {queue.patient?.first_name_th} {queue.patient?.last_name_th}
+                            {queue.patient?.first_name_th && queue.patient?.last_name_th 
+                              ? `${queue.patient.first_name_th} ${queue.patient.last_name_th}`
+                              : queue.patient_name || 'ไม่ระบุชื่อ'
+                            }
                           </Typography>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                             <Typography variant="body2" color="text.secondary">
-                              {formatQueueTime(queue.queue_time)}
+                              🕐 {formatQueueTime(queue.queue_time)}
                             </Typography>
                             <Chip 
                               label={getPriorityText(queue.priority)}
@@ -932,9 +1149,22 @@ const ManageQueue: React.FC = () => {
                               size="small"
                             />
                             <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
-                              • {queue.symptoms || 'ไม่ระบุอาการ'}
+                              💬 {queue.symptoms || queue.medical_condition || 'ไม่ระบุอาการ'}
                             </Typography>
                           </Box>
+                          
+                          {/* แสดงข้อมูลเพิ่มเติมถ้ามี */}
+                          {queue.vital_signs && (
+                            <Box sx={{ mt: 0.5 }}>
+                              <Typography variant="caption" color="text.secondary">
+                                📊 สัญญาณชีพ: 
+                                {queue.vital_signs.systolic && queue.vital_signs.diastolic && 
+                                  ` ความดัน ${queue.vital_signs.systolic}/${queue.vital_signs.diastolic}`}
+                                {queue.vital_signs.pulse && ` ชีพจร ${queue.vital_signs.pulse}`}
+                                {queue.vital_signs.weight && ` น้ำหนัก ${queue.vital_signs.weight}กก.`}
+                              </Typography>
+                            </Box>
+                          )}
                         </Box>
                       </Box>
                       
@@ -1158,58 +1388,243 @@ const ManageQueue: React.FC = () => {
           <DialogTitle sx={{ bgcolor: 'info.main', color: 'white' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <RefreshIcon />
-              ประวัติคิว
+              📋 ประวัติการดำเนินการคิว
             </Box>
           </DialogTitle>
           <DialogContent sx={{ pt: 3 }}>
             {selectedQueueForLog && (
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="h6" gutterBottom>
-                  คิว: {selectedQueueForLog.queue_no}
+              <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+                <Typography variant="h6" gutterBottom color="primary">
+                  🎫 หมายเลขคิว: {selectedQueueForLog.queue_no}
                 </Typography>
                 <Typography variant="body1" gutterBottom>
-                  ผู้ป่วย: {selectedQueueForLog.patient?.first_name_th} {selectedQueueForLog.patient?.last_name_th}
+                  👤 ชื่อผู้ป่วย: {selectedQueueForLog.patient?.first_name_th && selectedQueueForLog.patient?.last_name_th 
+                    ? `${selectedQueueForLog.patient.first_name_th} ${selectedQueueForLog.patient.last_name_th}`
+                    : selectedQueueForLog.patient_name || 'ไม่ระบุชื่อ'
+                  }
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  💬 อาการ: {selectedQueueForLog.symptoms || selectedQueueForLog.medical_condition || 'ไม่ระบุอาการ'}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  🏥 สถานะปัจจุบัน: {
+                    selectedQueueForLog.status === 'waiting' ? '🟡 รอคิว' :
+                    selectedQueueForLog.status === 'called' ? '🟠 ถูกเรียกแล้ว' :
+                    selectedQueueForLog.status === 'in_progress' ? '🟢 กำลังตรวจ' :
+                    selectedQueueForLog.status === 'completed' ? '✅ เสร็จสิ้น' :
+                    selectedQueueForLog.status === 'skipped' ? '⏭️ ข้ามแล้ว' :
+                    selectedQueueForLog.status
+                  }
                 </Typography>
               </Box>
             )}
             
             {queueLogs.length > 0 ? (
               <List>
-                {queueLogs.map((log, index) => (
-                  <React.Fragment key={index}>
-                    <ListItem>
-                      <Box sx={{ width: '100%' }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                          <Typography variant="body1" fontWeight="medium">
-                            {log.action === 'created' && 'สร้างคิว'}
-                            {log.action === 'called' && 'เรียกคิว'}
-                            {log.action === 'completed' && 'เสร็จสิ้น'}
-                            {log.action === 'skipped' && 'ข้ามคิว'}
-                            {log.action === 'priority_changed' && 'เปลี่ยน Priority'}
-                            {log.action === 'room_changed' && 'เปลี่ยนห้อง'}
+                {queueLogs.map((log, index) => {
+                  // ฟังก์ชันแปลการกระทำเป็นภาษาไทยที่อ่านง่าย
+                  const getActionText = (action: string) => {
+                    switch (action) {
+                      case 'created':
+                        return '📝 สร้างคิวใหม่';
+                      case 'called':
+                        return '📢 เรียกคิว';
+                      case 'completed':
+                        return '✅ เสร็จสิ้นการตรวจ';
+                      case 'skipped':
+                        return '⏭️ ข้ามคิว/ไม่มา';
+                      case 'priority_changed':
+                        return '⚠️ ปรับลำดับความสำคัญ';
+                      case 'room_changed':
+                        return '🔄 เปลี่ยนห้องตรวจ';
+                      case 'assigned':
+                        return '🏥 จัดห้องตรวจ';
+                      case 'started':
+                        return '▶️ เริ่มการตรวจ';
+                      case 'cancelled':
+                        return '❌ ยกเลิกคิว';
+                      default:
+                        return `🔧 ${action}`;
+                    }
+                  };
+
+                  // ฟังก์ชันแปลประเภทผู้ใช้เป็นภาษาไทย
+                  const getUserTypeText = (userType: string) => {
+                    switch (userType) {
+                      case 'doctor':
+                        return '👨‍⚕️ แพทย์';
+                      case 'nurse':
+                        return '👩‍⚕️ พยาบาล';
+                      case 'admin':
+                        return '👨‍💼 ผู้ดูแลระบบ';
+                      case 'staff':
+                        return '👷‍♀️ เจ้าหน้าที่';
+                      case 'system':
+                        return '🤖 ระบบอัตโนมัติ';
+                      default:
+                        return userType;
+                    }
+                  };
+
+                  return (
+                    <React.Fragment key={index}>
+                      <ListItem>
+                        <Box sx={{ width: '100%' }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                            <Typography variant="body1" fontWeight="medium" color="primary">
+                              {getActionText(log.action)}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              🕐 {new Date(log.timestamp).toLocaleString('th-TH', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </Typography>
+                          </Box>
+                          
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                            ดำเนินการโดย: {getUserTypeText(log.user_type)} 
+                            {log.user_id ? ` (รหัส: ${log.user_id})` : ''}
                           </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {new Date(log.timestamp).toLocaleString('th-TH')}
-                          </Typography>
+                          
+                          {log.details && Object.keys(log.details).length > 0 && (
+                            <Box sx={{ 
+                              bgcolor: 'grey.50', 
+                              p: 1.5, 
+                              borderRadius: 1, 
+                              mt: 1,
+                              border: '1px solid',
+                              borderColor: 'grey.200'
+                            }}>
+                              <Typography variant="body2" color="text.secondary" fontWeight="medium" gutterBottom>
+                                📋 รายละเอียดเพิ่มเติม:
+                              </Typography>
+                              {Object.entries(log.details).map(([key, value], detailIndex) => {
+                                // แปลชื่อฟิลด์เป็นภาษาไทย
+                                const getFieldName = (fieldKey: string) => {
+                                  switch (fieldKey) {
+                                    case 'reason':
+                                      return 'เหตุผล';
+                                    case 'old_priority':
+                                      return 'ลำดับเดิม';
+                                    case 'new_priority':
+                                      return 'ลำดับใหม่';
+                                    case 'old_room':
+                                      return 'ห้องเดิม';
+                                    case 'new_room':
+                                      return 'ห้องใหม่';
+                                    case 'room_id':
+                                      return 'หมายเลขห้อง';
+                                    case 'queue_time':
+                                      return 'เวลาคิว';
+                                    case 'wait_time':
+                                      return 'เวลารอ';
+                                    case 'status':
+                                      return 'สถานะ';
+                                    case 'vital_signs':
+                                      return 'สัญญาณชีพ';
+                                    case 'symptoms':
+                                      return 'อาการ';
+                                    case 'patient_name':
+                                      return 'ชื่อผู้ป่วย';
+                                    case 'from':
+                                      return 'จาก';
+                                    case 'to':
+                                      return 'เป็น';
+                                    default:
+                                      return fieldKey;
+                                  }
+                                };
+
+                                // ฟังก์ชันแปลงค่า object เป็นข้อความที่อ่านได้
+                                const formatValue = (key: string, value: any) => {
+                                  if (value === null || value === undefined) {
+                                    return 'ไม่ระบุ';
+                                  }
+                                  
+                                  // สำหรับ vital_signs
+                                  if (key === 'vital_signs' && typeof value === 'object') {
+                                    const vitalSigns = [];
+                                    if (value.systolic && value.diastolic) {
+                                      vitalSigns.push(`💓 ความดัน: ${value.systolic}/${value.diastolic} mmHg`);
+                                    }
+                                    if (value.pulse) {
+                                      vitalSigns.push(`💗 ชีพจร: ${value.pulse} ครั้ง/นาที`);
+                                    }
+                                    if (value.temperature) {
+                                      vitalSigns.push(`🌡️ อุณหภูมิ: ${value.temperature}°C`);
+                                    }
+                                    if (value.weight) {
+                                      vitalSigns.push(`⚖️ น้ำหนัก: ${value.weight} กก.`);
+                                    }
+                                    if (value.height) {
+                                      vitalSigns.push(`📏 ส่วนสูง: ${value.height} ซม.`);
+                                    }
+                                    if (value.bmi) {
+                                      vitalSigns.push(`📊 BMI: ${value.bmi}`);
+                                    }
+                                    return vitalSigns.length > 0 ? vitalSigns.join(', ') : 'ไม่มีข้อมูล';
+                                  }
+                                  
+                                  // สำหรับ priority
+                                  if ((key === 'old_priority' || key === 'new_priority') && typeof value === 'number') {
+                                    return getPriorityText(value);
+                                  }
+                                  
+                                  // สำหรับเวลา
+                                  if (key.includes('time') && typeof value === 'string') {
+                                    try {
+                                      return new Date(value).toLocaleString('th-TH');
+                                    } catch {
+                                      return String(value);
+                                    }
+                                  }
+                                  
+                                  // สำหรับ object อื่นๆ ให้แปลงเป็นข้อความสั้นๆ
+                                  if (typeof value === 'object' && value !== null) {
+                                    // ถ้าเป็น array
+                                    if (Array.isArray(value)) {
+                                      return value.join(', ');
+                                    }
+                                    
+                                    // ถ้าเป็น object ที่มี properties น้อย
+                                    const entries = Object.entries(value);
+                                    if (entries.length <= 3) {
+                                      return entries.map(([k, v]) => `${k}: ${v}`).join(', ');
+                                    }
+                                    
+                                    // fallback สำหรับ object ใหญ่
+                                    return `ข้อมูล ${Object.keys(value).length} รายการ`;
+                                  }
+                                  
+                                  return String(value);
+                                };
+                                
+                                return (
+                                  <Typography key={detailIndex} variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+                                    • {getFieldName(key)}: {formatValue(key, value)}
+                                  </Typography>
+                                );
+                              })}
+                            </Box>
+                          )}
                         </Box>
-                        <Typography variant="body2" color="text.secondary">
-                          ผู้ทำ: {log.user_type} {log.user_id ? `(${log.user_id})` : ''}
-                        </Typography>
-                        {log.details && Object.keys(log.details).length > 0 && (
-                          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                            รายละเอียด: {JSON.stringify(log.details, null, 2)}
-                          </Typography>
-                        )}
-                      </Box>
-                    </ListItem>
-                    {index < queueLogs.length - 1 && <Divider />}
-                  </React.Fragment>
-                ))}
+                      </ListItem>
+                      {index < queueLogs.length - 1 && <Divider />}
+                    </React.Fragment>
+                  );
+                })}
               </List>
             ) : (
               <Box sx={{ textAlign: 'center', py: 4 }}>
-                <Typography variant="body1" color="text.secondary">
-                  ไม่มีประวัติการเปลี่ยนแปลง
+                <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+                  📋 ยังไม่มีประวัติการเปลี่ยนแปลงคิวนี้
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  เมื่อมีการดำเนินการกับคิวนี้ ประวัติจะแสดงที่นี่
                 </Typography>
               </Box>
             )}
@@ -1219,8 +1634,9 @@ const ManageQueue: React.FC = () => {
               onClick={() => setShowLogDialog(false)}
               color="primary"
               variant="contained"
+              startIcon={<RefreshIcon />}
             >
-              ปิด
+              ปิดหน้าต่าง
             </Button>
           </DialogActions>
         </Dialog>
@@ -1232,6 +1648,7 @@ const ManageQueue: React.FC = () => {
             if (!medicalRecordLoading) {
               setShowMedicalRecordDialog(false);
               setSelectedQueueForMedicalRecord(null);
+              setSelectedPatientData(null);
               resetMedicalRecordData();
             }
           }}
@@ -1247,12 +1664,29 @@ const ManageQueue: React.FC = () => {
                 <Typography variant="h6" gutterBottom>
                   คิว: {selectedQueueForMedicalRecord.queue_no}
                 </Typography>
-                <Typography variant="body1" gutterBottom>
-                  ผู้ป่วย: {selectedQueueForMedicalRecord.patient?.first_name_th} {selectedQueueForMedicalRecord.patient?.last_name_th}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  เลขบัตรประชาชน: {selectedQueueForMedicalRecord.patient?.national_id}
-                </Typography>
+                
+                {patientDataLoading ? (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                    <CircularProgress size={20} />
+                    <Typography variant="body1">กำลังโหลดข้อมูลผู้ป่วย...</Typography>
+                  </Box>
+                ) : selectedPatientData ? (
+                  <>
+                    <Typography variant="body1" gutterBottom>
+                      ผู้ป่วย: {selectedPatientData.first_name_th} {selectedPatientData.last_name_th}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      เลขบัตรประชาชน: {selectedPatientData.national_id}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      อาการ: {selectedQueueForMedicalRecord.symptoms || 'ไม่ระบุอาการ'}
+                    </Typography>
+                  </>
+                ) : (
+                  <Typography variant="body2" color="error">
+                    ไม่สามารถโหลดข้อมูลผู้ป่วยได้
+                  </Typography>
+                )}
               </Box>
             )}
             
@@ -1355,6 +1789,7 @@ const ManageQueue: React.FC = () => {
               onClick={() => {
                 setShowMedicalRecordDialog(false);
                 setSelectedQueueForMedicalRecord(null);
+                setSelectedPatientData(null);
                 resetMedicalRecordData();
               }}
               disabled={medicalRecordLoading}

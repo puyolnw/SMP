@@ -326,7 +326,8 @@ const ManageRoom: React.FC = () => {
         openTime: openTime,
         closeTime: closeTime,
         maxPatients: maxPatients,
-        notes: notes
+        notes: notes,
+        room_type: currentRoom.room_type || 'general' // เพิ่ม room_type จากข้อมูลห้อง
       };
       if (currentSchedule) {
         await axios.put(`${API_BASE_URL}/api/workplace/room_schedule/${currentSchedule.id}`, payload);
@@ -659,7 +660,11 @@ const ManageRoom: React.FC = () => {
                                     const newIsOpen = e.target.checked;
                                     // อัปเดต state ทันที (optional)
                                     if (schedule) {
-                                      const updatedSchedule = { ...schedule, isOpen: newIsOpen };
+                                      const updatedSchedule = { 
+                                        ...schedule, 
+                                        isOpen: newIsOpen,
+                                        room_type: room.room_type || 'general' // เพิ่ม room_type จากห้อง
+                                      };
                                       setDailySchedules(dailySchedules.map(s =>
                                         s.id === updatedSchedule.id ? updatedSchedule : s
                                       ));

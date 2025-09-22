@@ -86,6 +86,13 @@ const AuthenPatient: React.FC = () => {
 
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+  // Clear any previous session data when component loads
+  useEffect(() => {
+    // Clear previous screening session data
+    localStorage.removeItem('queueInfo');
+    console.log('Previous screening session data cleared');
+  }, []);
+
   // ฟังก์ชันคำนวณอายุจากรหัสประจำตัวประชาชน หรือวันเกิด
   const calculateAge = (nationalId: string, birthDate?: string): number => {
     let calculatedAge = 30; // ค่าเริ่มต้น
@@ -560,8 +567,26 @@ useEffect(() => {
     };
     
     console.log('Sending patient data to AllProcess:', patientWithAge);
+    
+    // Get current patient token before clearing cache
+    const currentToken = localStorage.getItem('patient_token');
+    console.log('Current patient token:', currentToken);
+    
+    // Clear any existing cache before saving new data (แต่เก็บ token ไว้)
+    localStorage.removeItem('authenticatedPatient');
+    localStorage.removeItem('queueInfo');
+    
+    // Save fresh patient data (แต่ไม่ clear token)
     saveAuthenticatedPatient(patientWithAge);
-    navigate('/screening/patient2', { state: { patient: patientWithAge } });
+    
+    // Navigate with fresh data in state พร้อม token
+    navigate('/screening/patient2', { 
+      state: { 
+        patient: patientWithAge,
+        token: currentToken // ส่ง token ไปด้วย
+      },
+      replace: true // Use replace to prevent back navigation issues
+    });
   };
 
   const handleBackToFaceScan = () => {
