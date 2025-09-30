@@ -467,11 +467,18 @@ const Departments: React.FC = () => {
   };
 
   return (
-    <Box sx={{ width: '100%', bgcolor: '#f5f5f5', minHeight: '100vh', py: 3 }}>
+    <Box sx={{ width: '100%', bgcolor: '#f5f5f5', minHeight: '100vh', py: 3, pb: 12 }}>
       <Box sx={{ maxWidth: 1200, mx: 'auto', px: 3 }}>
         {/* Header */}
         <Paper elevation={1} sx={{ p: 3, mb: 3, bgcolor: 'white' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: { xs: 'flex-start', sm: 'center' }, 
+            justifyContent: 'space-between', 
+            mb: 2,
+            flexDirection: { xs: 'column', sm: 'row' },
+            gap: { xs: 2, sm: 0 }
+          }}>
             <Box>
               <Typography variant="h4" component="h1" fontWeight="bold" gutterBottom>
                 จัดการแผนกและสถานที่
@@ -480,7 +487,7 @@ const Departments: React.FC = () => {
                 จัดการข้อมูลแผนก อาคาร ชั้น และห้องตรวจรักษาในโรงพยาบาล
               </Typography>
             </Box>
-            <Box sx={{ display: 'flex', gap: 1 }}>
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
               <Button 
                 variant="outlined" 
                 startIcon={<BuildingIcon />}
@@ -501,10 +508,10 @@ const Departments: React.FC = () => {
           </Box>
 
           {/* Quick Stats */}
-          <Grid container spacing={2}>
+          <Grid container spacing={3}>
             <Grid item xs={6} md={3}>
-              <Card variant="outlined" sx={{ textAlign: 'center', p: 2 }}>
-                <DepartmentIcon sx={{ fontSize: 32, color: '#2196f3', mb: 1 }} />
+              <Card variant="outlined" sx={{ textAlign: 'center', p: 2.5, height: '100%' }}>
+                <DepartmentIcon sx={{ fontSize: 36, color: '#2196f3', mb: 1 }} />
                 <Typography variant="h4" color="primary" fontWeight="bold">
                   {departments.length}
                 </Typography>
@@ -514,8 +521,8 @@ const Departments: React.FC = () => {
               </Card>
             </Grid>
             <Grid item xs={6} md={3}>
-              <Card variant="outlined" sx={{ textAlign: 'center', p: 2 }}>
-                <BuildingIcon sx={{ fontSize: 32, color: '#ff9800', mb: 1 }} />
+              <Card variant="outlined" sx={{ textAlign: 'center', p: 2.5, height: '100%' }}>
+                <BuildingIcon sx={{ fontSize: 36, color: '#ff9800', mb: 1 }} />
                 <Typography variant="h4" color="warning.main" fontWeight="bold">
                   {buildings.length}
                 </Typography>
@@ -525,8 +532,8 @@ const Departments: React.FC = () => {
               </Card>
             </Grid>
             <Grid item xs={6} md={3}>
-              <Card variant="outlined" sx={{ textAlign: 'center', p: 2 }}>
-                <FloorIcon sx={{ fontSize: 32, color: '#4caf50', mb: 1 }} />
+              <Card variant="outlined" sx={{ textAlign: 'center', p: 2.5, height: '100%' }}>
+                <FloorIcon sx={{ fontSize: 36, color: '#4caf50', mb: 1 }} />
                 <Typography variant="h4" color="success.main" fontWeight="bold">
                   {floors.length}
                 </Typography>
@@ -536,8 +543,8 @@ const Departments: React.FC = () => {
               </Card>
             </Grid>
             <Grid item xs={6} md={3}>
-              <Card variant="outlined" sx={{ textAlign: 'center', p: 2 }}>
-                <RoomIcon sx={{ fontSize: 32, color: '#9c27b0', mb: 1 }} />
+              <Card variant="outlined" sx={{ textAlign: 'center', p: 2.5, height: '100%' }}>
+                <RoomIcon sx={{ fontSize: 36, color: '#9c27b0', mb: 1 }} />
                 <Typography variant="h4" color="secondary.main" fontWeight="bold">
                   {rooms.length}
                 </Typography>
@@ -603,15 +610,15 @@ const Departments: React.FC = () => {
               </Typography>
             </Box>
           ) : (
-            <Grid container spacing={2}>
+            <Grid container spacing={3}>
               {buildings.map((building) => {
                 const buildingFloors = floors.filter(f => f.buildingId === building.id);
                 const buildingRooms = rooms.filter(r => buildingFloors.some(f => f.id === r.floorId));
                 
                 return (
                   <Grid item xs={12} md={6} lg={4} key={building.id}>
-                    <Card variant="outlined">
-                      <CardContent>
+                    <Card variant="outlined" sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                      <CardContent sx={{ flexGrow: 1 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
                           <Box sx={{ display: 'flex', alignItems: 'center' }}>
                                                         <Avatar sx={{ bgcolor: '#ff9800', mr: 2 }}>
@@ -690,10 +697,10 @@ const Departments: React.FC = () => {
         </Paper>
 
         {/* Floors and Rooms Section */}
-        <Grid container spacing={3}>
+        <Grid container spacing={3} sx={{ mb: 4 }}>
           {/* Floors */}
           <Grid item xs={12} md={6}>
-            <Paper elevation={1} sx={{ p: 3, bgcolor: 'white' }}>
+            <Paper elevation={1} sx={{ p: 3, bgcolor: 'white', height: 'fit-content' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
                 <Typography variant="h5" fontWeight="bold">
                   รายการชั้น
@@ -755,7 +762,7 @@ const Departments: React.FC = () => {
 
           {/* Rooms */}
           <Grid item xs={12} md={6}>
-            <Paper elevation={1} sx={{ p: 3, bgcolor: 'white' }}>
+            <Paper elevation={1} sx={{ p: 3, bgcolor: 'white', height: 'fit-content' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
                 <Typography variant="h5" fontWeight="bold">
                   รายการห้อง
@@ -785,13 +792,13 @@ const Departments: React.FC = () => {
                   {rooms.slice(0, 10).map((room) => {
                     const department = departments.find(d => d.id === room.departmentId);
                     return (
-                      <ListItem key={room.id} divider>
+                      <ListItem key={room.id} divider sx={{ py: 1.5, pr: 8 }}>
                         <ListItemIcon>
                           <RoomIcon color="secondary" />
                         </ListItemIcon>
                         <ListItemText
                           primary={
-                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
                               {department && (
                                 <Box 
                                   sx={{ 
@@ -799,17 +806,20 @@ const Departments: React.FC = () => {
                                     height: 12, 
                                     borderRadius: '50%', 
                                     bgcolor: department.color || '#ccc',
-                                    mr: 1
+                                    mr: 1,
+                                    flexShrink: 0
                                   }} 
                                 />
                               )}
-                              {room.name}
+                              <Typography variant="body2" component="span" sx={{ mr: 1 }}>
+                                {room.name}
+                              </Typography>
                               {room.capacity && (
                                 <Chip 
                                   label={`${room.capacity} คน`} 
                                   size="small" 
                                   variant="outlined"
-                                  sx={{ ml: 1 }}
+                                  sx={{ fontSize: '0.7rem', height: '20px' }}
                                 />
                               )}
                               {room.room_type && (
@@ -817,10 +827,10 @@ const Departments: React.FC = () => {
                                   label={getRoomTypeInfo(room.room_type).label} 
                                   size="small" 
                                   sx={{ 
-                                    ml: 1, 
                                     bgcolor: getRoomTypeInfo(room.room_type).color,
                                     color: 'white',
-                                    fontSize: '0.75rem'
+                                    fontSize: '0.7rem',
+                                    height: '20px'
                                   }}
                                 />
                               )}
@@ -865,13 +875,25 @@ const Departments: React.FC = () => {
         </Grid>
 
         {/* Floating Action Buttons */}
-        <Box sx={{ position: 'fixed', bottom: 24, right: 24, display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <Box sx={{ 
+          position: 'fixed', 
+          bottom: 24, 
+          right: 24, 
+          display: { xs: 'none', md: 'flex' }, 
+          flexDirection: 'column', 
+          gap: 1,
+          zIndex: 1000
+        }}>
           <Tooltip title="เพิ่มห้อง" placement="left">
             <Fab 
               color="secondary" 
-              size="small"
+              size="medium"
               onClick={() => handleAddNew('room')}
               disabled={departments.length === 0 || floors.length === 0}
+              sx={{ 
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                '&:hover': { transform: 'scale(1.05)' }
+              }}
             >
               <RoomIcon />
             </Fab>
@@ -879,9 +901,13 @@ const Departments: React.FC = () => {
           <Tooltip title="เพิ่มชั้น" placement="left">
             <Fab 
               color="success" 
-              size="small"
+              size="medium"
               onClick={() => handleAddNew('floor')}
               disabled={buildings.length === 0}
+              sx={{ 
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                '&:hover': { transform: 'scale(1.05)' }
+              }}
             >
               <FloorIcon />
             </Fab>
@@ -889,8 +915,12 @@ const Departments: React.FC = () => {
           <Tooltip title="เพิ่มอาคาร" placement="left">
             <Fab 
               color="warning" 
-              size="small"
+              size="medium"
               onClick={() => handleAddNew('building')}
+              sx={{ 
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                '&:hover': { transform: 'scale(1.05)' }
+              }}
             >
               <BuildingIcon />
             </Fab>
@@ -899,6 +929,10 @@ const Departments: React.FC = () => {
             <Fab 
               color="primary"
               onClick={() => handleAddNew('department')}
+              sx={{ 
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                '&:hover': { transform: 'scale(1.05)' }
+              }}
             >
               <AddIcon />
             </Fab>

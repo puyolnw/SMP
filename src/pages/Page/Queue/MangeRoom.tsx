@@ -241,21 +241,35 @@ const ManageRoom: React.FC = () => {
   const createDefaultSchedules = async () => {
     const departmentRooms = rooms.filter(room => room.departmentId === selectedDepartment);
     if (departmentRooms.length === 0) return;
-    const newSchedules = departmentRooms.map((room, index) => ({
+    
+    // ตรวจสอบว่ามี schedule อยู่แล้วหรือไม่
+    const existingSchedules = dailySchedules.filter(s => 
+      departmentRooms.some(room => room.id === s.roomId) && s.date === selectedDate
+    );
+    
+    // สร้าง schedule เฉพาะห้องที่ยังไม่มี schedule
+    const roomsNeedingSchedule = departmentRooms.filter(room => 
+      !existingSchedules.some(s => s.roomId === room.id)
+    );
+    
+    if (roomsNeedingSchedule.length === 0) return;
+    
+    const newSchedules = roomsNeedingSchedule.map((room, index) => ({
       date: selectedDate,
       departmentId: selectedDepartment,
       roomId: room.id,
-      isOpen: index < 2,
+      isOpen: index < 2, // เปิดเฉพาะ 2 ห้องแรก
       openTime: '08:00',
       closeTime: '16:00',
       maxPatients: 30,
       notes: '',
-      room_type: room.room_type || 'general' // <-- copy room_type จากห้อง
+      room_type: room.room_type || 'general'
     }));
+    
     try {
       await axios.post(`${API_BASE_URL}/api/workplace/room_schedule/bulk`, newSchedules);
       await loadDailySchedules();
-      showSnackbar('สร้างตารางห้องตรวจเริ่มต้นสำหรับวันนี้แล้ว', 'success');
+      showSnackbar(`สร้างตารางห้องตรวจสำหรับ ${roomsNeedingSchedule.length} ห้องแล้ว`, 'success');
     } catch (error) {
       showSnackbar('เกิดข้อผิดพลาดในการสร้างตาราง', 'error');
     }

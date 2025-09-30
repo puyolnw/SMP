@@ -4,6 +4,37 @@ import { QRCodeSVG } from 'qrcode.react';
 
 import axios from 'axios';
 
+// Type declarations for Speech Recognition
+declare global {
+  interface Window {
+    SpeechRecognition: any;
+    webkitSpeechRecognition: any;
+  }
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  grammars: any;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  serviceURI: string;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onaudiostart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onaudioend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onerror: ((this: SpeechRecognition, ev: any) => any) | null;
+  onnomatch: ((this: SpeechRecognition, ev: any) => any) | null;
+  onresult: ((this: SpeechRecognition, ev: any) => any) | null;
+  onsoundstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onsoundend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onspeechstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onspeechend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+}
+
 interface PatientData {
   id: string;
   name: string;
@@ -64,14 +95,14 @@ const loadCameraSizeSettings = () => {
   const [patientToken] = useState<string | null>(getPatientToken());
   
   const CAMERASETTINGS_KEY = 'camerasettings';
-  // Audio recording states
-  const [isRecording, setIsRecording] = useState(false);
-  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-  const [recordingTime, setRecordingTime] = useState(0);
+  // Audio recording states (legacy - now using Speech Recognition) 
   const [symptomsText, setSymptomsText] = useState('');
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-const recordingTimerRef = useRef<NodeJS.Timeout | number | null>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  
+  // Speech recognition states
+  const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const submitTimeoutRef = useRef<NodeJS.Timeout | number | null>(null);
   const [mainStream, setMainStream] = useState<MediaStream | null>(null);
   const [bpStream, setBpStream] = useState<MediaStream | null>(null);
   const stopSpeaking = () => {
@@ -137,10 +168,142 @@ const speak = (text: string) => {
   }
 };
 
+// Initialize Speech Recognition
+const initializeSpeechRecognition = () => {
+  if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'th-TH';
+    recognition.maxAlternatives = 1;
+    
+    recognition.onstart = () => {
+      console.log('Speech recognition started');
+      setIsListening(true);
+      setIsTranscribing(true);
+      setErrorMessage('กำลังฟัง... กรุณาพูดอาการของท่าน');
+    };
+    
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      console.log('Speech recognition result:', transcript);
+      setSymptomsText(transcript);
+      setIsTranscribing(false);
+      setErrorMessage('');
+      
+      // ทวนข้อความที่แปลงได้
+      speak(`ระบบได้ยินว่าคุณบอกอาการว่า ${transcript} ถูกต้องหรือไม่`);
+      
+      // ไปขั้นตอนถัดไปหลังจากทวนอาการเสร็จ (รอ 5 วินาที)
+      submitTimeoutRef.current = setTimeout(() => {
+        submitSymptoms();
+      }, 8000);
+    };
+    
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      setIsListening(false);
+      setIsTranscribing(false);
+      
+      switch (event.error) {
+        case 'no-speech':
+          setErrorMessage('ไม่ได้ยินเสียงพูด กรุณาลองใหม่');
+          break;
+        case 'audio-capture':
+          setErrorMessage('ไม่สามารถเข้าถึงไมโครโฟนได้');
+          break;
+        case 'not-allowed':
+          setErrorMessage('กรุณาอนุญาตการใช้ไมโครโฟน');
+          break;
+        default:
+          setErrorMessage('เกิดข้อผิดพลาดในการรับรู้เสียง กรุณาลองใหม่');
+      }
+    };
+    
+    recognition.onend = () => {
+      console.log('Speech recognition ended');
+      setIsListening(false);
+      if (isTranscribing) {
+        setIsTranscribing(false);
+        setErrorMessage('');
+      }
+    };
+    
+    setRecognition(recognition);
+    return recognition;
+  } else {
+    console.warn('Speech Recognition API not supported');
+    setErrorMessage('เบราว์เซอร์ไม่รองรับการรับรู้เสียง กรุณาใช้ Chrome หรือ Edge');
+    return null;
+  }
+};
+
+// Start speech recognition
+const startSpeechRecognition = () => {
+  const rec = recognition || initializeSpeechRecognition();
+  if (rec && !isListening) {
+    try {
+      // แนะนำก่อนเริ่มฟัง
+      speak('กรุณาพูดอาการของท่านหลังจากเสียงสัญญาณ');
+      
+      // รอ 3 วินาทีแล้วเล่นเสียงสัญญาณ
+      setTimeout(() => {
+        // เล่นเสียงสัญญาณ (beep)
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.frequency.value = 800;
+        gainNode.gain.value = 0.3;
+        
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 0.5);
+        
+        // เริ่มฟังหลังเสียงสัญญาณ
+        setTimeout(() => {
+          rec.start();
+        }, 500);
+      }, 3000);
+    } catch (error) {
+      console.error('Error starting speech recognition:', error);
+      setErrorMessage('ไม่สามารถเริ่มการรับรู้เสียงได้');
+    }
+  }
+};
+
+// Stop speech recognition
+const stopSpeechRecognition = () => {
+  if (recognition && isListening) {
+    recognition.stop();
+  }
+  
+  // ยกเลิก timeout ที่รอ submitSymptoms
+  if (submitTimeoutRef.current) {
+    clearTimeout(submitTimeoutRef.current as any);
+    submitTimeoutRef.current = null;
+  }
+};
+
   useEffect(() => {
   // หยุดเสียงทุกครั้งที่เปลี่ยน step
   stopSpeaking();
+  
+  // ยกเลิก timeout ของ submitSymptoms
+  if (submitTimeoutRef.current) {
+    clearTimeout(submitTimeoutRef.current as any);
+    submitTimeoutRef.current = null;
+  }
 }, [currentStep]);
+
+  // Initialize Speech Recognition on component mount
+  useEffect(() => {
+    initializeSpeechRecognition();
+  }, []);
 
   useEffect(() => {
     let message = '';
@@ -279,10 +442,15 @@ const speak = (text: string) => {
     });
     setErrorMessage('');
     setSymptomsText('');
-    setAudioBlob(null);
     setQueueInfo(null);
     setScanCount(0);
     setManualInputMode(false);
+    
+    // Clear speech recognition timeout
+    if (submitTimeoutRef.current) {
+      clearTimeout(submitTimeoutRef.current as any);
+      submitTimeoutRef.current = null;
+    }
     
     // Close cameras
     closeCamera();
@@ -562,104 +730,38 @@ useEffect(() => {
 
 
   const startRecording = async () => {
-    try {
-      // แนะนำก่อนเริ่มบันทึก
-      speak('กรุณาบอกอาการหลังจากเสียงสัญญาณ ระบบจะเปิดไมโครโฟนให้ 10 วินาที');
-      
-      // รอ 3 วินาทีแล้วเล่นเสียงสัญญาณ
-      setTimeout(() => {
-        // เล่นเสียงสัญญาณ (beep)
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-        
-        oscillator.frequency.value = 800; // ความถี่เสียง
-        gainNode.gain.value = 0.3; // ความดัง
-        
-        oscillator.start();
-        oscillator.stop(audioContext.currentTime + 0.5); // เล่น 0.5 วินาที
-        
-        // เริ่มบันทึกหลังเสียงสัญญาณ
-        setTimeout(async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      
-      const chunks: BlobPart[] = [];
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunks.push(event.data);
-        }
-      };
-      
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'audio/wav' });
-        setAudioBlob(blob);
-        stream.getTracks().forEach(track => track.stop());
-      };
-      
-      mediaRecorder.start();
-      setIsRecording(true);
-      setRecordingTime(0);
-      
-          // ตั้งเวลาบันทึก 10 วินาที
-      recordingTimerRef.current = setInterval(() => {
-            setRecordingTime(prev => {
-              if (prev >= 9) { // หยุดที่ 10 วินาที (0-9)
-                stopRecording();
-                return prev;
-              }
-              return prev + 1;
-            });
-      }, 1000);
-          
-          // หยุดอัตโนมัติหลัง 10 วินาที
-          setTimeout(() => {
-            if (mediaRecorderRef.current && isRecording) {
-              stopRecording();
-            }
-          }, 10000);
-          
-        }, 500); // รอให้เสียงสัญญาณจบ
-      }, 3000); // รอ 3 วินาทีหลังจากพูดคำแนะนำ
-      
-    } catch (error) {
-      setErrorMessage('ไม่สามารถเข้าถึงไมโครโฟนได้');
-      console.error('Error accessing microphone:', error);
-    }
+    // ใช้ Speech Recognition แทนการบันทึกเสียง
+    startSpeechRecognition();
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current as any);
-        recordingTimerRef.current = null;
-      }
-      
-      // แจ้งเตือนเมื่อบันทึกเสร็จ
-      speak('บันทึกเสียงเสร็จสิ้น กำลังแปลงเป็นข้อความ');
-    }
+    // ใช้ Speech Recognition แทน
+    stopSpeechRecognition();
   };
 
 
   const playRecording = () => {
-    if (audioBlob && audioRef.current) {
-      const audioUrl = URL.createObjectURL(audioBlob);
-      audioRef.current.src = audioUrl;
-      audioRef.current.play();
+    if (symptomsText) {
+      speak(symptomsText);
     }
   };
 
   const deleteRecording = () => {
-    setAudioBlob(null);
-    setRecordingTime(0);
+    // ยกเลิก timeout ที่จะเรียก submitSymptoms
+    if (submitTimeoutRef.current) {
+      clearTimeout(submitTimeoutRef.current as any);
+      submitTimeoutRef.current = null;
+    }
+    
+    // หยุดการพูดและรีเซ็ตข้อมูล
+    stopSpeaking();
     setSymptomsText('');
+    setErrorMessage('');
+    setIsListening(false);
+    setIsTranscribing(false);
+    
+    // แจ้งผู้ใช้
+    speak('ได้ลบข้อมูลแล้ว สามารถบันทึกใหม่ได้');
   };
 
   const submitSymptoms = async () => {
@@ -674,12 +776,6 @@ useEffect(() => {
       setErrorMessage('ไม่สามารถบันทึกข้อมูลอาการได้');
       console.error('Error submitting symptoms:', error);
     }
-  };
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   const generateQRData = () => {
@@ -999,28 +1095,7 @@ useEffect(() => {
     }
   };
 
-   // อัปเดต useEffect สำหรับการแปลงเสียงเป็นข้อความ
-  useEffect(() => {
-    if (audioBlob) {
-      setErrorMessage('กำลังแปลงเสียงเป็นข้อความ...');
-    
-    // Mock: ไม่ส่งไปประมวลผล แต่ใช้ข้อความคงที่
-    setTimeout(() => {
-      const mockText = 'รู้สึกปวดหัว ไม่สบายมาหลายวันแล้ว';
-      setSymptomsText(mockText);
-          setErrorMessage('');
-      // ทวนข้อความที่แปลงได้
-      setTimeout(() => {
-        speak(`ระบบได้ยินว่าคุณบอกอาการว่า ${mockText} ถูกต้องหรือไม่`);
-        
-        // ไปขั้นตอนถัดไปทันทีหลังจากทวนอาการเสร็จ (รอ 5 วินาที)
-        setTimeout(() => {
-          submitSymptoms();
-        }, 5000);
-      }, 1000);
-    }, 3000); // จำลองเวลาประมวลผล 3 วินาที
-    }
-  }, [audioBlob]);
+  // Speech Recognition ทำงานใน callback แล้ว ไม่ต้องใช้ useEffect กับ audioBlob อีก
 
   const closeCamera = () => {
     if (mainStream) {
@@ -1597,60 +1672,35 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
             <div className="mb-8">
               <h3 className="text-lg font-medium text-gray-800 mb-4">บันทึกเสียง</h3>
               <div className="bg-gray-50 rounded-lg p-6">
-                {!isRecording && !audioBlob && (
+                {!isListening && !symptomsText && (
                   <div className="text-center">
                     <button
-                      onClick={() => {
-                        // แนะนำก่อนเริ่มบันทึก
-                        speak('กรุณาบอกอาการหลังจากเสียงสัญญาณ ระบบจะเปิดไมโครโฟนให้ 10 วินาที');
-                        
-                        // รอ 3 วินาทีแล้วเล่นเสียงสัญญาณ
-                        setTimeout(() => {
-                          // เล่นเสียงสัญญาณ (beep)
-                          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-                          const oscillator = audioContext.createOscillator();
-                          const gainNode = audioContext.createGain();
-                          
-                          oscillator.connect(gainNode);
-                          gainNode.connect(audioContext.destination);
-                          
-                          oscillator.frequency.value = 800;
-                          gainNode.gain.value = 0.3;
-                          
-                          oscillator.start();
-                          oscillator.stop(audioContext.currentTime + 0.5);
-                          
-                          // เริ่มบันทึกหลังเสียงสัญญาณ
-                          setTimeout(() => {
-                            startRecording();
-                          }, 500);
-                        }, 3000);
-                      }}
+                      onClick={startRecording}
                       className="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-full font-medium text-lg transition-colors flex items-center mx-auto"
                     >
                       <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                       </svg>
-                      เริ่มบันทึกเสียง
+                      เริ่มบันทึกเสียง (Speech Recognition)
                     </button>
-                    <p className="text-sm text-gray-500 mt-2">กดเพื่อเริ่มบันทึกเสียง (จะมีคำแนะนำก่อน)</p>
+                    <p className="text-sm text-gray-500 mt-2">กดเพื่อเริ่มบันทึกเสียง</p>
                   </div>
                 )}
-                {isRecording && (
+                {isListening && (
                   <div className="text-center">
                     <div className="flex items-center justify-center mb-4">
                       <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse mr-3"></div>
-                      <span className="text-lg font-medium text-red-600">กำลังบันทึก... {formatTime(recordingTime)}/10 วินาที</span>
+                      <span className="text-lg font-medium text-red-600">กำลังฟัง... กรุณาพูดอาการของท่าน</span>
                     </div>
                     <button
                       onClick={stopRecording}
                       className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-full font-medium text-lg transition-colors"
                     >
-                      หยุดบันทึก
+                      หยุดฟัง
                     </button>
                   </div>
                 )}
-                {audioBlob && !isRecording && (
+                {symptomsText && !isListening && (
                   <div className="text-center">
                     <div className="flex items-center justify-center space-x-4 mb-4">
                       <button
@@ -1726,10 +1776,7 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
                       ฟังข้อความ
                     </button>
                     <button
-                      onClick={() => {
-                        setSymptomsText('');
-                        setAudioBlob(null);
-                      }}
+                      onClick={deleteRecording}
                       className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center"
                     >
                       <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1755,10 +1802,17 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
             </div>
 
             {/* ปุ่มยืนยัน */}
-            {symptomsText.trim() && (
+            {symptomsText.trim() && !isListening && (
             <div className="text-center">
               <button
-                onClick={submitSymptoms}
+                onClick={() => {
+                  // ยกเลิก timeout ที่มีอยู่ก่อน
+                  if (submitTimeoutRef.current) {
+                    clearTimeout(submitTimeoutRef.current as any);
+                    submitTimeoutRef.current = null;
+                  }
+                  submitSymptoms();
+                }}
                   className="bg-green-500 hover:bg-green-600 text-white px-8 py-3 rounded-lg font-medium text-lg transition-colors flex items-center mx-auto"
                 >
                   <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
