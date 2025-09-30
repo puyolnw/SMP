@@ -700,7 +700,7 @@ const AddDepartment: React.FC = () => {
                         <MenuItem value="emergency">
                           <Box sx={{ display: 'flex', alignItems: 'center' }}>
                             <RoomIcon sx={{ mr: 1, color: '#f44336' }} />
-                            ห้องฉุกเฉิน
+                            ห้องวิกฤต
                           </Box>
                         </MenuItem>
                         <MenuItem value="cardiology">

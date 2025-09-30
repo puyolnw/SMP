@@ -34,7 +34,7 @@ interface Patient {
   allergies?: string[];
   currentMedications?: string[];
   
-  // ข้อมูลผู้ติดต่อฉุกเฉิน
+  // ข้อมูลผู้ติดต่อวิกฤต
   emergencyContact?: {
     name: string;
     phone: string;
@@ -670,11 +670,11 @@ const AddPatient: React.FC = () => {
         </div>
       </div>
       <div className="mt-8 p-6 bg-gray-50 rounded-lg">
-        <h3 className="text-lg font-medium text-gray-800 mb-4">ข้อมูลผู้ติดต่อฉุกเฉิน</h3>
+        <h3 className="text-lg font-medium text-gray-800 mb-4">ข้อมูลผู้ติดต่อวิกฤต</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">ชื่อ-นามสกุล</label>
-            <input type="text" name="emergencyContact.name" value={formData.emergencyContact?.name || ''} onChange={handleInputChange} disabled={isLoading} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="ชื่อผู้ติดต่อฉุกเฉิน" />
+            <input type="text" name="emergencyContact.name" value={formData.emergencyContact?.name || ''} onChange={handleInputChange} disabled={isLoading} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="ชื่อผู้ติดต่อวิกฤต" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">เบอร์โทรศัพท์</label>
@@ -723,7 +723,7 @@ const AddPatient: React.FC = () => {
             <p><strong>ยาประจำ:</strong> {formData.currentMedications?.length || 0} รายการ</p>
           </div>
         </div>
-        <h3 className="text-lg font-medium text-gray-800 mt-6 mb-4">ข้อมูลผู้ติดต่อฉุกเฉิน</h3>
+        <h3 className="text-lg font-medium text-gray-800 mt-6 mb-4">ข้อมูลผู้ติดต่อวิกฤต</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div>
             <p><strong>ชื่อ-นามสกุล:</strong> {formData.emergencyContact?.name || '-'}</p>

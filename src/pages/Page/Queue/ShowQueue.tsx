@@ -101,7 +101,7 @@ const ShowQueue: React.FC = () => {
       if (apiDepartments.length === 0) {
         departmentsToUse = [
           { id: 'GEN', name: 'แผนกผู้ป่วยนอก', rooms: ['ห้องตรวจ 1', 'ห้องตรวจ 2', 'ห้องตรวจ 3'] },
-          { id: 'EMR', name: 'แผนกฉุกเฉิน', rooms: ['ห้องฉุกเฉิน 1', 'ห้องฉุกเฉิน 2'] },
+          { id: 'EMR', name: 'แผนกวิกฤต', rooms: ['ห้องวิกฤต 1', 'ห้องวิกฤต 2'] },
           { id: 'CAR', name: 'แผนกหัวใจ', rooms: ['ห้องหัวใจ 1', 'ห้องหัวใจ 2'] }
         ];
       }
@@ -247,18 +247,18 @@ const ShowQueue: React.FC = () => {
 
   const getPriorityText = (priority: number) => {
     switch (priority) {
-      case 1: return 'ฉุกเฉิน';
+      case 1: return 'วิกฤต';
       case 2: return 'เร่งด่วน';
       case 3: return 'ปานกลาง';
       case 4: return 'ไม่เร่งด่วน';
-      case 5: return 'ต่ำสุด';
+      case 5: return 'ปกติ';
       default: return 'ไม่ระบุ';
     }
   };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'ฉุกเฉิน':
+      case 'วิกฤต':
         return '#d32f2f';
       case 'เร่งด่วน':
         return '#f57c00';

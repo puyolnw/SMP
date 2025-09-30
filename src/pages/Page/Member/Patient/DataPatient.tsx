@@ -34,7 +34,7 @@ interface Patient {
   allergies?: string[];
   currentMedications?: string[];
   
-  // ข้อมูลผู้ติดต่อฉุกเฉิน
+  // ข้อมูลผู้ติดต่อวิกฤต
   emergencyContact?: {
     name: string;
     phone: string;
@@ -196,8 +196,8 @@ const DataPatient: React.FC = () => {
               status: queue.status,
               triage_level: queue.triage_level,
               priority: queue.priority,
-              room_name: queue._id === 'dummy_queue_1' ? 'ห้องฉุกเฉิน 1' : 'ห้องตรวจทั่วไป 2',
-              department_name: queue._id === 'dummy_queue_1' ? 'แผนกฉุกเฉิน' : 'แผนกอายุรกรรม',
+              room_name: queue._id === 'dummy_queue_1' ? 'ห้องวิกฤต 1' : 'ห้องตรวจทั่วไป 2',
+              department_name: queue._id === 'dummy_queue_1' ? 'แผนกวิกฤต' : 'แผนกอายุรกรรม',
               building_name: 'อาคารผู้ป่วยนอก',
               floor_name: 'ชั้น 2',
               symptoms: queue.symptoms,
@@ -205,15 +205,15 @@ const DataPatient: React.FC = () => {
               completed_at: queue.completed_at,
               wait_time: waitTime,
               room_schedule: {
-                name: queue._id === 'dummy_queue_1' ? 'ห้องฉุกเฉิน 1' : 'ห้องตรวจทั่วไป 2',
+                name: queue._id === 'dummy_queue_1' ? 'ห้องวิกฤต 1' : 'ห้องตรวจทั่วไป 2',
                 openTime: '08:00',
                 closeTime: '17:00'
               },
               room_master: {
-                name: queue._id === 'dummy_queue_1' ? 'ห้องฉุกเฉิน 1' : 'ห้องตรวจทั่วไป 2'
+                name: queue._id === 'dummy_queue_1' ? 'ห้องวิกฤต 1' : 'ห้องตรวจทั่วไป 2'
               },
               department_info: {
-                name: queue._id === 'dummy_queue_1' ? 'แผนกฉุกเฉิน' : 'แผนกอายุรกรรม'
+                name: queue._id === 'dummy_queue_1' ? 'แผนกวิกฤต' : 'แผนกอายุรกรรม'
               },
               building_info: {
                 name: 'อาคารผู้ป่วยนอก'
@@ -358,17 +358,17 @@ const DataPatient: React.FC = () => {
           status: 'waiting',
           triage_level: 1,
           priority: 1,
-          room_name: 'ห้องฉุกเฉิน 1',
-          department_name: 'แผนกฉุกเฉิน',
+          room_name: 'ห้องวิกฤต 1',
+          department_name: 'แผนกวิกฤต',
           building_name: 'อาคารผู้ป่วยนอก',
           floor_name: 'ชั้น 2',
           symptoms: 'เป็นไข้',
           created_at: new Date().toISOString(),
           completed_at: "2024-01-15T10:30:00Z",
           wait_time: 0,
-          room_schedule: { name: 'ห้องฉุกเฉิน 1', openTime: '00:00', closeTime: '23:59' },
-          room_master: { name: 'ห้องฉุกเฉิน 1' },
-          department_info: { name: 'แผนกฉุกเฉิน' },
+          room_schedule: { name: 'ห้องวิกฤต 1', openTime: '00:00', closeTime: '23:59' },
+          room_master: { name: 'ห้องวิกฤต 1' },
+          department_info: { name: 'แผนกวิกฤต' },
           building_info: { name: 'อาคารผู้ป่วยนอก' },
           floor_info: { name: 'ชั้น 2' }
         }
@@ -487,11 +487,11 @@ const DataPatient: React.FC = () => {
   // ฟังก์ชันแสดงข้อความ priority
   const getPriorityText = (priority: number) => {
     switch (priority) {
-      case 1: return '🔴 ฉุกเฉิน';
+      case 1: return '🔴 วิกฤต';
       case 2: return '🟠 เร่งด่วน';
       case 3: return '🟡 ปานกลาง';
       case 4: return '🟢 ไม่เร่งด่วน';
-      case 5: return '⚪ ต่ำสุด';
+      case 5: return '⚪ ปกติ';
       default: return '❓ ไม่ระบุ';
     }
   };
@@ -962,10 +962,10 @@ const DataPatient: React.FC = () => {
             </div>
           </div>
 
-          {/* ผู้ติดต่อฉุกเฉิน */}
+          {/* ผู้ติดต่อวิกฤต */}
           {patient.emergencyContact && (
             <div className="mb-8">
-              <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">ผู้ติดต่อฉุกเฉิน</h2>
+              <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">ผู้ติดต่อวิกฤต</h2>
               <div className="bg-orange-50 p-6 rounded-lg border-l-4 border-orange-400">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
