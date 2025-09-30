@@ -107,7 +107,7 @@ const ROOM_TYPES = [
   { value: 'eye', label: 'ห้องตรวจแผนกจักษุกรรม', color: '#9c27b0' },
   { value: 'ent', label: 'ห้องตรวจแผนกหู คอ จมูก', color: '#00bcd4' },
   { value: 'obgyn', label: 'ห้องตรวจแผนกสูตินรีเวช', color: '#e91e63' },
-  { value: 'emergency', label: 'ห้องฉุกเฉิน', color: '#d32f2f' }
+  { value: 'emergency', label: 'ห้องวิกฤต', color: '#d32f2f' }
 ];
 
 // Helper function เพื่อหาข้อมูลประเภทห้อง

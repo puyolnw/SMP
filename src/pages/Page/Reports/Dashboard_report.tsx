@@ -120,8 +120,8 @@ const DashboardReport: React.FC = () => {
   const getTriageLabel = (level: number) => {
     const labels: Record<number, string> = {
       1: 'วิกฤติ',
-      2: 'เร่งด่วนมาก',
-      3: 'เร่งด่วนปานกลาง',
+      2: 'เร่งด่วน',
+      3: 'ปานกลาง',
       4: 'ไม่เร่งด่วน',
       5: 'ปกติ'
     };

@@ -163,7 +163,7 @@ const ManageQueue: React.FC = () => {
         console.log('[DEBUG] No departments from API, using fallback');
         departmentsToUse = [
           { id: 'GEN', name: 'แผนกผู้ป่วยนอก', rooms: ['ห้องตรวจ 1', 'ห้องตรวจ 2', 'ห้องตรวจ 3'] },
-          { id: 'EMR', name: 'แผนกฉุกเฉิน', rooms: ['ห้องฉุกเฉิน 1', 'ห้องฉุกเฉิน 2'] },
+          { id: 'EMR', name: 'แผนกวิกฤต', rooms: ['ห้องวิกฤต 1', 'ห้องวิกฤต 2'] },
           { id: 'CAR', name: 'แผนกหัวใจ', rooms: ['ห้องหัวใจ 1', 'ห้องหัวใจ 2'] }
         ];
       }
@@ -384,11 +384,11 @@ const ManageQueue: React.FC = () => {
 
   const getPriorityText = (priority: number) => {
     switch (priority) {
-      case 1: return 'ฉุกเฉิน';
+      case 1: return 'วิกฤต';
       case 2: return 'เร่งด่วน';
       case 3: return 'ปานกลาง';
       case 4: return 'ไม่เร่งด่วน';
-      case 5: return 'ต่ำสุด';
+      case 5: return 'ปกติ';
       default: return 'ไม่ระบุ';
     }
   };
@@ -457,7 +457,7 @@ const ManageQueue: React.FC = () => {
             
             if (results.assigned_rooms > 0) actions.push(`จัดห้อง ${results.assigned_rooms} คิว`);
             if (results.progressed_queues > 0) actions.push(`เปลี่ยนสถานะ ${results.progressed_queues} คิว`);
-            if (results.called_immediate_queues > 0) actions.push(`เรียกฉุกเฉิน ${results.called_immediate_queues} คิว`);
+            if (results.called_immediate_queues > 0) actions.push(`เรียกวิกฤต ${results.called_immediate_queues} คิว`);
             
             message += actions.join(', ');
             showSnackbar(message, 'success');
@@ -483,7 +483,7 @@ const ManageQueue: React.FC = () => {
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'ฉุกเฉิน':
+      case 'วิกฤต':
         return '#d32f2f';
       case 'เร่งด่วน':
         return '#f57c00';
@@ -1349,11 +1349,11 @@ const ManageQueue: React.FC = () => {
                 onChange={(e) => setNewPriority(Number(e.target.value))}
                 label="Priority ใหม่"
               >
-                <MenuItem value={1}>1 - ฉุกเฉิน</MenuItem>
+                <MenuItem value={1}>1 - วิกฤต</MenuItem>
                 <MenuItem value={2}>2 - เร่งด่วน</MenuItem>
                 <MenuItem value={3}>3 - ปานกลาง</MenuItem>
                 <MenuItem value={4}>4 - ไม่เร่งด่วน</MenuItem>
-                <MenuItem value={5}>5 - ต่ำสุด</MenuItem>
+                <MenuItem value={5}>5 - ปกติ</MenuItem>
               </Select>
             </FormControl>
             
@@ -1364,7 +1364,7 @@ const ManageQueue: React.FC = () => {
               rows={3}
               value={priorityReason}
               onChange={(e) => setPriorityReason(e.target.value)}
-              placeholder="ระบุเหตุผล เช่น อาการหนัก, ผู้ป่วยสูงอายุ, ฉุกเฉิน"
+              placeholder="ระบุเหตุผล เช่น อาการหนัก, ผู้ป่วยสูงอายุ, วิกฤต"
               variant="outlined"
             />
           </DialogContent>

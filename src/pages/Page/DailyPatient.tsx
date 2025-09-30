@@ -166,7 +166,7 @@ const AllData: React.FC = () => {
         }));
         setData(patients);
         setStatuses(['รอตรวจ', 'กำลังรักษา', 'รักษาเสร็จ', 'นัดติดตาม']);
-        setPriorities(['ฉุกเฉิน', 'เร่งด่วน', 'ปานกลาง', 'ไม่เร่งด่วน']);
+        setPriorities(['วิกฤต', 'เร่งด่วน', 'ปานกลาง', 'ไม่เร่งด่วน']);
       } catch {
         setError('เกิดข้อผิดพลาดในการโหลดข้อมูลผู้ป่วย');
       }
@@ -323,7 +323,7 @@ const AllData: React.FC = () => {
   // Get priority color
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'ฉุกเฉิน':
+      case 'วิกฤต':
         return 'error';
       case 'เร่งด่วน':
         return 'warning';
@@ -437,9 +437,9 @@ const AllData: React.FC = () => {
               <CardContent sx={{ textAlign: 'center', py: 2 }}>
                 <EmergencyIcon sx={{ fontSize: 30, mb: 1 }} />
                 <Typography variant="h5" fontWeight="bold">
-                  {filteredData.filter(p => p.priority_level === 'ฉุกเฉิน').length}
+                  {filteredData.filter(p => p.priority_level === 'วิกฤต').length}
                 </Typography>
-                <Typography variant="body2">ผู้ป่วยฉุกเฉิน</Typography>
+                <Typography variant="body2">ผู้ป่วยวิกฤต</Typography>
               </CardContent>
             </Card>
           </Grid>
