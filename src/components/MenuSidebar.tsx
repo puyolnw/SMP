@@ -17,6 +17,11 @@ import {
   ManageAccounts,
   Business,
   Home,
+  Assessment,
+  Person,
+  BarChart,
+  History,
+  LocalHospital,
 } from '@mui/icons-material';
 
 // Helper function to get user ID from localStorage
@@ -160,6 +165,38 @@ export const getMenuItems = () => [
         icon: QueuePlayNext,
         path: '/queue/showqueue',
         nameTH: 'จอแสดงคิว',
+      },
+    ],
+  },
+  {
+    text: 'รายงาน',
+    icon: Assessment,
+    path: '',
+    nameTH: 'ระบบรายงาน',
+    children: [
+      {
+        text: 'Dashboard รายงาน',
+        icon: BarChart,
+        path: '/reports/dashboard',
+        nameTH: 'Dashboard รายงาน',
+      },
+      {
+        text: 'รายงานผู้ป่วย',
+        icon: History,
+        path: '/reports/patient',
+        nameTH: 'รายงานประวัติผู้ป่วย',
+      },
+      {
+        text: 'รายงานแพทย์',
+        icon: Person,
+        path: '/reports/doctor',
+        nameTH: 'รายงานผลงานแพทย์',
+      },
+      {
+        text: 'รายงานพยาบาล',
+        icon: LocalHospital,
+        path: '/reports/nurse',
+        nameTH: 'รายงานผลงานพยาบาล',
       },
     ],
   },

@@ -82,7 +82,6 @@ const Dashboard: React.FC = () => {
     activeRooms: 0
   });
   const [recentPatients, setRecentPatients] = useState<any[]>([]);
-  const [departmentStats, setDepartmentStats] = useState<any>({});
   const [systemInfo, setSystemInfo] = useState<any>({});
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
@@ -98,7 +97,7 @@ const Dashboard: React.FC = () => {
       console.log('📊 API Response:', response.data);
       
       if (response.data.success) {
-        const { stats: apiStats, recent_patients, department_stats, system_info } = response.data;
+        const { stats: apiStats, recent_patients, system_info } = response.data;
         
         setStats({
           emergency: apiStats.emergency || 0,
@@ -110,7 +109,6 @@ const Dashboard: React.FC = () => {
         });
         
         setRecentPatients(recent_patients || []);
-        setDepartmentStats(department_stats || {});
         setSystemInfo(system_info || {});
         
         console.log('✅ Dashboard data loaded successfully from API');
@@ -167,7 +165,6 @@ const Dashboard: React.FC = () => {
         }
       ]);
       
-      setDepartmentStats({});
       setSystemInfo({ system_status: 'offline' });
       
       console.log('⚠️ Fallback to mock data completed');
@@ -266,7 +263,7 @@ const Dashboard: React.FC = () => {
             >
               <UrgentIcon sx={{ fontSize: 40, mb: 1 }} />
               <Typography variant="h4" fontWeight="bold">{stats.emergency}</Typography>
-              <Typography variant="body2">ฉุกเฉิน</Typography>
+              <Typography variant="body2">วิกฤต</Typography>
               {loading && <LinearProgress color="inherit" sx={{ mt: 1 }} />}
             </Paper>
           </Grid>
@@ -483,7 +480,7 @@ const Dashboard: React.FC = () => {
                                     />
                                     {patient.queue_priority === 1 && (
                                       <Chip 
-                                        label="ฉุกเฉิน"
+                                        label="วิกฤต"
                                         size="small"
                                         color="error"
                                         icon={<UrgentIcon />}
@@ -569,7 +566,7 @@ const Dashboard: React.FC = () => {
               </Box>
               <Divider sx={{ my: 2 }} />
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="body1">ผู้ป่วยทั้งหมดในระบบ:</Typography>
+                <Typography variant="body1">ผู้ป่วยที่คัดกรองผ่านแล้ว:</Typography>
                 <Typography variant="body1" fontWeight="bold">{stats.totalPatients} คน</Typography>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
@@ -587,39 +584,6 @@ const Dashboard: React.FC = () => {
                 </Button>
               </Box>
             </Paper>
-
-            {/* Department Stats */}
-            {Object.keys(departmentStats).length > 0 && (
-              <>
-                <Typography variant="h5" sx={{ mb: 2, fontWeight: 'medium' }}>
-                  สถิติตามแผนก
-                </Typography>
-                <Paper elevation={2} sx={{ p: 3, mb: 4 }}>
-                  {Object.entries(departmentStats).map(([deptId, dept]: [string, any]) => (
-                    <Box key={`dept-${deptId}`} sx={{ mb: 2, pb: 2, borderBottom: '1px solid #e0e0e0' }}>
-                      <Typography variant="subtitle1" fontWeight="medium" gutterBottom>
-                        {dept.name}
-                      </Typography>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography variant="body2" color="text.secondary">
-                            คิวรอ: {dept.waiting_count} | วันนี้: {dept.total_today} | ห้องเปิด: {dept.active_rooms}
-                          </Typography>
-                        </Box>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                          {dept.waiting_count > 5 && (
-                            <Chip label="คิวเยอะ" size="small" color="warning" />
-                          )}
-                          {dept.active_rooms === 0 && (
-                            <Chip label="ปิดบริการ" size="small" color="error" />
-                          )}
-                        </Box>
-                      </Box>
-                    </Box>
-                  ))}
-                </Paper>
-              </>
-            )}
 
             {/* Quick Links */}
             <Typography variant="h5" sx={{ mb: 2, fontWeight: 'medium' }}>

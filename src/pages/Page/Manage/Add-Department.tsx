@@ -81,6 +81,7 @@ interface Room {
   capacity?: number;
   description?: string;
   isActive: boolean;
+  room_type?: string;
 }
 
 const AddDepartment: React.FC = () => {
@@ -129,7 +130,8 @@ const AddDepartment: React.FC = () => {
     departmentId: '',
     capacity: 0,
     description: '',
-    isActive: true
+    isActive: true,
+    room_type: 'general'
   });
   
   // Form validation states
@@ -223,9 +225,15 @@ const AddDepartment: React.FC = () => {
       setTimeout(() => {
         navigate('/manage/departments');
       }, 2000);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving data:', error);
-      setError('ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่');
+      
+      // แสดงข้อความ error ที่เจาะจงจากเซิร์ฟเวอร์
+      if (error.response && error.response.data && error.response.data.error) {
+        setError(error.response.data.error);
+      } else {
+        setError('ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่');
+      }
     }
   };
 
@@ -674,6 +682,65 @@ const AddDepartment: React.FC = () => {
                       helperText="จำนวนคนที่รองรับได้ (ถ้ามี)"
                       variant="outlined"
                     />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <FormControl fullWidth variant="outlined">
+                      <InputLabel>ประเภทห้อง</InputLabel>
+                      <Select
+                        value={roomForm.room_type}
+                        onChange={(e) => setRoomForm({...roomForm, room_type: e.target.value})}
+                        label="ประเภทห้อง"
+                      >
+                        <MenuItem value="general">
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <RoomIcon sx={{ mr: 1, color: '#2196f3' }} />
+                            ห้องตรวจทั่วไป
+                          </Box>
+                        </MenuItem>
+                        <MenuItem value="emergency">
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <RoomIcon sx={{ mr: 1, color: '#f44336' }} />
+                            ห้องฉุกเฉิน
+                          </Box>
+                        </MenuItem>
+                        <MenuItem value="cardiology">
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <RoomIcon sx={{ mr: 1, color: '#e91e63' }} />
+                            ห้องหัวใจ
+                          </Box>
+                        </MenuItem>
+                        <MenuItem value="pediatric">
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <RoomIcon sx={{ mr: 1, color: '#ff9800' }} />
+                            ห้องเด็ก
+                          </Box>
+                        </MenuItem>
+                        <MenuItem value="orthopedic">
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <RoomIcon sx={{ mr: 1, color: '#4caf50' }} />
+                            ห้องกระดูก
+                          </Box>
+                        </MenuItem>
+                        <MenuItem value="eye">
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <RoomIcon sx={{ mr: 1, color: '#9c27b0' }} />
+                            ห้องตา
+                          </Box>
+                        </MenuItem>
+                        <MenuItem value="ent">
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <RoomIcon sx={{ mr: 1, color: '#607d8b' }} />
+                            ห้องหู คอ จมูก
+                          </Box>
+                        </MenuItem>
+                        <MenuItem value="obgyn">
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <RoomIcon sx={{ mr: 1, color: '#795548' }} />
+                            ห้องสูติ-นรีเวช
+                          </Box>
+                        </MenuItem>
+                      </Select>
+                    </FormControl>
                   </Grid>
                   <Grid item xs={12}>
                     <TextField

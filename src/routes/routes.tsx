@@ -26,6 +26,10 @@ const SearchEmployee = lazy(() => import('../pages/Page/Member/Employee/SearchEm
 const ManageRoom = lazy(() => import('../pages/Page/Queue/MangeRoom'));
 const ProfilePage = lazy(() => import('../pages/Auth/Profile/profile'));
 const LoginPage = lazy(() => import('../pages/Auth/Login/login'));
+const PatientReport = lazy(() => import('../pages/Page/Reports/Patientreport'));
+const DoctorReport = lazy(() => import('../pages/Page/Reports/Doctor_report'));
+const NurseReport = lazy(() => import('../pages/Page/Reports/Nurse_report'));
+const DashboardReport = lazy(() => import('../pages/Page/Reports/Dashboard_report'));
 
 import {
   Dashboard as DashboardIcon,
@@ -170,6 +174,30 @@ export const routes = [
             element: <DataEmployee />
           },
           {
+            path: '/reports/patient',
+            name: 'Patient Report',
+            nameTH: 'รายงานประวัติผู้ป่วย',
+            element: <PatientReport />
+          },
+          {
+            path: '/reports/doctor',
+            name: 'Doctor Report',
+            nameTH: 'รายงานผลงานแพทย์',
+            element: <DoctorReport />
+          },
+          {
+            path: '/reports/nurse',
+            name: 'Nurse Report',
+            nameTH: 'รายงานผลงานพยาบาล',
+            element: <NurseReport />
+          },
+          {
+            path: '/reports/dashboard',
+            name: 'Dashboard Report',
+            nameTH: 'Dashboard รายงาน',
+            element: <DashboardReport />
+          },
+          {
             path: '/Queue/Manage/room',
             name: 'QManageRoom',
             nameTH: 'จัดการห้อง',
@@ -182,8 +210,7 @@ export const routes = [
             icon: DashboardIcon,
             element: <ProfilePage />
           },
-
-
+          
         ]
       }
     ]

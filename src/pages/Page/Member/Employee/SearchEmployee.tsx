@@ -115,7 +115,11 @@ const SearchEmployee: React.FC = () => {
           axios.get(`${API_BASE_URL}/api/worker/`),
           axios.get(`${API_BASE_URL}/api/workplace/department`)
         ]);
-        setAllEmployees(empRes.data || []);
+        // กรองเฉพาะแพทย์และพยาบาล
+        const filteredEmployees = (empRes.data || []).filter((emp: Employee) => 
+          emp.employeeType === 'doctor' || emp.employeeType === 'nurse'
+        );
+        setAllEmployees(filteredEmployees);
         setDepartments(deptRes.data || []);
       } catch (error) {
         console.error('Error loading data:', error);
@@ -226,7 +230,7 @@ const SearchEmployee: React.FC = () => {
       <Paper elevation={3} sx={{ p: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
           <Typography variant="h4" component="h1" fontWeight="bold">
-            ค้นหาพนักงาน
+            ค้นหาบุคลากร
           </Typography>
           {currentUserRole === 'admin' && (
             <Button
@@ -235,7 +239,7 @@ const SearchEmployee: React.FC = () => {
               onClick={handleAddEmployee}
               size="large"
             >
-              เพิ่มพนักงานใหม่
+              เพิ่มบุคลากรใหม่
             </Button>
           )}
         </Box>
@@ -266,7 +270,7 @@ const SearchEmployee: React.FC = () => {
           <Box sx={{ textAlign: 'center', py: 8 }}>
             <PersonIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
             <Typography variant="h6" color="text.secondary" gutterBottom>
-              ค้นหาพนักงาน
+              ค้นหาบุคลากร
             </Typography>
             <Typography variant="body1" color="text.secondary">
               กรอกชื่อ หรือข้อมูลที่ต้องการค้นหาในช่องด้านบน
@@ -276,10 +280,10 @@ const SearchEmployee: React.FC = () => {
           <Box sx={{ textAlign: 'center', py: 8 }}>
             <SearchIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
             <Typography variant="h6" color="text.secondary" gutterBottom>
-              ไม่พบข้อมูลพนักงาน
+              ไม่พบข้อมูลบุคลากร
             </Typography>
             <Typography variant="body1" color="text.secondary">
-              ไม่พบพนักงานที่ตรงกับคำค้นหา "{searchTerm}"
+              ไม่พบแพทย์หรือพยาบาลที่ตรงกับคำค้นหา "{searchTerm}"
             </Typography>
           </Box>
         ) : (
@@ -417,16 +421,16 @@ const SearchEmployee: React.FC = () => {
         {allEmployees.length > 0 && (
           <Box sx={{ mt: 4, p: 3, bgcolor: '#f8f9fa', borderRadius: 2 }}>
             <Typography variant="h6" gutterBottom>
-              สรุปข้อมูลพนักงาน
+              สรุปข้อมูลบุคลากร
             </Typography>
             <Grid container spacing={2}>
-              <Grid item xs={6} sm={3}>
+              <Grid item xs={6} sm={6}>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography variant="h4" color="primary" fontWeight="bold">
                     {allEmployees.length}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    พนักงานทั้งหมด
+                    บุคลากรทั้งหมด
                   </Typography>
                 </Box>
               </Grid>
@@ -450,16 +454,6 @@ const SearchEmployee: React.FC = () => {
                   </Typography>
                 </Box>
               </Grid>
-              <Grid item xs={6} sm={3}>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h4" color="warning.main" fontWeight="bold">
-                    {allEmployees.filter(emp => emp.employeeType === 'staff').length}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    เจ้าหน้าที่
-                  </Typography>
-                </Box>
-              </Grid>
             </Grid>
           </Box>
         )}
@@ -468,10 +462,10 @@ const SearchEmployee: React.FC = () => {
         {allEmployees.length === 0 && !isLoading && (
           <Alert severity="info" sx={{ mt: 3 }}>
             <Typography variant="h6" gutterBottom>
-              ยังไม่มีข้อมูลพนักงาน
+              ยังไม่มีข้อมูลบุคลากร
             </Typography>
             <Typography>
-              คลิกปุ่ม "เพิ่มพนักงานใหม่" เพื่อเริ่มเพิ่มข้อมูลพนักงาน
+              คลิกปุ่ม "เพิ่มพนักงานใหม่" เพื่อเริ่มเพิ่มข้อมูลแพทย์และพยาบาล
             </Typography>
           </Alert>
         )}

@@ -28,6 +28,7 @@ import {
   CircularProgress,
 } from '@mui/material';
 import axios from 'axios';
+import { getUserRole } from '../../../utils/auth';
 import {
   LocalHospital as HospitalIcon,
   MonitorHeart as HeartIcon,
@@ -130,6 +131,8 @@ const ManageQueue: React.FC = () => {
   const [lastAutoCallTime, setLastAutoCallTime] = useState<Date | null>(null); // เวลาล่าสุดที่รันอัตโนมัติ
   
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const userRole = getUserRole();
+  const isDoctor = userRole === 'doctor';
 
   // Department configuration with icons and colors
   const departmentConfig: { [key: string]: { icon: React.ReactNode; color: string; bgColor: string; shortName: string; thaiCode: string } } = {
@@ -506,6 +509,10 @@ const ManageQueue: React.FC = () => {
   };
 
   const handleCompleteQueue = async (roomIndex: number) => {
+    if (!isDoctor) {
+      showSnackbar('อนุญาตเฉพาะแพทย์เท่านั้น', 'error');
+      return;
+    }
     const currentQueue = roomStatuses[roomIndex].currentQueue;
     if (!currentQueue) return;
 
@@ -1050,6 +1057,8 @@ const ManageQueue: React.FC = () => {
                             py: 1.5,
                             fontWeight: 'bold'
                           }}
+                          disabled={!isDoctor}
+                          title={isDoctor ? 'ตรวจเสร็จแล้ว' : 'สำหรับแพทย์เท่านั้น'}
                         >
                           ตรวจเสร็จแล้ว
                         </Button>

@@ -129,8 +129,41 @@ const ProfilePage: React.FC = () => {
       );
 
       if (response.data) {
-        setUser(response.data);
-        setEditData(response.data);
+        const userData = response.data;
+        
+        // ถ้ามี departmentId ให้ดึงข้อมูล department จาก workplace API
+        if (userData.departmentId) {
+          try {
+            const deptResponse = await axios.get(
+              `${API_BASE_URL}/api/workplace/department`,
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`
+                }
+              }
+            );
+            
+            // หา department ที่ตรงกับ departmentId
+            const departments = deptResponse.data || [];
+            const department = departments.find((dept: any) => dept.id === userData.departmentId);
+            
+            if (department) {
+              userData.departmentDetails = {
+                id: department.id,
+                name: department.name,
+                description: department.description
+              };
+            } else {
+              // ลบข้อมูล department เก่าออก
+              delete userData.department;
+            }
+          } catch (deptError) {
+            console.error('Error loading department:', deptError);
+          }
+        }
+        
+        setUser(userData);
+        setEditData(userData);
       }
     } catch (err) {
       console.error('Error loading profile:', err);
@@ -368,7 +401,7 @@ const ProfilePage: React.FC = () => {
                     )}
                   </Box>
                   <Typography variant="body1" color="text.secondary">
-                    {user.position || user.perfession_type} • {user.department || user.departmentId || 'ไม่ระบุแผนก'}
+                    {user.position || user.perfession_type} • {user.departmentDetails?.name || 'ไม่ระบุแผนก'}
                   </Typography>
                   {user.specialization && user.specialization.length > 0 && (
                     <Chip 
@@ -503,10 +536,10 @@ const ProfilePage: React.FC = () => {
                       <ListItemText 
                         primary="แผนก" 
                         secondary={
-                          user.department ? (
+                          user.departmentDetails?.name ? (
                             <Box>
                               <Typography variant="body2" component="div">
-                                {user.department}
+                                {user.departmentDetails.name}
                               </Typography>
                               {user.departmentDetails?.description && (
                                 <Typography variant="caption" color="text.secondary">
@@ -515,7 +548,7 @@ const ProfilePage: React.FC = () => {
                               )}
                             </Box>
                           ) : (
-                            user.departmentId || 'ไม่ระบุ'
+                            'ไม่ระบุแผนก'
                           )
                         }
                       />

@@ -87,6 +87,8 @@ interface MedicalRecord {
   lab_results?: string[];
   follow_up?: string;
   notes: string;
+  created_at?: string;
+  updated_at?: string;
   queue_info?: {
     queue_no: string;
     status: string;
@@ -124,24 +126,26 @@ const DataPatient: React.FC = () => {
   }, []);
 
   // ฟังก์ชันโหลดประวัติคิว - ใช้ API ที่มีอยู่แล้วและดึงข้อมูลรายละเอียด
-  const loadQueueHistory = async (patientId: string) => {
+  const loadQueueHistory = async (patientId: string, limit: number = 5) => {
     if (!patientId) return;
     
     try {
       setLoadingHistory(true);
-      console.log(`[DEBUG] Loading queue history for patient: ${patientId}`);
+      console.log(`[DEBUG] Loading queue history for patient: ${patientId} (limit: ${limit})`);
       console.log(`[DEBUG] API URL: ${API_BASE_URL}/api/queue/all_queues`);
       
-      // ใช้ API all_queues แล้วกรองตาม patient_id
-      const response = await axios.get(`${API_BASE_URL}/api/queue/all_queues`);
+      // ใช้ API all_queues แล้วกรองตาม patient_id และจำกัดจำนวน
+      const response = await axios.get(`${API_BASE_URL}/api/queue/all_queues?limit=${limit * 2}`); // เอาเผื่อกรองแล้วเหลือน้อย
       console.log(`[DEBUG] Full response:`, response);
       console.log(`[DEBUG] Response data:`, response.data);
       
       if (response.data && Array.isArray(response.data)) {
-        // กรองคิวของผู้ป่วยคนนี้
-        const patientQueues = response.data.filter((queue: any) => 
-          queue.patient_id === patientId || queue.patient_id === `ObjectId('${patientId}')`
-        );
+        // กรองคิวของผู้ป่วยคนนี้ และจำกัดจำนวน
+        const patientQueues = response.data
+          .filter((queue: any) => 
+            queue.patient_id === patientId || queue.patient_id === `ObjectId('${patientId}')`
+          )
+          .slice(0, limit); // จำกัดจำนวนที่แสดง
         
         console.log(`[DEBUG] Found ${patientQueues.length} queues for patient ${patientId}`);
         
@@ -456,7 +460,10 @@ const DataPatient: React.FC = () => {
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
     
-    if (minutes < 60) {
+    // แก้ไขปัญหา timezone โดยใช้ local time
+    if (minutes < 1) {
+      return 'เมื่อสักครู่';
+    } else if (minutes < 60) {
       return `${minutes} นาทีที่แล้ว`;
     } else if (hours < 24) {
       return `${hours} ชั่วโมงที่แล้ว`;
@@ -990,11 +997,12 @@ const DataPatient: React.FC = () => {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-xl font-semibold text-gray-800">ประวัติคิว</h2>
-                <button
-                  onClick={() => patient && loadQueueHistory(patient.id)}
-                  disabled={loadingHistory}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
-                >
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => patient && loadQueueHistory(patient.id, 5)}
+                    disabled={loadingHistory}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                  >
                   {loadingHistory ? (
                     <>
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
@@ -1008,7 +1016,18 @@ const DataPatient: React.FC = () => {
                       รีเฟรช
                     </>
                   )}
-                </button>
+                  </button>
+                  <button
+                    onClick={() => patient && loadQueueHistory(patient.id, 50)}
+                    disabled={loadingHistory}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                    ดูทั้งหมด
+                  </button>
+                </div>
               </div>
 
               {loadingHistory ? (
@@ -1263,7 +1282,7 @@ const DataPatient: React.FC = () => {
                             </p>
                           </div>
                         </div>
-                        <span className="text-xs text-gray-400">{formatTimeAgo(record.visit_date)}</span>
+                        <span className="text-xs text-gray-400">{formatTimeAgo(record.visit_date || record.created_at || record.updated_at || new Date().toISOString())}</span>
                       </div>
 
                       <div className="space-y-3">

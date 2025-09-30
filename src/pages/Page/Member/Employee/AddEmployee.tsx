@@ -46,7 +46,7 @@ interface Employee {
   profileImage?: string;
   
   // ข้อมูลการทำงาน (จำเป็น)
-  employeeType: 'doctor' | 'nurse' | 'staff';
+  employeeType: 'doctor' | 'nurse';
   departmentId: string;
   position: string;
   licenseNumber?: string; // จำเป็นสำหรับหมอและพยาบาล
@@ -57,7 +57,7 @@ interface Employee {
   // ข้อมูลระบบ (จำเป็น)
   username: string;
   password: string;
-  role: 'admin' | 'doctor' | 'nurse' | 'staff';
+  role: 'doctor' | 'nurse';
   
   // ข้อมูลเสริม (ไม่จำเป็น)
   email?: string;
@@ -92,7 +92,7 @@ const AddEmployee: React.FC = () => {
     phone: '',
     nationalId: '',
     profileImage: '',
-    employeeType: 'staff',
+    employeeType: 'doctor',
     departmentId: '',
     position: '',
     licenseNumber: '',
@@ -101,7 +101,7 @@ const AddEmployee: React.FC = () => {
     status: 'active',
     username: '',
     password: '',
-    role: 'staff',
+    role: 'doctor',
     email: '',
     address: '',
     workingDays: ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์'],
@@ -221,9 +221,9 @@ const AddEmployee: React.FC = () => {
         }
       }));
     } else if (name === 'employeeType') {
-      const employeeType = value as 'doctor' | 'nurse' | 'staff';
+      const employeeType = value as 'doctor' | 'nurse';
       // Auto set role based on employee type
-      let role: 'admin' | 'doctor' | 'nurse' | 'staff' = 'staff';
+      let role: 'doctor' | 'nurse' = 'doctor';
       if (employeeType === 'doctor') role = 'doctor';
       else if (employeeType === 'nurse') role = 'nurse';
       
@@ -449,7 +449,7 @@ const AddEmployee: React.FC = () => {
       }
 
       setSuccess(true);
-      alert(isEdit ? 'แก้ไขข้อมูลพนักงานสำเร็จ' : 'เพิ่มพนักงานใหม่สำเร็จ');
+      alert(isEdit ? 'แก้ไขข้อมูลบุคลากรสำเร็จ' : 'เพิ่มบุคลากรใหม่สำเร็จ');
       
       if (!isEdit) {
         // Reset form for new entry
@@ -463,7 +463,7 @@ const AddEmployee: React.FC = () => {
           phone: '',
           nationalId: '',
           profileImage: '',
-          employeeType: 'staff',
+          employeeType: 'doctor',
           departmentId: '',
           position: '',
           licenseNumber: '',
@@ -472,7 +472,7 @@ const AddEmployee: React.FC = () => {
           status: 'active',
           username: '',
           password: '',
-          role: 'staff',
+          role: 'doctor',
           email: '',
           address: '',
           workingDays: ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์'],
@@ -501,7 +501,7 @@ const AddEmployee: React.FC = () => {
       <Paper elevation={3} sx={{ p: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
           <Typography variant="h4" component="h1" fontWeight="bold">
-            {isEdit ? 'แก้ไขข้อมูลพนักงาน' : 'เพิ่มพนักงานใหม่'}
+            {isEdit ? 'แก้ไขข้อมูลบุคลากร' : 'เพิ่มบุคลากรใหม่'}
           </Typography>
           <Button
             startIcon={<ArrowBackIcon />}
@@ -514,13 +514,13 @@ const AddEmployee: React.FC = () => {
 
         {success && (
           <Alert severity="success" sx={{ mb: 3 }}>
-            {isEdit ? 'แก้ไขข้อมูลพนักงานเรียบร้อยแล้ว' : 'เพิ่มพนักงานใหม่เรียบร้อยแล้ว'}
+            {isEdit ? 'แก้ไขข้อมูลบุคลากรเรียบร้อยแล้ว' : 'เพิ่มบุคลากรใหม่เรียบร้อยแล้ว'}
           </Alert>
         )}
 
         {departments.length === 0 && (
           <Alert severity="warning" sx={{ mb: 3 }}>
-            ยังไม่มีข้อมูลแผนก กรุณาเพิ่มแผนกก่อนเพิ่มพนักงาน
+            ยังไม่มีข้อมูลแผนก กรุณาเพิ่มแผนกก่อนเพิ่มบุคลากร
           </Alert>
         )}
 
@@ -691,7 +691,7 @@ const AddEmployee: React.FC = () => {
                     <Grid item xs={12} sm={4}>
                       <TextField
                         select
-                        label="ประเภทพนักงาน *"
+                        label="ประเภทบุคลากร *"
                         name="employeeType"
                         value={formData.employeeType}
                         onChange={handleInputChange}
@@ -701,7 +701,6 @@ const AddEmployee: React.FC = () => {
                       >
                         <MenuItem value="doctor">แพทย์</MenuItem>
                         <MenuItem value="nurse">พยาบาล</MenuItem>
-                        <MenuItem value="staff">เจ้าหน้าที่อื่นๆ</MenuItem>
                       </TextField>
                     </Grid>
                     <Grid item xs={12} sm={4}>
@@ -753,11 +752,7 @@ const AddEmployee: React.FC = () => {
                         fullWidth
                         size="small"
                         required={formData.employeeType === 'doctor' || formData.employeeType === 'nurse'}
-                        helperText={
-                          (formData.employeeType === 'doctor' || formData.employeeType === 'nurse') 
-                            ? 'จำเป็นสำหรับแพทย์และพยาบาล' 
-                            : ''
-                        }
+                        helperText="จำเป็นสำหรับแพทย์และพยาบาล"
                       />
                     </Grid>
                     <Grid item xs={12} sm={6}>
@@ -963,7 +958,7 @@ const AddEmployee: React.FC = () => {
                       <Grid item xs={12} sm={6}>
                         <Alert severity="info" sx={{ display: 'flex', alignItems: 'center' }}>
                           <Typography variant="body2">
-                            การเปลี่ยนรหัสผ่านต้องทำในหน้าโปรไฟล์ของพนักงาน
+                            การเปลี่ยนรหัสผ่านต้องทำในหน้าโปรไฟล์ของบุคลากร
                           </Typography>
                         </Alert>
                       </Grid>
@@ -978,12 +973,11 @@ const AddEmployee: React.FC = () => {
                         required
                         fullWidth
                         size="small"
-                        helperText="บทบาทจะถูกกำหนดตามประเภทพนักงาน"
+                        helperText="บทบาทจะถูกกำหนดตามประเภทบุคลากร"
+                        disabled
                       >
-                        <MenuItem value="admin">ผู้ดูแลระบบ</MenuItem>
                         <MenuItem value="doctor">แพทย์</MenuItem>
                         <MenuItem value="nurse">พยาบาล</MenuItem>
-                        <MenuItem value="staff">เจ้าหน้าที่</MenuItem>
                       </TextField>
                     </Grid>
                     <Grid item xs={12} sm={6}>
@@ -1023,7 +1017,7 @@ const AddEmployee: React.FC = () => {
                     <Typography variant="body2">
                       <strong>ประเภท:</strong> {
                         formData.employeeType === 'doctor' ? 'แพทย์' : 
-                        formData.employeeType === 'nurse' ? 'พยาบาล' : 'เจ้าหน้าที่'
+                        formData.employeeType === 'nurse' ? 'พยาบาล' : 'ไม่ระบุ'
                       }
                     </Typography>
                     <Typography variant="body2">
@@ -1039,9 +1033,8 @@ const AddEmployee: React.FC = () => {
                     </Typography>
                     <Typography variant="body2">
                       <strong>บทบาท:</strong> {
-                        formData.role === 'admin' ? 'ผู้ดูแลระบบ' :
                         formData.role === 'doctor' ? 'แพทย์' :
-                        formData.role === 'nurse' ? 'พยาบาล' : 'เจ้าหน้าที่'
+                        formData.role === 'nurse' ? 'พยาบาล' : 'ไม่ระบุ'
                       }
                     </Typography>
                     <Typography variant="body2">
