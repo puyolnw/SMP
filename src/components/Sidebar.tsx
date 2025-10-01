@@ -20,14 +20,15 @@ function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // State to manage the open/close state of collapsible menus
-  const [openMenus, setOpenMenus] = useState<{ [key: string]: boolean }>({});
+  // State to manage the open/close state of collapsible menus (only one can be open at a time)
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
 
   // Get menu items dynamically
   const menuItems = getMenuItems();
 
   const handleToggle = (itemText: string) => {
-    setOpenMenus((prev) => ({ ...prev, [itemText]: !prev[itemText] }));
+    // If clicking on the same menu, close it. Otherwise, open the new menu and close others
+    setOpenMenu(openMenu === itemText ? null : itemText);
   };
 
   const drawerContent = (
@@ -68,6 +69,9 @@ function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => 
                   bgcolor: 'var(--hover-overlay)',
                   color: 'var(--accent-blue)',
                 },
+                // Add visual feedback for accordion state
+                borderLeft: openMenu === item.text ? '3px solid var(--accent-blue)' : '3px solid transparent',
+                transition: 'all 0.3s ease',
               }}
             >
               <ListItemIcon
@@ -82,13 +86,13 @@ function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => 
               </ListItemIcon>
               <ListItemText primary={item.text} />
               {item.children && (
-                openMenus[item.text] ? <ExpandLess /> : <ExpandMore />
+                openMenu === item.text ? <ExpandLess /> : <ExpandMore />
               )}
             </ListItem>
 
             {/* Submenu Items */}
             {item.children && (
-              <Collapse in={openMenus[item.text]} timeout="auto" unmountOnExit>
+              <Collapse in={openMenu === item.text} timeout="auto" unmountOnExit>
                 <List component="div" disablePadding>
                   {item.children.map((child) => (
                     <ListItem
@@ -97,12 +101,16 @@ function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => 
                       sx={{
                         pl: 4,
                         cursor: 'pointer',
-                        bgcolor: location.pathname === child.path ? 'var(--hover-overlay)' : 'inherit',
+                        bgcolor: openMenu === item.text ? 'rgba(255, 255, 255, 0.05)' : 
+                                  location.pathname === child.path ? 'var(--hover-overlay)' : 'inherit',
                         color: location.pathname === child.path ? 'var(--accent-green)' : 'inherit',
                         '&:hover': {
                           bgcolor: 'var(--hover-overlay)',
                           color: 'var(--accent-blue)',
                         },
+                        // Add visual feedback for submenu items
+                        borderLeft: location.pathname === child.path ? '3px solid var(--accent-green)' : '3px solid transparent',
+                        transition: 'all 0.3s ease',
                       }}
                     >
                       <ListItemIcon

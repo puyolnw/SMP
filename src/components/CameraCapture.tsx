@@ -1,10 +1,9 @@
-import React, { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
 
 const CameraCapture = ({ onCapture }: { onCapture: (file: File) => void }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (videoRef.current && stream) {
@@ -52,13 +51,6 @@ const CameraCapture = ({ onCapture }: { onCapture: (file: File) => void }) => {
     }
   };
 
-  // เพิ่มฟังก์ชัน handleFileUpload
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      onCapture(file);
-    }
-  };
 
   return (
     <div style={{ display: 'inline-block' }}>

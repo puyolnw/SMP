@@ -17,6 +17,7 @@ const SearchPatient = lazy(() => import('../pages/Page/Member/Patient/SeachPatie
 const DataPatient = lazy(() => import('../pages/Page/Member/Patient/DataPatient'));
 const Welcome = lazy(() => import('../pages/Page/Screening/Welcome'));
 const AuthenPatient = lazy(() => import('../pages/Page/Screening/AuthenPatient'));
+const AuthenPatientPublic = lazy(() => import('../pages/Page/Screening/AuthenPatientPublic'));
 const AllProcess = lazy(() => import('../pages/Page/Screening/AllProcess'));
 const AddDepartment = lazy(() => import('../pages/Page/Manage/Add-Department'));
 const Departments = lazy(() => import('../pages/Page/Manage/Departments'));
@@ -30,6 +31,8 @@ const PatientReport = lazy(() => import('../pages/Page/Reports/Patientreport'));
 const DoctorReport = lazy(() => import('../pages/Page/Reports/Doctor_report'));
 const NurseReport = lazy(() => import('../pages/Page/Reports/Nurse_report'));
 const DashboardReport = lazy(() => import('../pages/Page/Reports/Dashboard_report'));
+const DoctorTreatmentReport = lazy(() => import('../pages/Page/Reports/DoctorTreatmentReport'));
+const NurseTreatmentReport = lazy(() => import('../pages/Page/Reports/NurseTreatmentReport'));
 
 import {
   Dashboard as DashboardIcon,
@@ -120,13 +123,6 @@ export const routes = [
             icon: DashboardIcon,
             element: <DataPatient />
           },
-          {
-            path: '/Screening/AuthenPatient',
-            name: 'AuthenPatient',
-            nameTH: 'ยืนยันตัวตนผู้ป่วย',
-            icon: DashboardIcon,
-            element: <AuthenPatient />
-          },
            {
             path: '/Screening/Patient',
             name: 'AuthenPatient',
@@ -193,9 +189,21 @@ export const routes = [
           },
           {
             path: '/reports/dashboard',
-            name: 'Dashboard Report',
-            nameTH: 'Dashboard รายงาน',
+            name: 'Screening Report',
+            nameTH: 'รายงานการคัดกรอง',
             element: <DashboardReport />
+          },
+          {
+            path: '/reports/doctor-treatment',
+            name: 'Doctor Treatment Report',
+            nameTH: 'รายงานการรักษาของหมอ',
+            element: <DoctorTreatmentReport />
+          },
+          {
+            path: '/reports/nurse-treatment',
+            name: 'Nurse Treatment Report',
+            nameTH: 'รายงานการรักษาของพยาบาล',
+            element: <NurseTreatmentReport />
           },
           {
             path: '/Queue/Manage/room',
@@ -232,6 +240,13 @@ export const routes = [
         nameTH: 'ยินดีต้อนรับ',
         icon: DashboardIcon,
         element: <Welcome />
+      },
+      {
+        path: '/Screening/AuthenPatient',
+        name: 'AuthenPatient',
+        nameTH: 'ยืนยันตัวตนผู้ป่วย',
+        icon: DashboardIcon,
+        element: <AuthenPatientPublic />
       },
       {
         path: '/Screening/AuthenPatient2',

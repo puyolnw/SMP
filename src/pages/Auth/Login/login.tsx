@@ -1,13 +1,70 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, TextField, Button, Typography, Paper, Alert } from '@mui/material';
+import { keyframes } from '@mui/system';
+import { 
+  Box, 
+  TextField, 
+  Button, 
+  Typography, 
+  Paper, 
+  Alert,
+  AppBar,
+  Toolbar,
+  Container,
+  CircularProgress,
+  Dialog,
+  DialogContent,
+  DialogActions,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText
+} from '@mui/material';
+import { HealthAndSafety, MonitorHeart, Verified, QueuePlayNext } from '@mui/icons-material';
 import axios from 'axios';
+
+// CSS Animation
+const bounceAnimation = keyframes`
+  0%, 20%, 50%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-10px);
+  }
+  60% {
+    transform: translateY(-5px);
+  }
+`;
+
+// Mock data สำหรับ user ตัวอย่าง (สำหรับการทำงานแบบออฟไลน์)
+const MOCK_USERS = {
+  'testadmin': {
+    _id: 'mock_admin_001',
+    username: 'testadmin',
+    role: 'admin',
+    password: 'testpassword'
+  },
+  'testdoctor': {
+    _id: 'mock_doctor_001', 
+    username: 'testdoctor',
+    role: 'doctor',
+    password: 'testpassword'
+  },
+  'testnurse': {
+    _id: 'mock_nurse_001',
+    username: 'testnurse', 
+    role: 'nurse',
+    password: 'testpassword'
+  }
+};
 
 const LoginPage: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
+  const [displayMenuAnchor, setDisplayMenuAnchor] = useState<null | HTMLElement>(null);
   const navigate = useNavigate();
 
   // ตรวจสอบสถานะการเข้าสู่ระบบเมื่อโหลดหน้า
@@ -25,7 +82,32 @@ const LoginPage: React.FC = () => {
     setError('');
 
     try {
-      // ใช้ API URL จาก .env
+      // ตรวจสอบ mock users ก่อน (สำหรับการทำงานแบบออฟไลน์)
+      if (MOCK_USERS[username as keyof typeof MOCK_USERS] && 
+          MOCK_USERS[username as keyof typeof MOCK_USERS].password === password) {
+        
+        const mockUser = MOCK_USERS[username as keyof typeof MOCK_USERS];
+        console.log('Offline login successful:', mockUser);
+        
+        // สร้าง mock token สำหรับการทำงานแบบออฟไลน์
+        const mockToken = `mock_token_${mockUser._id}_${Date.now()}`;
+        
+        // บันทึก token และ user ลงใน localStorage
+        localStorage.setItem('token', mockToken);
+        localStorage.setItem('userData', JSON.stringify({
+          _id: mockUser._id,
+          username: mockUser.username,
+          role: mockUser.role
+        }));
+        
+        console.log('Stored mock user data:', mockUser);
+        
+        // แสดง modal สำเร็จ
+        setSuccessModalOpen(true);
+        return;
+      }
+
+      // ถ้าไม่ใช่ mock user ให้ลองเชื่อมต่อกับ backend
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
       console.log('API URL:', apiUrl);
      
@@ -55,8 +137,8 @@ const LoginPage: React.FC = () => {
       
       console.log('Stored user data:', data.user);
    
-      // เปลี่ยนเส้นทางไปหน้า Dashboard
-      navigate('/');
+      // แสดง modal สำเร็จ
+      setSuccessModalOpen(true);
     } catch (err: any) {
       console.error('Error during login:', err);
      
@@ -77,94 +159,348 @@ const LoginPage: React.FC = () => {
     }
   };
 
+  const handleSuccessModalClose = () => {
+    setSuccessModalOpen(false);
+    navigate('/');
+  };
+
+  const handleDisplayMenuClick = (event: React.MouseEvent<HTMLElement>) => {
+    setDisplayMenuAnchor(event.currentTarget);
+  };
+
+  const handleDisplayMenuClose = () => {
+    setDisplayMenuAnchor(null);
+  };
+
+  const handleDisplayMenuNavigate = (path: string) => {
+    setDisplayMenuAnchor(null);
+    window.open(path, '_blank');
+  };
+
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        minHeight: '100vh',
-        backgroundColor: 'var(--bg-primary)',
-        padding: 2,
-      }}
-    >
-      <Paper
-        elevation={4}
-        sx={{
-          padding: 4,
-          width: '100%',
-          maxWidth: 400,
-          borderRadius: 3,
-          boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.2)',
-          backgroundColor: 'var(--primary-light)',
-        }}
-      >
-        {/* ชื่อเว็บไซต์ */}
-        <Typography
-          variant="h4"
-          component="h1"
-          gutterBottom
-          textAlign="center"
-          sx={{
-            fontWeight: 'bold',
-            color: 'var(--accent-blue)',
-            marginBottom: 3,
-          }}
-        >
-         SM : Smart Patient
-        </Typography>
-
-        {/* แสดงข้อความ error */}
-        {error && (
-          <Alert severity="error" sx={{ marginBottom: 2 }}>
-            {error}
-          </Alert>
-        )}
-
-        {/* แบบฟอร์มเข้าสู่ระบบ */}
-        <form onSubmit={handleSubmit}>
-          <TextField
-            fullWidth
-            label="Username"
-            variant="outlined"
-            margin="normal"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="Enter your username"
-            required
-          />
-          <TextField
-            fullWidth
-            label="Password"
-            type="password"
-            variant="outlined"
-            margin="normal"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter your password"
-            required
-          />
+    <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {/* Header/Navbar */}
+      <AppBar position="static" sx={{ backgroundColor: 'var(--primary-dark)' }}>
+        <Toolbar>
+          <HealthAndSafety sx={{ mr: 2 }} />
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 'bold' }}>
+            SM : Smart Patient
+          </Typography>
+          
+          {/* การแสดงผล Menu */}
           <Button
-            type="submit"
-            fullWidth
-            variant="contained"
-            disabled={loading}
-            sx={{
-              marginTop: 3,
-              paddingY: 1.5,
+            color="inherit"
+            onClick={handleDisplayMenuClick}
+            startIcon={<MonitorHeart />}
+            sx={{ 
               textTransform: 'none',
               fontSize: '1rem',
               fontWeight: 'bold',
-              backgroundColor: '#1976d2',
               '&:hover': {
-                backgroundColor: '#1565c0',
-              },
+                backgroundColor: 'rgba(255, 255, 255, 0.1)'
+              }
             }}
           >
-            {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
+            การแสดงผล
           </Button>
-        </form>
-      </Paper>
+        </Toolbar>
+      </AppBar>
+
+      {/* Main Content */}
+      <Box sx={{ 
+        flexGrow: 1, 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center',
+        backgroundColor: 'var(--bg-primary)',
+        padding: 2
+      }}>
+        <Paper
+          elevation={4}
+          sx={{
+            padding: 4,
+            width: '100%',
+            maxWidth: 400,
+            borderRadius: 3,
+            boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.2)',
+            backgroundColor: 'var(--primary-light)',
+          }}
+        >
+          <Box sx={{ textAlign: 'center', mb: 3 }}>
+            <Typography variant="h4" component="h1" gutterBottom sx={{ 
+              fontWeight: 'bold', 
+              color: 'var(--accent-blue)' 
+            }}>
+              เข้าสู่ระบบ
+            </Typography>
+          </Box>
+
+          {/* แสดงข้อความ error */}
+          {error && (
+            <Alert severity="error" sx={{ marginBottom: 2 }}>
+              {error}
+            </Alert>
+          )}
+
+          {/* ฟอร์มเข้าสู่ระบบ */}
+          <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1 }}>
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              id="username"
+              label="ชื่อผู้ใช้"
+              name="username"
+              autoComplete="username"
+              autoFocus
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              disabled={loading}
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              name="password"
+              label="รหัสผ่าน"
+              type="password"
+              id="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={loading}
+              sx={{ mb: 3 }}
+            />
+            <Button
+              type="submit"
+              fullWidth
+              variant="contained"
+              size="large"
+              disabled={loading}
+              sx={{ 
+                mt: 2, 
+                mb: 2, 
+                py: 1.5,
+                fontSize: '1.1rem',
+                fontWeight: 'bold'
+              }}
+            >
+              {loading ? (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <CircularProgress size={20} color="inherit" />
+                  กำลังเข้าสู่ระบบ...
+                </Box>
+              ) : (
+                'เข้าสู่ระบบ'
+              )}
+            </Button>
+          </Box>
+
+        
+        </Paper>
+      </Box>
+
+      {/* Footer */}
+      <Box 
+        component="footer" 
+        sx={{ 
+          backgroundColor: 'var(--primary-dark)', 
+          color: 'var(--bg-primary)',
+          py: 2,
+          mt: 'auto'
+        }}
+      >
+        <Container maxWidth="lg">
+          <Typography variant="body2" sx={{ textAlign: 'center', opacity: 0.8 }}>
+            © 2024 Smart Patient System. All rights reserved.
+          </Typography>
+        </Container>
+      </Box>
+
+      {/* Success Modal */}
+      <Dialog
+        open={successModalOpen}
+        onClose={handleSuccessModalClose}
+        aria-labelledby="success-dialog-title"
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0px 8px 32px rgba(0, 0, 0, 0.15)',
+            overflow: 'hidden'
+          }
+        }}
+      >
+        <Box sx={{ 
+          background: 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)',
+          color: 'white',
+          p: 3,
+          textAlign: 'center'
+        }}>
+          <Box sx={{ 
+            display: 'flex', 
+            justifyContent: 'center', 
+            mb: 2,
+            animation: `${bounceAnimation} 0.6s ease-in-out`
+          }}>
+            <Box sx={{
+              width: 80,
+              height: 80,
+              borderRadius: '50%',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '2.5rem'
+            }}>
+              ✅
+            </Box>
+          </Box>
+          <Typography variant="h4" component="h2" sx={{ 
+            fontWeight: 'bold',
+            mb: 1,
+            textShadow: '0px 2px 4px rgba(0,0,0,0.3)'
+          }}>
+            เข้าสู่ระบบสำเร็จ!
+          </Typography>
+          <Typography variant="h6" sx={{ 
+            opacity: 0.9,
+            fontWeight: 400
+          }}>
+            ยินดีต้อนรับสู่ระบบ Smart Patient
+          </Typography>
+        </Box>
+        
+        <DialogContent sx={{ p: 4, textAlign: 'center' }}>
+          <Typography variant="body1" sx={{ 
+            color: 'text.secondary',
+            mb: 3,
+            lineHeight: 1.6
+          }}>
+            คุณได้เข้าสู่ระบบเรียบร้อยแล้ว<br />
+            พร้อมใช้งานระบบจัดการผู้ป่วยอัจฉริยะ
+          </Typography>
+          
+          <Box sx={{ 
+            display: 'flex', 
+            justifyContent: 'center', 
+            gap: 2,
+            flexWrap: 'wrap'
+          }}>
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 1,
+              px: 2,
+              py: 1,
+              backgroundColor: '#f5f5f5',
+              borderRadius: 2,
+              minWidth: 120
+            }}>
+              <HealthAndSafety sx={{ color: 'var(--accent-blue)', fontSize: 20 }} />
+              <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                ระบบพร้อมใช้งาน
+              </Typography>
+            </Box>
+          </Box>
+        </DialogContent>
+        
+        <DialogActions sx={{ 
+          justifyContent: 'center', 
+          pb: 3,
+          px: 4,
+          gap: 2
+        }}>
+          <Button 
+            onClick={handleSuccessModalClose} 
+            variant="contained" 
+            size="large"
+            sx={{ 
+              px: 4,
+              py: 1.5,
+              fontSize: '1.1rem',
+              fontWeight: 'bold',
+              borderRadius: 2,
+              background: 'linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)',
+              boxShadow: '0px 4px 12px rgba(25, 118, 210, 0.3)',
+              '&:hover': {
+                background: 'linear-gradient(45deg, #1565c0 30%, #1976d2 90%)',
+                boxShadow: '0px 6px 16px rgba(25, 118, 210, 0.4)',
+                transform: 'translateY(-2px)'
+              },
+              transition: 'all 0.3s ease'
+            }}
+          >
+            🚀 เริ่มใช้งาน
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* การแสดงผล Menu */}
+      <Menu
+        anchorEl={displayMenuAnchor}
+        open={Boolean(displayMenuAnchor)}
+        onClose={handleDisplayMenuClose}
+        anchorOrigin={{
+          vertical: 'bottom',
+          horizontal: 'right',
+        }}
+        transformOrigin={{
+          vertical: 'top',
+          horizontal: 'right',
+        }}
+        PaperProps={{
+          sx: {
+            mt: 1,
+            minWidth: 200,
+            boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.15)',
+            borderRadius: 2,
+            border: '1px solid rgba(0, 0, 0, 0.1)'
+          }
+        }}
+      >
+        <MenuItem 
+          onClick={() => handleDisplayMenuNavigate('/Screening/AuthenPatient')}
+          sx={{ 
+            py: 1.5,
+            '&:hover': {
+              backgroundColor: 'var(--hover-overlay)'
+            }
+          }}
+        >
+          <ListItemIcon>
+            <Verified sx={{ color: 'var(--accent-blue)' }} />
+          </ListItemIcon>
+          <ListItemText 
+            primary="ยืนยันตัวตน" 
+            secondary="หน้าจอยืนยันตัวตนผู้ป่วย (หน้าใหม่)"
+            primaryTypographyProps={{ fontWeight: 'bold' }}
+            secondaryTypographyProps={{ fontSize: '0.8rem', color: 'text.secondary' }}
+          />
+        </MenuItem>
+        
+        <MenuItem 
+          onClick={() => handleDisplayMenuNavigate('/queue/showqueue')}
+          sx={{ 
+            py: 1.5,
+            '&:hover': {
+              backgroundColor: 'var(--hover-overlay)'
+            }
+          }}
+        >
+          <ListItemIcon>
+            <QueuePlayNext sx={{ color: 'var(--accent-green)' }} />
+          </ListItemIcon>
+          <ListItemText 
+            primary="แสดงคิว" 
+            secondary="หน้าจอแสดงคิวผู้ป่วย"
+            primaryTypographyProps={{ fontWeight: 'bold' }}
+            secondaryTypographyProps={{ fontSize: '0.8rem', color: 'text.secondary' }}
+          />
+        </MenuItem>
+      </Menu>
     </Box>
   );
 };

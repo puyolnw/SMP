@@ -22,7 +22,8 @@ import {
   List,
   ListItem,
   ListItemIcon,
-  ListItemText
+  ListItemText,
+  Container
 } from '@mui/material';
 import {
   Person as PersonIcon,
@@ -101,6 +102,117 @@ const ProfilePage: React.FC = () => {
 
   const API_BASE_URL = import.meta.env.VITE_API_URL;
 
+  // Mock data สำหรับ user ตัวอย่าง (สำหรับการทำงานแบบออฟไลน์)
+  const MOCK_USER_DATA = {
+    'mock_admin_001': {
+      _id: 'mock_admin_001',
+      username: 'testadmin',
+      role: 'admin',
+      fullname: ['นาย', 'ผู้ดูแล', 'ระบบ'],
+      prefix: 'นาย',
+      firstNameTh: 'ผู้ดูแล',
+      lastNameTh: 'ระบบ',
+      national_id: '1234567890123',
+      nationalId: '1234567890123',
+      phone: '0812345678',
+      email: 'admin@hospital.com',
+      gender: 'ชาย',
+      address: '123 ถนนสุขุมวิท แขวงคลองตัน เขตวัฒนา กรุงเทพมหานคร 10110',
+      position: 'ผู้ดูแลระบบ',
+      perfession_type: 'ผู้ดูแลระบบ',
+      department: 'IT Department',
+      departmentId: 'dept_001',
+      departmentDetails: {
+        id: 'dept_001',
+        name: 'IT Department',
+        description: 'แผนกเทคโนโลยีสารสนเทศ'
+      },
+      employeeType: 'staff' as const,
+      status: 'active' as const,
+      startDate: '2023-01-01',
+      regis_date: '2023-01-01',
+      workingDays: ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์'],
+      workingHours: {
+        start: '08:00',
+        end: '17:00'
+      }
+    },
+    'mock_doctor_001': {
+      _id: 'mock_doctor_001',
+      username: 'testdoctor',
+      role: 'doctor',
+      fullname: ['นพ.', 'แพทย์', 'ตัวอย่าง'],
+      prefix: 'นพ.',
+      firstNameTh: 'แพทย์',
+      lastNameTh: 'ตัวอย่าง',
+      national_id: '2345678901234',
+      nationalId: '2345678901234',
+      phone: '0823456789',
+      email: 'doctor@hospital.com',
+      gender: 'ชาย',
+      address: '456 ถนนพหลโยธิน แขวงลาดยาว เขตจตุจักร กรุงเทพมหานคร 10900',
+      position: 'แพทย์ผู้เชี่ยวชาญ',
+      perfession_type: 'แพทย์',
+      department: 'Internal Medicine',
+      departmentId: 'dept_002',
+      departmentDetails: {
+        id: 'dept_002',
+        name: 'Internal Medicine',
+        description: 'แผนกอายุรกรรม'
+      },
+      employeeType: 'doctor' as const,
+      status: 'active' as const,
+      startDate: '2022-06-01',
+      regis_date: '2022-06-01',
+      licenseNumber: 'MD123456',
+      specialization: ['อายุรกรรม', 'โรคหัวใจ', 'โรคเบาหวาน'],
+      specialties: ['อายุรกรรม', 'โรคหัวใจ', 'โรคเบาหวาน'],
+      emt_status: 'Active',
+      workingDays: ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์'],
+      workingHours: {
+        start: '08:00',
+        end: '16:00'
+      }
+    },
+    'mock_nurse_001': {
+      _id: 'mock_nurse_001',
+      username: 'testnurse',
+      role: 'nurse',
+      fullname: ['นาง', 'พยาบาล', 'ตัวอย่าง'],
+      prefix: 'นาง',
+      firstNameTh: 'พยาบาล',
+      lastNameTh: 'ตัวอย่าง',
+      national_id: '3456789012345',
+      nationalId: '3456789012345',
+      phone: '0834567890',
+      email: 'nurse@hospital.com',
+      gender: 'หญิง',
+      address: '789 ถนนรัชดาภิเษก แขวงห้วยขวาง เขตห้วยขวาง กรุงเทพมหานคร 10310',
+      position: 'พยาบาลวิชาชีพ',
+      perfession_type: 'พยาบาล',
+      department: 'Emergency Room',
+      departmentId: 'dept_003',
+      departmentDetails: {
+        id: 'dept_003',
+        name: 'Emergency Room',
+        description: 'แผนกฉุกเฉิน'
+      },
+      employeeType: 'nurse' as const,
+      status: 'active' as const,
+      startDate: '2022-03-15',
+      regis_date: '2022-03-15',
+      licenseNumber: 'RN789012',
+      specialization: ['การพยาบาลฉุกเฉิน', 'การพยาบาลผู้ป่วยวิกฤต'],
+      specialties: ['การพยาบาลฉุกเฉิน', 'การพยาบาลผู้ป่วยวิกฤต'],
+      emt_status: 'Active',
+      workingDays: ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'],
+      workingHours: {
+        start: '07:00',
+        end: '19:00'
+      }
+    }
+  };
+
   useEffect(() => {
     loadUserProfile();
   }, []);
@@ -118,7 +230,17 @@ const ProfilePage: React.FC = () => {
       const parsedUser = JSON.parse(userData);
       const userId = id || parsedUser._id; // ใช้ id จาก URL หรือจาก localStorage
       
-      // ดึงข้อมูลผู้ใช้จาก API
+      // ตรวจสอบ mock users ก่อน (สำหรับการทำงานแบบออฟไลน์)
+      if (MOCK_USER_DATA[userId as keyof typeof MOCK_USER_DATA]) {
+        const mockUserData = MOCK_USER_DATA[userId as keyof typeof MOCK_USER_DATA];
+        console.log('Loading mock user data:', mockUserData);
+        setUser(mockUserData as User);
+        setEditData(mockUserData as Partial<User>);
+        setLoading(false);
+        return;
+      }
+
+      // ถ้าไม่ใช่ mock user ให้ลองเชื่อมต่อกับ backend
       const response = await axios.get(
         `${API_BASE_URL}/api/doctor/users/${userId}`,
         {
@@ -197,11 +319,23 @@ const ProfilePage: React.FC = () => {
     setSuccessMessage('');
     
     try {
+      // ตรวจสอบ mock users ก่อน
+      if (user?._id && MOCK_USER_DATA[user._id as keyof typeof MOCK_USER_DATA]) {
+        // สำหรับ mock users ให้อัปเดตข้อมูลใน state เท่านั้น
+        const updatedUser = { ...user, ...editData } as User;
+        setUser(updatedUser);
+        setEditDialogOpen(false);
+        setSuccessMessage('อัพเดทข้อมูลสำเร็จ (Mock Mode)');
+        setUpdateLoading(false);
+        return;
+      }
+
+      // ถ้าไม่ใช่ mock user ให้เชื่อมต่อกับ backend
       const token = localStorage.getItem('token');
       
-      const response = await axios.put(
-        `${API_BASE_URL}/api/doctor/${user?._id}`,
-        editData,
+        const response = await axios.put(
+          `${API_BASE_URL}/api/doctor/${user?._id || ''}`,
+          editData,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -245,10 +379,21 @@ const ProfilePage: React.FC = () => {
     setSuccessMessage('');
     
     try {
+      // ตรวจสอบ mock users ก่อน
+      if (user?._id && MOCK_USER_DATA[user._id as keyof typeof MOCK_USER_DATA]) {
+        // สำหรับ mock users ให้แสดงข้อความสำเร็จเท่านั้น
+        setPasswordDialogOpen(false);
+        setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+        setSuccessMessage('เปลี่ยนรหัสผ่านสำเร็จ (Mock Mode)');
+        setUpdateLoading(false);
+        return;
+      }
+
+      // ถ้าไม่ใช่ mock user ให้เชื่อมต่อกับ backend
       const token = localStorage.getItem('token');
       
-      await axios.put(
-        `${API_BASE_URL}/api/doctor/${user?._id}/password`,
+        await axios.put(
+          `${API_BASE_URL}/api/doctor/${user?._id || ''}/password`,
         {
           current_password: passwordData.currentPassword,
           new_password: passwordData.newPassword
@@ -340,209 +485,377 @@ const ProfilePage: React.FC = () => {
   }
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', p: 3 }}>
-      <Grid container spacing={3} justifyContent="center">
-        <Grid item xs={12} md={8} lg={6}>
-          {/* Header */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-            <Typography variant="h4" component="h1" sx={{ fontWeight: 'bold' }}>
-              โปรไฟล์ผู้ใช้
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              ID: {user._id}
-            </Typography>
+    <>
+    <Box sx={{ 
+      minHeight: '100vh', 
+      bgcolor: 'var(--bg-tertiary)', 
+      p: 0,
+      width: '100%'
+    }}>
+      <Container maxWidth="xl" sx={{ py: 3 }}>
+        {/* Header */}
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center', 
+          mb: 4,
+          flexWrap: 'wrap',
+          gap: 2
+        }}>
+          <Typography 
+            variant="h4" 
+            component="h1" 
+            sx={{ 
+              fontWeight: 'bold',
+              color: 'var(--primary-dark)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2
+            }}
+          >
+            <PersonIcon sx={{ color: 'var(--accent-blue)' }} />
+            โปรไฟล์ผู้ใช้
+          </Typography>
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 2,
+            flexWrap: 'wrap'
+          }}>
+            <Chip 
+              label={`ID: ${user._id}`}
+              variant="outlined"
+              size="small"
+              sx={{ 
+                bgcolor: 'var(--bg-primary)',
+                borderColor: 'var(--border-light)'
+              }}
+            />
+            <Chip 
+              label={getRoleDisplayName(user.role)}
+              color={user.role === 'doctor' ? 'primary' : user.role === 'nurse' ? 'secondary' : 'default'}
+              size="small"
+            />
           </Box>
+        </Box>
 
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
-            </Alert>
-          )}
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
 
-          {successMessage && (
-            <Alert severity="success" sx={{ mb: 2 }}>
-              {successMessage}
-            </Alert>
-          )}
+        {successMessage && (
+          <Alert severity="success" sx={{ mb: 2 }}>
+            {successMessage}
+          </Alert>
+        )}
 
-          {/* Profile Card */}
-          <Card elevation={3} sx={{ mb: 3 }}>
-            <CardContent sx={{ p: 4 }}>
-              {/* Profile Header */}
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                <Avatar 
-                  src={user.profileImage || undefined}
+        {/* Profile Card */}
+        <Card 
+          elevation={2} 
+          sx={{ 
+            mb: 3,
+            bgcolor: 'var(--bg-primary)',
+            border: '1px solid var(--border-light)',
+            borderRadius: 2
+          }}
+        >
+          <CardContent sx={{ p: 4 }}>
+            {/* Profile Header */}
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              mb: 4,
+              flexWrap: 'wrap',
+              gap: 3
+            }}>
+              <Avatar 
+                src={user.profileImage || undefined}
+                sx={{ 
+                  width: 100, 
+                  height: 100, 
+                  bgcolor: user.role === 'doctor' ? 'var(--accent-blue)' : 
+                           user.role === 'nurse' ? 'var(--accent-green)' : 'var(--accent-pink)',
+                  border: '3px solid var(--border-light)',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                }}
+              >
+                {user.role === 'doctor' ? <HospitalIcon sx={{ fontSize: 50 }} /> : 
+                 user.role === 'nurse' ? <MedicalIcon sx={{ fontSize: 50 }} /> : 
+                 <PersonIcon sx={{ fontSize: 50 }} />}
+              </Avatar>
+              <Box sx={{ flex: 1, minWidth: 300 }}>
+                <Typography 
+                  variant="h4" 
+                  component="h2" 
+                  gutterBottom
                   sx={{ 
-                    width: 80, 
-                    height: 80, 
-                    mr: 3,
-                    bgcolor: user.role === 'doctor' ? 'primary.main' : 'secondary.main',
-                    border: '2px solid #e0e0e0'
+                    fontWeight: 'bold',
+                    color: 'var(--primary-dark)',
+                    mb: 2
                   }}
                 >
-                  {user.role === 'doctor' ? <HospitalIcon sx={{ fontSize: 40 }} /> : <PersonIcon sx={{ fontSize: 40 }} />}
-                </Avatar>
-                <Box sx={{ flex: 1 }}>
-                  <Typography variant="h5" component="h2" gutterBottom>
-                    {getDisplayName(user.fullname)}
-                  </Typography>
-                  <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                  {getDisplayName(user.fullname)}
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+                  <Chip 
+                    label={getRoleDisplayName(user.role)} 
+                    color={user.role === 'doctor' ? 'primary' : 'secondary'}
+                    size="medium"
+                    sx={{ fontWeight: 'bold' }}
+                  />
+                  {user.status && (
                     <Chip 
-                      label={getRoleDisplayName(user.role)} 
-                      color={user.role === 'doctor' ? 'primary' : 'secondary'}
-                      size="small"
+                      label={getStatusText(user.status)} 
+                      color={getStatusColor(user.status) as any}
+                      size="medium"
                     />
-                    {user.status && (
-                      <Chip 
-                        label={getStatusText(user.status)} 
-                        color={getStatusColor(user.status) as any}
-                        size="small"
-                      />
-                    )}
-                  </Box>
-                  <Typography variant="body1" color="text.secondary">
-                    {user.position || user.perfession_type} • {user.departmentDetails?.name || 'ไม่ระบุแผนก'}
-                  </Typography>
-                  {user.specialization && user.specialization.length > 0 && (
+                  )}
+                  {user.employeeType && (
                     <Chip 
-                      label={user.specialization[0]} 
+                      label={getEmployeeTypeText(user.employeeType)}
                       variant="outlined"
-                      size="small"
-                      sx={{ mt: 1 }}
+                      size="medium"
                     />
                   )}
                 </Box>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  <Button
-                    variant="contained"
-                    startIcon={<EditIcon />}
-                    onClick={handleEditProfile}
-                  >
-                    แก้ไขข้อมูล
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    startIcon={<LockIcon />}
-                    onClick={handleChangePassword}
-                  >
-                    เปลี่ยนรหัสผ่าน
-                  </Button>
-                </Box>
+                <Typography 
+                  variant="h6" 
+                  color="var(--neutral-dark)"
+                  sx={{ mb: 1 }}
+                >
+                  {user.position || user.perfession_type}
+                </Typography>
+                <Typography 
+                  variant="body1" 
+                  color="var(--neutral-main)"
+                  sx={{ mb: 2 }}
+                >
+                  {user.departmentDetails?.name || 'ไม่ระบุแผนก'}
+                </Typography>
+                {user.specialization && user.specialization.length > 0 && (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                    {user.specialization.slice(0, 3).map((spec, index) => (
+                      <Chip 
+                        key={index}
+                        label={spec} 
+                        variant="outlined"
+                        size="small"
+                        sx={{ 
+                          bgcolor: 'var(--bg-secondary)',
+                          borderColor: 'var(--border-light)'
+                        }}
+                      />
+                    ))}
+                  </Box>
+                )}
               </Box>
+              <Box sx={{ 
+                display: 'flex', 
+                flexDirection: { xs: 'row', sm: 'column' }, 
+                gap: 2,
+                minWidth: 200
+              }}>
+                <Button
+                  variant="contained"
+                  startIcon={<EditIcon />}
+                  onClick={handleEditProfile}
+                  sx={{
+                    bgcolor: 'var(--accent-blue)',
+                    '&:hover': {
+                      bgcolor: 'var(--secondary-main)'
+                    }
+                  }}
+                >
+                  แก้ไขข้อมูล
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<LockIcon />}
+                  onClick={handleChangePassword}
+                  sx={{
+                    borderColor: 'var(--border-dark)',
+                    color: 'var(--primary-dark)',
+                    '&:hover': {
+                      borderColor: 'var(--accent-blue)',
+                      bgcolor: 'var(--hover-overlay)'
+                    }
+                  }}
+                >
+                  เปลี่ยนรหัสผ่าน
+                </Button>
+              </Box>
+            </Box>
 
-              <Divider sx={{ mb: 3 }} />
+            <Divider sx={{ mb: 4, borderColor: 'var(--border-light)' }} />
 
-              {/* Profile Details */}
-              <Grid container spacing={3}>
-                {/* ข้อมูลส่วนตัว */}
-                <Grid item xs={12} md={6}>
-                  <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
-                    <PersonIcon sx={{ mr: 1, color: 'primary.main' }} />
+            {/* Profile Details */}
+            <Grid container spacing={4}>
+              {/* ข้อมูลส่วนตัว */}
+              <Grid item xs={12} md={6}>
+                <Paper 
+                  elevation={1}
+                  sx={{ 
+                    p: 3, 
+                    bgcolor: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-light)',
+                    borderRadius: 2
+                  }}
+                >
+                  <Typography 
+                    variant="h6" 
+                    gutterBottom 
+                    sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center',
+                      color: 'var(--primary-dark)',
+                      fontWeight: 'bold',
+                      mb: 3
+                    }}
+                  >
+                    <PersonIcon sx={{ mr: 1, color: 'var(--accent-blue)' }} />
                     ข้อมูลส่วนตัว
                   </Typography>
                   <List dense>
-                    <ListItem>
+                    <ListItem sx={{ py: 1.5 }}>
                       <ListItemIcon>
-                        <BadgeIcon fontSize="small" />
+                        <BadgeIcon fontSize="small" sx={{ color: 'var(--accent-blue)' }} />
                       </ListItemIcon>
                       <ListItemText 
                         primary="รหัสบุคลากร" 
                         secondary={user.id || user._id}
+                        primaryTypographyProps={{ fontWeight: 'bold', color: 'var(--primary-dark)' }}
+                        secondaryTypographyProps={{ color: 'var(--neutral-main)' }}
                       />
                     </ListItem>
-                    <ListItem>
+                    <ListItem sx={{ py: 1.5 }}>
                       <ListItemIcon>
-                        <AssignmentIcon fontSize="small" />
+                        <AssignmentIcon fontSize="small" sx={{ color: 'var(--accent-blue)' }} />
                       </ListItemIcon>
                       <ListItemText 
                         primary="ชื่อผู้ใช้" 
                         secondary={user.username}
+                        primaryTypographyProps={{ fontWeight: 'bold', color: 'var(--primary-dark)' }}
+                        secondaryTypographyProps={{ color: 'var(--neutral-main)' }}
                       />
                     </ListItem>
                     {user.gender && (
-                      <ListItem>
+                      <ListItem sx={{ py: 1.5 }}>
                         <ListItemIcon>
-                          <PersonIcon fontSize="small" />
+                          <PersonIcon fontSize="small" sx={{ color: 'var(--accent-blue)' }} />
                         </ListItemIcon>
                         <ListItemText 
                           primary="เพศ" 
                           secondary={user.gender}
+                          primaryTypographyProps={{ fontWeight: 'bold', color: 'var(--primary-dark)' }}
+                          secondaryTypographyProps={{ color: 'var(--neutral-main)' }}
                         />
                       </ListItem>
                     )}
-                    <ListItem>
+                    <ListItem sx={{ py: 1.5 }}>
                       <ListItemIcon>
-                        <PhoneIcon fontSize="small" />
+                        <PhoneIcon fontSize="small" sx={{ color: 'var(--accent-blue)' }} />
                       </ListItemIcon>
                       <ListItemText 
                         primary="เบอร์โทรศัพท์" 
                         secondary={user.phone || 'ไม่ระบุ'}
+                        primaryTypographyProps={{ fontWeight: 'bold', color: 'var(--primary-dark)' }}
+                        secondaryTypographyProps={{ color: 'var(--neutral-main)' }}
                       />
                     </ListItem>
                     {user.email && (
-                      <ListItem>
+                      <ListItem sx={{ py: 1.5 }}>
                         <ListItemIcon>
-                          <EmailIcon fontSize="small" />
+                          <EmailIcon fontSize="small" sx={{ color: 'var(--accent-blue)' }} />
                         </ListItemIcon>
                         <ListItemText 
                           primary="อีเมล" 
                           secondary={user.email}
+                          primaryTypographyProps={{ fontWeight: 'bold', color: 'var(--primary-dark)' }}
+                          secondaryTypographyProps={{ color: 'var(--neutral-main)' }}
                         />
                       </ListItem>
                     )}
-                    <ListItem>
+                    <ListItem sx={{ py: 1.5 }}>
                       <ListItemIcon>
-                        <BadgeIcon fontSize="small" />
+                        <BadgeIcon fontSize="small" sx={{ color: 'var(--accent-blue)' }} />
                       </ListItemIcon>
                       <ListItemText 
                         primary="หมายเลขบัตรประชาชน" 
                         secondary={user.national_id || user.nationalId || 'ไม่ระบุ'}
+                        primaryTypographyProps={{ fontWeight: 'bold', color: 'var(--primary-dark)' }}
+                        secondaryTypographyProps={{ color: 'var(--neutral-main)' }}
                       />
                     </ListItem>
                     {user.address && (
-                      <ListItem>
+                      <ListItem sx={{ py: 1.5 }}>
                         <ListItemIcon>
-                          <HomeIcon fontSize="small" />
+                          <HomeIcon fontSize="small" sx={{ color: 'var(--accent-blue)' }} />
                         </ListItemIcon>
                         <ListItemText 
                           primary="ที่อยู่" 
                           secondary={user.address}
+                          primaryTypographyProps={{ fontWeight: 'bold', color: 'var(--primary-dark)' }}
+                          secondaryTypographyProps={{ color: 'var(--neutral-main)' }}
                         />
                       </ListItem>
                     )}
                   </List>
-                </Grid>
+                </Paper>
+              </Grid>
 
-                {/* ข้อมูลการทำงาน */}
-                <Grid item xs={12} md={6}>
-                  <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
-                    <WorkIcon sx={{ mr: 1, color: 'primary.main' }} />
+              {/* ข้อมูลการทำงาน */}
+              <Grid item xs={12} md={6}>
+                <Paper 
+                  elevation={1}
+                  sx={{ 
+                    p: 3, 
+                    bgcolor: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-light)',
+                    borderRadius: 2
+                  }}
+                >
+                  <Typography 
+                    variant="h6" 
+                    gutterBottom 
+                    sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center',
+                      color: 'var(--primary-dark)',
+                      fontWeight: 'bold',
+                      mb: 3
+                    }}
+                  >
+                    <WorkIcon sx={{ mr: 1, color: 'var(--accent-blue)' }} />
                     ข้อมูลการทำงาน
                   </Typography>
                   <List dense>
-                    <ListItem>
+                    <ListItem sx={{ py: 1.5 }}>
                       <ListItemIcon>
-                        <WorkIcon fontSize="small" />
+                        <WorkIcon fontSize="small" sx={{ color: 'var(--accent-blue)' }} />
                       </ListItemIcon>
                       <ListItemText 
                         primary="ประเภทพนักงาน" 
                         secondary={getEmployeeTypeText(user.employeeType) || getRoleDisplayName(user.role)}
+                        primaryTypographyProps={{ fontWeight: 'bold', color: 'var(--primary-dark)' }}
+                        secondaryTypographyProps={{ color: 'var(--neutral-main)' }}
                       />
                     </ListItem>
-                    <ListItem>
+                    <ListItem sx={{ py: 1.5 }}>
                       <ListItemIcon>
-                        <MedicalIcon fontSize="small" />
+                        <MedicalIcon fontSize="small" sx={{ color: 'var(--accent-blue)' }} />
                       </ListItemIcon>
                       <ListItemText 
                         primary="แผนก" 
                         secondary={
                           user.departmentDetails?.name ? (
                             <Box>
-                              <Typography variant="body2" component="div">
+                              <Typography variant="body2" component="div" sx={{ color: 'var(--neutral-main)' }}>
                                 {user.departmentDetails.name}
                               </Typography>
                               {user.departmentDetails?.description && (
-                                <Typography variant="caption" color="text.secondary">
+                                <Typography variant="caption" sx={{ color: 'var(--neutral-light)' }}>
                                   {user.departmentDetails.description}
                                 </Typography>
                               )}
@@ -551,63 +864,92 @@ const ProfilePage: React.FC = () => {
                             'ไม่ระบุแผนก'
                           )
                         }
+                        primaryTypographyProps={{ fontWeight: 'bold', color: 'var(--primary-dark)' }}
                       />
                     </ListItem>
-                    <ListItem>
+                    <ListItem sx={{ py: 1.5 }}>
                       <ListItemIcon>
-                        <AssignmentIcon fontSize="small" />
+                        <AssignmentIcon fontSize="small" sx={{ color: 'var(--accent-blue)' }} />
                       </ListItemIcon>
                       <ListItemText 
                         primary="ตำแหน่ง" 
                         secondary={user.position || user.perfession_type || 'ไม่ระบุ'}
+                        primaryTypographyProps={{ fontWeight: 'bold', color: 'var(--primary-dark)' }}
+                        secondaryTypographyProps={{ color: 'var(--neutral-main)' }}
                       />
                     </ListItem>
                     {user.licenseNumber && (
-                      <ListItem>
+                      <ListItem sx={{ py: 1.5 }}>
                         <ListItemIcon>
-                          <BadgeIcon fontSize="small" />
+                          <BadgeIcon fontSize="small" sx={{ color: 'var(--accent-blue)' }} />
                         </ListItemIcon>
                         <ListItemText 
                           primary="หมายเลขใบประกอบวิชาชีพ" 
                           secondary={user.licenseNumber}
+                          primaryTypographyProps={{ fontWeight: 'bold', color: 'var(--primary-dark)' }}
+                          secondaryTypographyProps={{ color: 'var(--neutral-main)' }}
                         />
                       </ListItem>
                     )}
                     {(user.startDate || user.regis_date) && (
-                      <ListItem>
+                      <ListItem sx={{ py: 1.5 }}>
                         <ListItemIcon>
-                          <ScheduleIcon fontSize="small" />
+                          <ScheduleIcon fontSize="small" sx={{ color: 'var(--accent-blue)' }} />
                         </ListItemIcon>
                         <ListItemText 
                           primary="วันที่เริ่มงาน" 
                           secondary={user.startDate || user.regis_date ? 
                             new Date(user.startDate || user.regis_date || '').toLocaleDateString('th-TH') : 'ไม่ระบุ'}
+                          primaryTypographyProps={{ fontWeight: 'bold', color: 'var(--primary-dark)' }}
+                          secondaryTypographyProps={{ color: 'var(--neutral-main)' }}
                         />
                       </ListItem>
                     )}
                   </List>
-                </Grid>
+                </Paper>
+              </Grid>
 
-                {/* ข้อมูลระบบ */}
-                <Grid item xs={12} md={6}>
-                  <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
-                    <SecurityIcon sx={{ mr: 1, color: 'primary.main' }} />
+              {/* ข้อมูลระบบ */}
+              <Grid item xs={12} md={6}>
+                <Paper 
+                  elevation={1}
+                  sx={{ 
+                    p: 3, 
+                    bgcolor: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-light)',
+                    borderRadius: 2
+                  }}
+                >
+                  <Typography 
+                    variant="h6" 
+                    gutterBottom 
+                    sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center',
+                      color: 'var(--primary-dark)',
+                      fontWeight: 'bold',
+                      mb: 3
+                    }}
+                  >
+                    <SecurityIcon sx={{ mr: 1, color: 'var(--accent-blue)' }} />
                     ข้อมูลระบบ
                   </Typography>
                   <List dense>
-                    <ListItem>
+                    <ListItem sx={{ py: 1.5 }}>
                       <ListItemIcon>
-                        <AssignmentIcon fontSize="small" />
+                        <AssignmentIcon fontSize="small" sx={{ color: 'var(--accent-blue)' }} />
                       </ListItemIcon>
                       <ListItemText 
                         primary="บทบาทในระบบ" 
                         secondary={getRoleDisplayName(user.role)}
+                        primaryTypographyProps={{ fontWeight: 'bold', color: 'var(--primary-dark)' }}
+                        secondaryTypographyProps={{ color: 'var(--neutral-main)' }}
                       />
                     </ListItem>
                     {user.status && (
-                      <ListItem>
+                      <ListItem sx={{ py: 1.5 }}>
                         <ListItemIcon>
-                          <SecurityIcon fontSize="small" />
+                          <SecurityIcon fontSize="small" sx={{ color: 'var(--accent-blue)' }} />
                         </ListItemIcon>
                         <ListItemText 
                           primary="สถานะการทำงาน" 
@@ -618,28 +960,51 @@ const ProfilePage: React.FC = () => {
                               size="small"
                             />
                           }
+                          primaryTypographyProps={{ fontWeight: 'bold', color: 'var(--primary-dark)' }}
                         />
                       </ListItem>
                     )}
                     {user.emt_status && (
-                      <ListItem>
+                      <ListItem sx={{ py: 1.5 }}>
                         <ListItemIcon>
-                          <MedicalIcon fontSize="small" />
+                          <MedicalIcon fontSize="small" sx={{ color: 'var(--accent-blue)' }} />
                         </ListItemIcon>
                         <ListItemText 
                           primary="สถานะ EMT" 
                           secondary={user.emt_status}
+                          primaryTypographyProps={{ fontWeight: 'bold', color: 'var(--primary-dark)' }}
+                          secondaryTypographyProps={{ color: 'var(--neutral-main)' }}
                         />
                       </ListItem>
                     )}
                   </List>
-                </Grid>
+                </Paper>
+              </Grid>
 
-                {/* ความเชี่ยวชาญ (สำหรับแพทย์) */}
-                {(user.role === 'doctor' && (user.specialization || user.specialties)) && (
-                  <Grid item xs={12} md={6}>
-                    <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
-                      <MedicalIcon sx={{ mr: 1, color: 'primary.main' }} />
+              {/* ความเชี่ยวชาญ (สำหรับแพทย์) */}
+              {(user.role === 'doctor' && (user.specialization || user.specialties)) && (
+                <Grid item xs={12} md={6}>
+                  <Paper 
+                    elevation={1}
+                    sx={{ 
+                      p: 3, 
+                      bgcolor: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-light)',
+                      borderRadius: 2
+                    }}
+                  >
+                    <Typography 
+                      variant="h6" 
+                      gutterBottom 
+                      sx={{ 
+                        display: 'flex', 
+                        alignItems: 'center',
+                        color: 'var(--primary-dark)',
+                        fontWeight: 'bold',
+                        mb: 3
+                      }}
+                    >
+                      <MedicalIcon sx={{ mr: 1, color: 'var(--accent-blue)' }} />
                       ความเชี่ยวชาญ
                     </Typography>
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
@@ -649,96 +1014,178 @@ const ProfilePage: React.FC = () => {
                           label={spec} 
                           variant="outlined" 
                           size="small"
+                          sx={{ 
+                            bgcolor: 'var(--bg-primary)',
+                            borderColor: 'var(--border-light)'
+                          }}
                         />
                       ))}
                     </Box>
-                  </Grid>
-                )}
+                  </Paper>
+                </Grid>
+              )}
 
-                {/* ตารางการทำงาน */}
-                {user.workingDays && user.workingDays.length > 0 && (
-                  <Grid item xs={12}>
-                    <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
-                      <ScheduleIcon sx={{ mr: 1, color: 'primary.main' }} />
+              {/* ตารางการทำงาน */}
+              {user.workingDays && user.workingDays.length > 0 && (
+                <Grid item xs={12}>
+                  <Paper 
+                    elevation={1}
+                    sx={{ 
+                      p: 3, 
+                      bgcolor: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-light)',
+                      borderRadius: 2
+                    }}
+                  >
+                    <Typography 
+                      variant="h6" 
+                      gutterBottom 
+                      sx={{ 
+                        display: 'flex', 
+                        alignItems: 'center',
+                        color: 'var(--primary-dark)',
+                        fontWeight: 'bold',
+                        mb: 3
+                      }}
+                    >
+                      <ScheduleIcon sx={{ mr: 1, color: 'var(--accent-blue)' }} />
                       ตารางการทำงาน
                     </Typography>
-                    <Grid container spacing={2}>
+                    <Grid container spacing={3}>
                       <Grid item xs={12} sm={6}>
-                        <Typography variant="body2" color="text.secondary">วันทำงาน</Typography>
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+                        <Typography variant="body2" sx={{ color: 'var(--neutral-main)', mb: 1 }}>วันทำงาน</Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                           {user.workingDays.map((day, index) => (
-                            <Chip key={index} label={day} size="small" />
+                            <Chip 
+                              key={index} 
+                              label={day} 
+                              size="small"
+                              sx={{ 
+                                bgcolor: 'var(--bg-primary)',
+                                borderColor: 'var(--border-light)'
+                              }}
+                            />
                           ))}
                         </Box>
                       </Grid>
                       {user.workingHours && (
                         <Grid item xs={12} sm={6}>
-                          <Typography variant="body2" color="text.secondary">เวลาทำงาน</Typography>
-                          <Typography variant="body1">
+                          <Typography variant="body2" sx={{ color: 'var(--neutral-main)', mb: 1 }}>เวลาทำงาน</Typography>
+                          <Typography variant="body1" sx={{ color: 'var(--primary-dark)', fontWeight: 'bold' }}>
                             {user.workingHours.start} - {user.workingHours.end}
                           </Typography>
                         </Grid>
                       )}
                     </Grid>
-                  </Grid>
-                )}
-              </Grid>
-            </CardContent>
-          </Card>
-
-          {/* Quick Actions */}
-          <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              การดำเนินการ
-            </Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={6} md={3}>
-                <Button
-                  fullWidth
-                  variant="outlined"
-                  onClick={() => navigate('/')}
-                >
-                  กลับไปหน้าหลัก
-                </Button>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Button
-                  fullWidth
-                  variant="outlined"
-                  startIcon={<EditIcon />}
-                  onClick={handleEditProfile}
-                >
-                  แก้ไขข้อมูล
-                </Button>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Button
-                  fullWidth
-                  variant="outlined"
-                  startIcon={<LockIcon />}
-                  onClick={handleChangePassword}
-                >
-                  เปลี่ยนรหัสผ่าน
-                </Button>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Button
-                  fullWidth
-                  variant="outlined"
-                  color="error"
-                  startIcon={<LogoutIcon />}
-                  onClick={handleLogout}
-                >
-                  ออกจากระบบ
-                </Button>
-              </Grid>
+                  </Paper>
+                </Grid>
+              )}
             </Grid>
-          </Paper>
-        </Grid>
-      </Grid>
+          </CardContent>
+        </Card>
 
-      {/* Edit Profile Dialog */}
-      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="md" fullWidth>
+        {/* Quick Actions */}
+        <Paper 
+          elevation={2} 
+          sx={{ 
+            p: 3, 
+            mb: 3,
+            bgcolor: 'var(--bg-primary)',
+            border: '1px solid var(--border-light)',
+            borderRadius: 2
+          }}
+        >
+          <Typography 
+            variant="h6" 
+            gutterBottom
+            sx={{ 
+              color: 'var(--primary-dark)',
+              fontWeight: 'bold',
+              mb: 3
+            }}
+          >
+            การดำเนินการ
+          </Typography>
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6} md={3}>
+              <Button
+                fullWidth
+                variant="outlined"
+                onClick={() => navigate('/')}
+                sx={{
+                  borderColor: 'var(--border-dark)',
+                  color: 'var(--primary-dark)',
+                  '&:hover': {
+                    borderColor: 'var(--accent-blue)',
+                    bgcolor: 'var(--hover-overlay)'
+                  }
+                }}
+              >
+                กลับไปหน้าหลัก
+              </Button>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Button
+                fullWidth
+                variant="outlined"
+                startIcon={<EditIcon />}
+                onClick={handleEditProfile}
+                sx={{
+                  borderColor: 'var(--border-dark)',
+                  color: 'var(--primary-dark)',
+                  '&:hover': {
+                    borderColor: 'var(--accent-blue)',
+                    bgcolor: 'var(--hover-overlay)'
+                  }
+                }}
+              >
+                แก้ไขข้อมูล
+              </Button>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Button
+                fullWidth
+                variant="outlined"
+                startIcon={<LockIcon />}
+                onClick={handleChangePassword}
+                sx={{
+                  borderColor: 'var(--border-dark)',
+                  color: 'var(--primary-dark)',
+                  '&:hover': {
+                    borderColor: 'var(--accent-blue)',
+                    bgcolor: 'var(--hover-overlay)'
+                  }
+                }}
+              >
+                เปลี่ยนรหัสผ่าน
+              </Button>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Button
+                fullWidth
+                variant="outlined"
+                color="error"
+                startIcon={<LogoutIcon />}
+                onClick={handleLogout}
+                sx={{
+                  borderColor: 'var(--error)',
+                  color: 'var(--error)',
+                  '&:hover': {
+                    borderColor: 'var(--error)',
+                    bgcolor: 'rgba(220, 53, 69, 0.1)'
+                  }
+                }}
+              >
+                ออกจากระบบ
+              </Button>
+            </Grid>
+          </Grid>
+        </Paper>
+      </Container>
+    </Box>
+
+    {/* Edit Profile Dialog */}
+    <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>แก้ไขข้อมูลโปรไฟล์</DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
@@ -769,7 +1216,7 @@ const ProfilePage: React.FC = () => {
                 onChange={(e) => setEditData({ ...editData, address: e.target.value })}
               />
             </Grid>
-            {(user.role === 'doctor' || user.role === 'nurse') && (
+            {(user?.role === 'doctor' || user?.role === 'nurse') && (
               <>
                 <Grid item xs={12} sm={6}>
                   <TextField
@@ -872,7 +1319,7 @@ const ProfilePage: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </>
   );
 };
 
