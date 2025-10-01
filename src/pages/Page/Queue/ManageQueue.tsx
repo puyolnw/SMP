@@ -26,9 +26,11 @@ import {
   ListItem,
   ListItemSecondaryAction,
   CircularProgress,
+  Skeleton,
 } from '@mui/material';
 import axios from 'axios';
 import { getUserRole } from '../../../utils/auth';
+import { getCurrentUser } from '../../../utils/auth';
 import {
   LocalHospital as HospitalIcon,
   MonitorHeart as HeartIcon,
@@ -211,6 +213,7 @@ const ManageQueue: React.FC = () => {
         setRoomStatuses([]);
         setNextQueues([]);
         setAvailableRooms([]);
+        setLoading(false); // เพิ่มการปิด loading เมื่อไม่มีแผนกที่เลือก
         return;
       }
       
@@ -230,7 +233,8 @@ const ManageQueue: React.FC = () => {
       
       if (!currentDeptData || departments.length === 0) {
         console.log('[DEBUG] Department not found or departments not loaded yet');
-        // ไม่ต้อง show error เพราะอาจจะยัง loading departments อยู่
+        // รีเซ็ต loading และออกจากฟังก์ชัน
+        setLoading(false);
         return;
       }
       
@@ -377,6 +381,12 @@ const ManageQueue: React.FC = () => {
     } catch (err) {
       console.error('Error loading queue data:', err);
       showSnackbar('ไม่สามารถโหลดข้อมูลคิวได้', 'error');
+      
+      // ใช้ข้อมูลว่างเป็น fallback เพื่อไม่ให้ loading ติดค้าง
+      setRoomStatuses([]);
+      setNextQueues([]);
+      setAvailableRooms([]);
+      
     } finally {
       setLoading(false);
     }
@@ -404,6 +414,9 @@ const ManageQueue: React.FC = () => {
   // Load departments on component mount
   useEffect(() => {
     console.log('[DEBUG] Component mounted, loading departments');
+    // รีเซ็ต loading state เมื่อ mount component
+    setLoading(false);
+    setDepartmentsLoading(true);
     loadDepartments();
   }, []);
 
@@ -421,7 +434,18 @@ const ManageQueue: React.FC = () => {
     
     // ถ้าเลือกแผนกแล้วให้โหลดข้อมูล
     if (selectedDepartment && departments.length > 0) {
-      loadQueueData();
+      // เพิ่ม timeout เพื่อป้องกัน loading ติดค้าง
+      const loadTimeout = setTimeout(() => {
+        console.warn('[WARN] Loading timeout, forcing loading state to false');
+        setLoading(false);
+      }, 30000); // 30 วินาที
+      
+      loadQueueData().finally(() => {
+        clearTimeout(loadTimeout);
+      });
+    } else {
+      // รีเซ็ต loading state เมื่อไม่มีแผนกที่เลือก
+      setLoading(false);
     }
   }, [selectedDepartment, departments]);
 
@@ -557,15 +581,33 @@ const ManageQueue: React.FC = () => {
     try {
       setMedicalRecordLoading(true);
 
+      // ดึง user ID ของหมอที่ล็อกอินอยู่
+      const currentUser = getCurrentUser();
+      const doctorUserId = currentUser?.id ? String(currentUser.id) : null;
+      
+      // เพิ่ม debug logging เพื่อตรวจสอบข้อมูล
+      console.log('[DEBUG] localStorage token:', localStorage.getItem('token'));
+      console.log('[DEBUG] localStorage userData:', localStorage.getItem('userData'));
+      console.log('[DEBUG] Current user:', currentUser);
+      console.log('[DEBUG] Current user ID:', currentUser?.id);
+      console.log('[DEBUG] Doctor user ID:', doctorUserId);
+      
+      if (!doctorUserId) {
+        showSnackbar('ไม่สามารถระบุตัวตนแพทย์ได้', 'error');
+        return;
+      }
+
       // บันทึกประวัติการรักษาก่อน
       const medicalRecordPayload = {
         queue_id: selectedQueueForMedicalRecord._id,
         patient_id: selectedQueueForMedicalRecord.patient_id,
-        user_id: 'current_doctor', // ควรดึงจาก auth context
+        user_id: doctorUserId, // ใช้ user ID จริงของแพทย์ที่ล็อกอิน
+        created_by_role: 'doctor',
         ...medicalRecordData
       };
 
-      console.log('[DEBUG] Saving medical record:', medicalRecordPayload);
+      console.log('[DEBUG] Saving medical record with doctor ID:', doctorUserId);
+      console.log('[DEBUG] Medical record payload:', medicalRecordPayload);
       
       // บันทึกประวัติการรักษา
       await axios.post(`${API_BASE_URL}/api/medical-records/add`, medicalRecordPayload);
@@ -778,6 +820,122 @@ const ManageQueue: React.FC = () => {
   console.log('[DEBUG] Next queues:', nextQueues);
   console.log('[DEBUG] Selected department:', selectedDepartment);
   console.log('[DEBUG] Selected room:', selectedRoom);
+  console.log('[DEBUG] Loading state:', loading);
+  console.log('[DEBUG] Departments loading state:', departmentsLoading);
+
+  // แสดง skeleton loading เมื่อ departments กำลังโหลด
+  if (departmentsLoading) {
+    return (
+      <Box sx={{ 
+        minHeight: '100vh', 
+        bgcolor: '#e3f2fd',
+        p: 3
+      }}>
+        <Container maxWidth="xl">
+          {/* Header Skeleton */}
+          <Card elevation={3} sx={{ borderRadius: '16px', mb: 3 }}>
+            <CardContent sx={{ p: 3 }}>
+              <Grid container spacing={3} alignItems="center">
+                <Grid item xs={12} md={6}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Skeleton variant="circular" width={40} height={40} />
+                    <Box>
+                      <Skeleton variant="text" width={200} height={40} />
+                      <Skeleton variant="text" width={150} height={20} />
+                    </Box>
+                  </Box>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <Box sx={{ display: 'flex', gap: 2, justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
+                    <Skeleton variant="rounded" width={200} height={56} />
+                    <Skeleton variant="rounded" width={150} height={56} />
+                    <Skeleton variant="rounded" width={120} height={56} />
+                    <Skeleton variant="circular" width={56} height={56} />
+                  </Box>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+
+          {/* Department Display Skeleton */}
+          <Card elevation={4} sx={{ borderRadius: '16px', mb: 3, bgcolor: '#1976d2', color: 'white' }}>
+            <CardContent sx={{ textAlign: 'center', py: 2 }}>
+              <Skeleton variant="text" width={300} height={40} sx={{ mx: 'auto', bgcolor: 'rgba(255,255,255,0.3)' }} />
+              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2, mt: 1 }}>
+                <Skeleton variant="rounded" width={120} height={24} sx={{ bgcolor: 'rgba(255,255,255,0.3)' }} />
+                <Skeleton variant="text" width={80} height={20} sx={{ bgcolor: 'rgba(255,255,255,0.3)' }} />
+              </Box>
+            </CardContent>
+          </Card>
+
+          {/* Room Status Cards Skeleton */}
+          <Grid container spacing={3} sx={{ mb: 4 }}>
+            {[...Array(3)].map((_, index) => (
+              <Grid item xs={12} md={6} lg={4} key={index}>
+                <Card 
+                  elevation={4}
+                  sx={{ 
+                    borderRadius: '16px',
+                    border: '3px solid #1976d2',
+                    minHeight: '250px'
+                  }}
+                >
+                  <CardContent sx={{ p: 3 }}>
+                    <Box sx={{ textAlign: 'center', mb: 2 }}>
+                      <Skeleton variant="text" width={120} height={30} sx={{ mx: 'auto' }} />
+                      <Skeleton variant="rounded" width={80} height={24} sx={{ mx: 'auto', mt: 1 }} />
+                    </Box>
+
+                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                      <Skeleton variant="circular" width={60} height={60} sx={{ mx: 'auto', mb: 2 }} />
+                      <Skeleton variant="text" width={100} height={30} sx={{ mx: 'auto' }} />
+                      <Skeleton variant="text" width={80} height={20} sx={{ mx: 'auto' }} />
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+
+          {/* Next Queues Skeleton */}
+          <Card elevation={3} sx={{ borderRadius: '16px' }}>
+            <CardContent sx={{ p: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+                <Skeleton variant="text" width={200} height={40} />
+              </Box>
+              
+              {[...Array(5)].map((_, index) => (
+                <Box key={index} sx={{ 
+                  p: 2, 
+                  borderRadius: '8px', 
+                  mb: 1,
+                  border: '1px solid transparent'
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Skeleton variant="text" width={80} height={40} />
+                    <Box sx={{ flex: 1 }}>
+                      <Skeleton variant="text" width={200} height={24} />
+                      <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                        <Skeleton variant="rounded" width={60} height={20} />
+                        <Skeleton variant="rounded" width={80} height={20} />
+                        <Skeleton variant="text" width={100} height={20} />
+                      </Box>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Skeleton variant="circular" width={40} height={40} />
+                      <Skeleton variant="circular" width={40} height={40} />
+                      <Skeleton variant="circular" width={40} height={40} />
+                      <Skeleton variant="circular" width={40} height={40} />
+                    </Box>
+                  </Box>
+                </Box>
+              ))}
+            </CardContent>
+          </Card>
+        </Container>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ 
@@ -788,8 +946,8 @@ const ManageQueue: React.FC = () => {
     }}>
       <Container maxWidth="xl">
         
-        {/* Loading Overlay */}
-        {loading && (
+        {/* Loading Overlay - Disabled temporarily for debugging */}
+        {false && loading && (
           <Box
             sx={{
               position: 'absolute',

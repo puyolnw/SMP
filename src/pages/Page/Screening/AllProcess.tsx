@@ -103,6 +103,9 @@ const loadCameraSizeSettings = () => {
   const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
   const [isListening, setIsListening] = useState(false);
   const submitTimeoutRef = useRef<NodeJS.Timeout | number | null>(null);
+  const [autoSubmitCountdown, setAutoSubmitCountdown] = useState<number | null>(null);
+  const countdownIntervalRef = useRef<NodeJS.Timeout | number | null>(null);
+  const symptomsTextRef = useRef<string>('');
   const [mainStream, setMainStream] = useState<MediaStream | null>(null);
   const [bpStream, setBpStream] = useState<MediaStream | null>(null);
   const stopSpeaking = () => {
@@ -180,7 +183,6 @@ const initializeSpeechRecognition = () => {
     recognition.maxAlternatives = 1;
     
     recognition.onstart = () => {
-      console.log('Speech recognition started');
       setIsListening(true);
       setIsTranscribing(true);
       setErrorMessage('กำลังฟัง... กรุณาพูดอาการของท่าน');
@@ -188,22 +190,26 @@ const initializeSpeechRecognition = () => {
     
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
-      console.log('Speech recognition result:', transcript);
-      setSymptomsText(transcript);
+      
+      // ตรวจสอบว่าข้อความไม่ว่าง
+      if (!transcript || transcript.trim() === '') {
+        setErrorMessage('ไม่ได้รับข้อความ กรุณาลองบันทึกใหม่');
+        speak('ไม่ได้รับข้อความ กรุณาลองบันทึกใหม่');
+        return;
+      }
+      
+      setSymptomsText(transcript.trim());
+      symptomsTextRef.current = transcript.trim(); // อัพเดท ref ด้วย
       setIsTranscribing(false);
       setErrorMessage('');
       
       // ทวนข้อความที่แปลงได้
       speak(`ระบบได้ยินว่าคุณบอกอาการว่า ${transcript} ถูกต้องหรือไม่`);
       
-      // ไปขั้นตอนถัดไปหลังจากทวนอาการเสร็จ (รอ 5 วินาที)
-      submitTimeoutRef.current = setTimeout(() => {
-        submitSymptoms();
-      }, 8000);
+      // auto-submit จะถูกจัดการโดย useEffect ที่ติดตาม symptomsText แล้ว
     };
     
     recognition.onerror = (event: any) => {
-      console.error('Speech recognition error:', event.error);
       setIsListening(false);
       setIsTranscribing(false);
       
@@ -223,7 +229,6 @@ const initializeSpeechRecognition = () => {
     };
     
     recognition.onend = () => {
-      console.log('Speech recognition ended');
       setIsListening(false);
       if (isTranscribing) {
         setIsTranscribing(false);
@@ -234,7 +239,6 @@ const initializeSpeechRecognition = () => {
     setRecognition(recognition);
     return recognition;
   } else {
-    console.warn('Speech Recognition API not supported');
     setErrorMessage('เบราว์เซอร์ไม่รองรับการรับรู้เสียง กรุณาใช้ Chrome หรือ Edge');
     return null;
   }
@@ -243,6 +247,7 @@ const initializeSpeechRecognition = () => {
 // Start speech recognition
 const startSpeechRecognition = () => {
   const rec = recognition || initializeSpeechRecognition();
+  
   if (rec && !isListening) {
     try {
       // แนะนำก่อนเริ่มฟัง
@@ -270,7 +275,6 @@ const startSpeechRecognition = () => {
         }, 500);
       }, 3000);
     } catch (error) {
-      console.error('Error starting speech recognition:', error);
       setErrorMessage('ไม่สามารถเริ่มการรับรู้เสียงได้');
     }
   }
@@ -287,16 +291,31 @@ const stopSpeechRecognition = () => {
     clearTimeout(submitTimeoutRef.current as any);
     submitTimeoutRef.current = null;
   }
+  
+  // ยกเลิก countdown interval
+  if (countdownIntervalRef.current) {
+    clearInterval(countdownIntervalRef.current as any);
+    countdownIntervalRef.current = null;
+  }
+  setAutoSubmitCountdown(null);
 };
 
   useEffect(() => {
   // หยุดเสียงทุกครั้งที่เปลี่ยน step
   stopSpeaking();
   
-  // ยกเลิก timeout ของ submitSymptoms
-  if (submitTimeoutRef.current) {
+  // ยกเลิก timeout ของ submitSymptoms เฉพาะเมื่อออกจาก symptoms step
+  if (currentStep !== 'symptoms' && submitTimeoutRef.current) {
+    console.log('Clearing timeout because step changed from symptoms to:', currentStep);
     clearTimeout(submitTimeoutRef.current as any);
     submitTimeoutRef.current = null;
+    
+    // ยกเลิก countdown ด้วย
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current as any);
+      countdownIntervalRef.current = null;
+    }
+    setAutoSubmitCountdown(null);
   }
 }, [currentStep]);
 
@@ -304,6 +323,64 @@ const stopSpeechRecognition = () => {
   useEffect(() => {
     initializeSpeechRecognition();
   }, []);
+
+  // Auto-submit when symptomsText changes (from typing or speech recognition)
+  useEffect(() => {
+    // เฉพาะใน symptoms step และมีข้อความจริง
+    if (currentStep === 'symptoms' && symptomsText && symptomsText.trim()) {
+      console.log('Symptoms text changed, starting auto-submit:', symptomsText);
+      
+      // ยกเลิก timeout เก่าที่อาจจะมีอยู่
+      if (submitTimeoutRef.current) {
+        clearTimeout(submitTimeoutRef.current as any);
+        submitTimeoutRef.current = null;
+      }
+      
+      // ยกเลิก countdown interval เก่า
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current as any);
+        countdownIntervalRef.current = null;
+      }
+      
+      // อัพเดท ref
+      symptomsTextRef.current = symptomsText.trim();
+      
+      // เริ่มนับถอยหลัง
+      setAutoSubmitCountdown(5);
+      
+      // เริ่ม countdown interval
+      countdownIntervalRef.current = setInterval(() => {
+        setAutoSubmitCountdown(prev => {
+          if (prev && prev > 1) {
+            return prev - 1;
+          } else {
+            // หยุด countdown เมื่อถึง 0
+            if (countdownIntervalRef.current) {
+              clearInterval(countdownIntervalRef.current as any);
+              countdownIntervalRef.current = null;
+            }
+            return null;
+          }
+        });
+      }, 1000);
+      
+      // ตั้ง timeout สำหรับ auto-submit
+      submitTimeoutRef.current = setTimeout(() => {
+        // หยุด countdown
+        if (countdownIntervalRef.current) {
+          clearInterval(countdownIntervalRef.current as any);
+          countdownIntervalRef.current = null;
+        }
+        setAutoSubmitCountdown(null);
+        
+        // ใช้ symptomsTextRef เพื่อให้ได้ข้อความล่าสุดเสมอ
+        if (symptomsTextRef.current && symptomsTextRef.current.trim()) {
+          console.log('Auto-submitting symptoms:', symptomsTextRef.current);
+          submitSymptoms();
+        }
+      }, 5000);
+    }
+  }, [symptomsText, currentStep]);
 
   useEffect(() => {
     let message = '';
@@ -442,6 +519,7 @@ const stopSpeechRecognition = () => {
     });
     setErrorMessage('');
     setSymptomsText('');
+    symptomsTextRef.current = ''; // รีเซ็ต ref ด้วย
     setQueueInfo(null);
     setScanCount(0);
     setManualInputMode(false);
@@ -515,7 +593,7 @@ const simulateWeightScan = async () => {
     if (mainVideoRef.current.videoWidth === 0 || mainVideoRef.current.videoHeight === 0) return;
 
     console.log('Starting weight scan at', new Date().toLocaleTimeString());
-    setErrorMessage('กำลังประมวลผล OCR...');
+    setErrorMessage('กำลังประมวลผล...');
     speak('กำลังประมวลผลการชั่งน้ำหนัก รอสักครู่');
 
     // จับภาพจากกล้องเป็น Blob
@@ -572,15 +650,15 @@ const simulateWeightScan = async () => {
     console.error('weight scan api error:', e);
     setScanCount(5);
     setManualInputMode(true);
-    setErrorMessage('เรียก API อ่านน้ำหนักล้มเหลว กรุณากรอกด้วยตัวเอง');
-    speak('ไม่สามารถอ่านค่าน้ำหนักได้ กรุณากรอกน้ำหนักด้วยตัวเอง');
+    setErrorMessage('ประมวลผลไม่สำเร็จ กรุณาลองใหม่อีกครั้งหรือกรอกด้วยตัวเอง');
+    speak('ประมวลผลไม่สำเร็จ กรุณาลองใหม่อีกครั้งหรือกรอกน้ำหนักด้วยตัวเอง');
   }
 };
 // ฟังก์ชันเรียก API ความดันจาก backend
 const scanBloodPressureViaAPI = async (blob: Blob) => {
   try {
     console.log('Starting blood pressure scan at', new Date().toLocaleTimeString());
-    setErrorMessage('กำลังประมวลผล OCR...');
+    setErrorMessage('กำลังประมวลผล...');
     speak('กำลังประมวลผลการวัดความดันและชีพจร รอสักครู่');
     const form = new FormData();
     form.append('image', blob, 'bp.jpg');
@@ -630,13 +708,13 @@ const scanBloodPressureViaAPI = async (blob: Blob) => {
       }
     } else {
       setScanCount(c => c + 1);
-      setErrorMessage('OCR ไม่พบข้อมูลความดันและชีพจร');
-      speak('ไม่พบข้อมูล กำลังลองใหม่');
+      setErrorMessage('ประมวลผลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+      speak('ประมวลผลไม่สำเร็จ กำลังลองใหม่');
     }
   } catch (e) {
     console.error('bp scan api error:', e);
     setScanCount(c => c + 1);
-    setErrorMessage('เรียก API ความดันล้มเหลว');
+    setErrorMessage('ประมวลผลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
   }
 };
 const fetchExistingVitalSigns = async (nationalId: string) => {
@@ -753,9 +831,17 @@ useEffect(() => {
       submitTimeoutRef.current = null;
     }
     
+    // ยกเลิก countdown interval
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current as any);
+      countdownIntervalRef.current = null;
+    }
+    setAutoSubmitCountdown(null);
+    
     // หยุดการพูดและรีเซ็ตข้อมูล
     stopSpeaking();
     setSymptomsText('');
+    symptomsTextRef.current = ''; // รีเซ็ต ref ด้วย
     setErrorMessage('');
     setIsListening(false);
     setIsTranscribing(false);
@@ -770,6 +856,15 @@ useEffect(() => {
         setErrorMessage('ไม่พบ token กรุณายืนยันตัวตนใหม่');
         return;
       }
+      
+      // ตรวจสอบว่ามีอาการหรือไม่
+      if (!symptomsText || symptomsText.trim() === '') {
+        setErrorMessage('กรุณาบันทึกอาการก่อน หรือพิมพ์อาการในช่องข้อความ');
+        speak('กรุณาบันทึกอาการก่อน หรือพิมพ์อาการในช่องข้อความ');
+        return;
+      }
+      
+      console.log('Submitting symptoms:', symptomsText);
       await saveAndSendVitalSigns(); // บันทึกอาการและ vital_signs ไป backend
       setCurrentStep('qr-code');
     } catch (error) {
@@ -1021,7 +1116,7 @@ useEffect(() => {
 
     canvas.toBlob(async (blob) => {
       if (!blob) return;
-      setErrorMessage('กำลังประมวลผล OCR...');
+      setErrorMessage('กำลังประมวลผล...');
       try {
       const isEngOnly = (field === 'height' || field === 'systolic' || field === 'diastolic' || field === 'pulse');
         const lang = isEngOnly ? 'eng' : 'eng+tha';
@@ -1045,10 +1140,10 @@ useEffect(() => {
             else if (field === 'pulse') setCurrentStep('summary');
           }, 1200);
         } else {
-          setErrorMessage('OCR ไม่พบข้อมูล');
+          setErrorMessage('ประมวลผลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
         }
       } catch (err) {
-        setErrorMessage('เกิดข้อผิดพลาดในการ OCR');
+        setErrorMessage('ประมวลผลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
         console.error(`[OCR] Field: ${field} | OCR error:`, err);
       }
     }, 'image/jpeg', 0.8);
@@ -1073,22 +1168,35 @@ useEffect(() => {
       return;
     }
     try {
-      console.log('Sending vital signs to backend:', { vital_signs: vitalSigns, symptoms: symptomsText });
+      console.log('=== SENDING TO BACKEND ===');
+      console.log('vital_signs:', vitalSigns);
+      console.log('symptoms (raw):', symptomsText);
+      console.log('symptoms (length):', symptomsText.length);
+      console.log('symptoms (trimmed):', symptomsText.trim());
+      console.log('symptoms (trimmed length):', symptomsText.trim().length);
+      
+      const payload = {
+        vital_signs: vitalSigns,
+        symptoms: symptomsText.trim()
+      };
+      
+      console.log('Final payload:', payload);
+      
       const res = await axios.post(
         `${API_BASE_URL}/api/queue/queue`,
-        {
-          vital_signs: vitalSigns,
-          symptoms: symptomsText
-        },
+        payload,
         { headers: { Authorization: `Bearer ${patientToken}` } }
       );
+      
+      console.log('Backend response:', res.data);
+      
       const queueId = res.data._id;
       const queueResponse = await axios.get(
         `${API_BASE_URL}/api/queue/queue/${queueId}`,
         { headers: { Authorization: `Bearer ${patientToken}` } }
       );
       setQueueInfo(queueResponse.data.queue); // <-- สำคัญ!
-      console.log('Queue info:', res);
+      console.log('Queue info:', queueResponse.data.queue);
     } catch (error) {
       console.error('Error saving vital signs:', error);
       setErrorMessage('บันทึกข้อมูลหรือดึงคิวล้มเหลว');
@@ -1168,7 +1276,7 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
 
     // เพิ่ม TTS สำหรับแต่ละขั้นตอน (ส่วนสูง)
     if (field === 'height') {
-      setErrorMessage('กำลังประมวลผล OCR...');
+      setErrorMessage('กำลังประมวลผล...');
       speak('กำลังประมวลผลการวัดส่วนสูง รอสักครู่');
     }
     
@@ -1188,7 +1296,7 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
           const value = highest.toString();
           
           if (highest < 100 || highest > 250) {
-            setErrorMessage('OCR พบเลขไม่สมเหตุสมผล: ' + value);
+            setErrorMessage('ประมวลผลไม่สำเร็จ ค่าไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง');
             setScanCount(c => c + 1);
             speak(`ค่าที่อ่านได้ไม่ถูกต้อง ${value} กำลังลองใหม่`);
             return;
@@ -1275,17 +1383,17 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
             }
           } else {
             setScanCount(c => c + 1);
-            setErrorMessage('OCR ไม่พบข้อมูลความดันและชีพจร');
+            setErrorMessage('ประมวลผลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
             speak('ไม่พบข้อมูล กำลังลองใหม่');
           }
         }
         } else {
           setScanCount(c => c + 1);
-          setErrorMessage('OCR ไม่พบข้อมูล');
+          setErrorMessage('ประมวลผลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
         speak('ไม่พบข้อมูล กำลังลองใหม่');
         }
       } catch (err) {
-        setErrorMessage('เกิดข้อผิดพลาดในการ OCR');
+        setErrorMessage('ประมวลผลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
         console.error(`[OCR] Field: ${field} | OCR error:`, err);
       }
     }, 'image/jpeg', 0.8);
@@ -1752,6 +1860,33 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
                       </button>
                     </div>
    <p className="text-sm text-gray-500 mt-2">บันทึกเสร็จแล้ว</p>
+   
+   {/* แสดง Auto-submit countdown */}
+   {autoSubmitCountdown && autoSubmitCountdown > 0 && (
+     <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+       <p className="text-blue-800 font-medium">
+         ระบบจะดำเนินการต่ออัตโนมัติใน {autoSubmitCountdown} วินาที
+       </p>
+       <button
+         onClick={() => {
+           // ยกเลิก auto-submit
+           if (submitTimeoutRef.current) {
+             clearTimeout(submitTimeoutRef.current as any);
+             submitTimeoutRef.current = null;
+           }
+           if (countdownIntervalRef.current) {
+             clearInterval(countdownIntervalRef.current as any);
+             countdownIntervalRef.current = null;
+           }
+           setAutoSubmitCountdown(null);
+           speak('ยกเลิกการดำเนินการอัตโนมัติแล้ว');
+         }}
+         className="mt-2 bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm"
+       >
+         ยกเลิกอัตโนมัติ
+       </button>
+     </div>
+   )}
                   </div>
                 )}
               </div>
@@ -1804,6 +1939,9 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
             {/* ปุ่มยืนยัน */}
             {symptomsText.trim() && !isListening && (
             <div className="text-center">
+              <p className="text-sm text-gray-600 mb-2">
+                อาการที่บันทึก: "{symptomsText}" (ความยาว: {symptomsText.length} ตัวอักษร)
+              </p>
               <button
                 onClick={() => {
                   // ยกเลิก timeout ที่มีอยู่ก่อน
@@ -1811,6 +1949,15 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
                     clearTimeout(submitTimeoutRef.current as any);
                     submitTimeoutRef.current = null;
                   }
+                  
+                  // ยกเลิก countdown
+                  if (countdownIntervalRef.current) {
+                    clearInterval(countdownIntervalRef.current as any);
+                    countdownIntervalRef.current = null;
+                  }
+                  setAutoSubmitCountdown(null);
+                  
+                  console.log('Manual submit - symptoms:', symptomsText);
                   submitSymptoms();
                 }}
                   className="bg-green-500 hover:bg-green-600 text-white px-8 py-3 rounded-lg font-medium text-lg transition-colors flex items-center mx-auto"
@@ -1829,10 +1976,9 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
                 {errorMessage}
             </div>
             )}
+            
           </div>
         </div>
-        {showDebugPanel && <DebugPanel />}
-        <DebugButton />
       </div>
     );
   }

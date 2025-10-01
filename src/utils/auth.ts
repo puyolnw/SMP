@@ -1,6 +1,6 @@
 // Types
 interface User {
-  id: number;
+  id: string; // เปลี่ยนจาก number เป็น string เพื่อรองรับ ObjectId
   username: string;
   role: string;
   branchid?: string; // Add optional branchid to the User interface
@@ -12,7 +12,20 @@ export function getCurrentUser(): User | null {
   if (!userJson) return null;
   
   try {
-    return JSON.parse(userJson) as User;
+    const userData = JSON.parse(userJson);
+    
+    // Backward compatibility: หาก userData มี _id แทน id
+    if (userData._id && !userData.id) {
+      userData.id = userData._id;
+    }
+    
+    // ตรวจสอบว่ามี id หรือไม่
+    if (!userData.id) {
+      console.error('User data missing ID:', userData);
+      return null;
+    }
+    
+    return userData as User;
   } catch (error) {
     console.error('Error parsing user data:', error);
     return null;

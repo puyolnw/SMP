@@ -32,7 +32,7 @@ const bounceAnimation = keyframes`
     transform: translateY(-10px);
   }
   60% {
-    transform: translateY(-5px);
+    transform: translateY(-5px);x 
   }
 `;
 
@@ -95,7 +95,7 @@ const LoginPage: React.FC = () => {
         // บันทึก token และ user ลงใน localStorage
         localStorage.setItem('token', mockToken);
         localStorage.setItem('userData', JSON.stringify({
-          _id: mockUser._id,
+          id: mockUser._id, // แปลง _id เป็น id ให้ตรงกับ interface
           username: mockUser.username,
           role: mockUser.role
         }));
@@ -130,7 +130,7 @@ const LoginPage: React.FC = () => {
       
       // เก็บข้อมูลผู้ใช้
       localStorage.setItem('userData', JSON.stringify({
-        _id: data.user._id,
+        id: data.user._id, // แปลง _id เป็น id ให้ตรงกับ interface
         username: data.user.username,
         role: data.user.role
       }));
