@@ -52,12 +52,6 @@ export const getMenuItems = () => {
         nameTH: 'หน้าหลัก',
       },
       {
-        text: 'จัดการคิว',
-        icon: EventNote,
-        path: '/queue/manage',
-        nameTH: 'จัดการคิว',
-      },
-      {
         text: 'ผู้ป่วย',
         icon: HealthAndSafety,
         path: '',
