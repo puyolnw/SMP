@@ -964,19 +964,6 @@ const ProfilePage: React.FC = () => {
                         />
                       </ListItem>
                     )}
-                    {user.emt_status && (
-                      <ListItem sx={{ py: 1.5 }}>
-                        <ListItemIcon>
-                          <MedicalIcon fontSize="small" sx={{ color: 'var(--accent-blue)' }} />
-                        </ListItemIcon>
-                        <ListItemText 
-                          primary="สถานะ EMT" 
-                          secondary={user.emt_status}
-                          primaryTypographyProps={{ fontWeight: 'bold', color: 'var(--primary-dark)' }}
-                          secondaryTypographyProps={{ color: 'var(--neutral-main)' }}
-                        />
-                      </ListItem>
-                    )}
                   </List>
                 </Paper>
               </Grid>
@@ -1218,22 +1205,6 @@ const ProfilePage: React.FC = () => {
             </Grid>
             {(user?.role === 'doctor' || user?.role === 'nurse') && (
               <>
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    fullWidth
-                    label="ประเภทอาชีพ"
-                    value={editData.perfession_type || ''}
-                    onChange={(e) => setEditData({ ...editData, perfession_type: e.target.value })}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    fullWidth
-                    label="สถานะ EMT"
-                    value={editData.emt_status || ''}
-                    onChange={(e) => setEditData({ ...editData, emt_status: e.target.value })}
-                  />
-                </Grid>
                 <Grid item xs={12}>
                   <TextField
                     fullWidth

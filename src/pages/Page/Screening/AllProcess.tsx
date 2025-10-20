@@ -122,7 +122,19 @@ const loadCameraSizeSettings = () => {
   const [isNarratorEnabled, setIsNarratorEnabled] = useState(true);
 console.log('isSpeaking', isSpeaking,setIsSpeaking);
 
-  const [queueInfo, setQueueInfo] = useState<any>(null);
+  // โหลดข้อมูลคิวจาก cache เป็น initial state
+  const getInitialQueueInfo = () => {
+    try {
+      const cached = localStorage.getItem('cached_queueInfo');
+      return cached ? JSON.parse(cached) : null;
+    } catch (error) {
+      console.warn('Failed to parse cached queue info:', error);
+      return null;
+    }
+  };
+  
+  const [queueInfo, setQueueInfo] = useState<any>(getInitialQueueInfo());
+  const [queueLoading, setQueueLoading] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [scanCount, setScanCount] = useState(0);
   const [manualInputMode, setManualInputMode] = useState(false);
@@ -191,20 +203,25 @@ const initializeSpeechRecognition = () => {
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
       
-      // ตรวจสอบว่าข้อความไม่ว่าง
-      if (!transcript || transcript.trim() === '') {
-        setErrorMessage('ไม่ได้รับข้อความ กรุณาลองบันทึกใหม่');
-        speak('ไม่ได้รับข้อความ กรุณาลองบันทึกใหม่');
+      // ตรวจสอบว่าข้อความไม่ว่างและมีอย่างน้อย 3 ตัวอักษร
+      if (!transcript || transcript.trim() === '' || transcript.trim().length < 3) {
+        setErrorMessage('ไม่ได้รับข้อความหรือข้อความสั้นเกินไป กรุณาลองบันทึกใหม่');
+        speak('ไม่ได้รับข้อความหรือข้อความสั้นเกินไป กรุณาลองบันทึกใหม่');
+        setIsListening(false);
+        setIsTranscribing(false);
         return;
       }
       
-      setSymptomsText(transcript.trim());
-      symptomsTextRef.current = transcript.trim(); // อัพเดท ref ด้วย
+      const cleanedText = transcript.trim();
+      console.log('Speech recognition result:', cleanedText, 'Length:', cleanedText.length);
+      
+      setSymptomsText(cleanedText);
+      symptomsTextRef.current = cleanedText; // อัพเดท ref ด้วย
       setIsTranscribing(false);
       setErrorMessage('');
       
       // ทวนข้อความที่แปลงได้
-      speak(`ระบบได้ยินว่าคุณบอกอาการว่า ${transcript} ถูกต้องหรือไม่`);
+      speak(`ระบบได้ยินว่าคุณบอกอาการว่า ${cleanedText} ถูกต้องหรือไม่`);
       
       // auto-submit จะถูกจัดการโดย useEffect ที่ติดตาม symptomsText แล้ว
     };
@@ -326,20 +343,22 @@ const stopSpeechRecognition = () => {
 
   // Auto-submit when symptomsText changes (from typing or speech recognition)
   useEffect(() => {
-    // เฉพาะใน symptoms step และมีข้อความจริง
-    if (currentStep === 'symptoms' && symptomsText && symptomsText.trim()) {
-      console.log('Symptoms text changed, starting auto-submit:', symptomsText);
+    // เฉพาะใน symptoms step และมีข้อความจริง (ต้องมีอย่างน้อย 3 ตัวอักษร)
+    if (currentStep === 'symptoms' && symptomsText && symptomsText.trim().length >= 3) {
+      console.log('[AUTO_SUBMIT] Symptoms text changed:', symptomsText);
       
       // ยกเลิก timeout เก่าที่อาจจะมีอยู่
       if (submitTimeoutRef.current) {
         clearTimeout(submitTimeoutRef.current as any);
         submitTimeoutRef.current = null;
+        console.log('[AUTO_SUBMIT] Cleared previous timeout');
       }
       
       // ยกเลิก countdown interval เก่า
       if (countdownIntervalRef.current) {
         clearInterval(countdownIntervalRef.current as any);
         countdownIntervalRef.current = null;
+        console.log('[AUTO_SUBMIT] Cleared previous countdown');
       }
       
       // อัพเดท ref
@@ -365,7 +384,9 @@ const stopSpeechRecognition = () => {
       }, 1000);
       
       // ตั้ง timeout สำหรับ auto-submit
-      submitTimeoutRef.current = setTimeout(() => {
+      submitTimeoutRef.current = setTimeout(async () => {
+        console.log('[AUTO_SUBMIT] Timeout triggered, checking conditions...');
+        
         // หยุด countdown
         if (countdownIntervalRef.current) {
           clearInterval(countdownIntervalRef.current as any);
@@ -373,12 +394,47 @@ const stopSpeechRecognition = () => {
         }
         setAutoSubmitCountdown(null);
         
+        // หยุด Speech Recognition ก่อน submit
+        if (recognition && isListening) {
+          recognition.stop();
+          setIsListening(false);
+          console.log('[AUTO_SUBMIT] Stopped speech recognition');
+        }
+        
         // ใช้ symptomsTextRef เพื่อให้ได้ข้อความล่าสุดเสมอ
-        if (symptomsTextRef.current && symptomsTextRef.current.trim()) {
-          console.log('Auto-submitting symptoms:', symptomsTextRef.current);
-          submitSymptoms();
+        if (symptomsTextRef.current && symptomsTextRef.current.trim() && symptomsTextRef.current.trim().length >= 3) {
+          console.log('[AUTO_SUBMIT] Auto-submitting symptoms:', symptomsTextRef.current);
+          
+          // Clear timeout ref ก่อน submit เพื่อป้องกันการ submit ซ้ำ
+          submitTimeoutRef.current = null;
+          
+          try {
+            await submitSymptoms();
+          } catch (error) {
+            console.error('[AUTO_SUBMIT] Error during auto-submit:', error);
+            setErrorMessage('เกิดข้อผิดพลาดในการส่งข้อมูล กรุณาลองใหม่');
+          }
+        } else {
+          console.log('[AUTO_SUBMIT] Auto-submit cancelled: symptoms too short or empty:', symptomsTextRef.current);
+          setErrorMessage('ข้อความสั้นเกินไป กรุณาบันทึกอาการใหม่');
+          speak('ข้อความสั้นเกินไป กรุณาบันทึกอาการใหม่');
+          submitTimeoutRef.current = null;
         }
       }, 5000);
+      
+    } else if (currentStep === 'symptoms' && (!symptomsText || symptomsText.trim().length < 3)) {
+      // ถ้าข้อความสั้นเกินไปหรือไม่มี ให้ยกเลิก timeout
+      if (submitTimeoutRef.current) {
+        clearTimeout(submitTimeoutRef.current as any);
+        submitTimeoutRef.current = null;
+        console.log('[AUTO_SUBMIT] Text too short, cleared timeout');
+      }
+      
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current as any);
+        countdownIntervalRef.current = null;
+      }
+      setAutoSubmitCountdown(null);
     }
   }, [symptomsText, currentStep]);
 
@@ -489,11 +545,85 @@ const stopSpeechRecognition = () => {
     return newPatientData;
   };
 
+  // ฟังก์ชันดึงข้อมูลคิวจาก API
+  const fetchQueueData = async () => {
+    if (!patientToken) {
+      console.log('No patient token available');
+      return;
+    }
+
+    setQueueLoading(true);
+    try {
+      console.log('Fetching queue data with token:', patientToken);
+      const response = await axios.get(`${API_BASE_URL}/api/queue/patient/check-active-queue`, {
+        headers: { Authorization: `Bearer ${patientToken}` }
+      });
+
+      if (response.data.has_active_queue && response.data.queue) {
+        const queue = response.data.queue;
+        console.log('Queue data received:', queue);
+        console.log('Room name from response:', response.data.room_name);
+        console.log('Department name from response:', response.data.department_name);
+        
+        // ดึงข้อมูลห้องเพิ่มเติมถ้ามี room_id
+        let roomInfo = null;
+        if (queue.room_id) {
+          try {
+            const roomResponse = await axios.get(`${API_BASE_URL}/api/workplace/room_schedule/${queue.room_id}`);
+            roomInfo = roomResponse.data;
+            console.log('Room info received:', roomInfo);
+          } catch (roomError) {
+            console.warn('Failed to fetch room info:', roomError);
+          }
+        }
+
+        // ดึงข้อมูลผู้ป่วยเพิ่มเติม
+        let patientInfo = null;
+        if (queue.patient_id) {
+          try {
+            const patientResponse = await axios.get(`${API_BASE_URL}/api/patient/${queue.patient_id}`);
+            patientInfo = patientResponse.data;
+            console.log('Patient info received:', patientInfo);
+          } catch (patientError) {
+            console.warn('Failed to fetch patient info:', patientError);
+          }
+        }
+
+        // รวมข้อมูลทั้งหมด - รวม room_name จาก response
+        const enrichedQueue = {
+          ...queue,
+          room_info: roomInfo,
+          patient_info: patientInfo,
+          room_name: response.data.room_name,
+          department_name: response.data.department_name
+        };
+
+        setQueueInfo(enrichedQueue);
+        // Cache ข้อมูลคิวใน localStorage
+        localStorage.setItem('cached_queueInfo', JSON.stringify(enrichedQueue));
+      } else {
+        console.log('No active queue found');
+        setQueueInfo(null);
+        localStorage.removeItem('cached_queueInfo');
+      }
+    } catch (error) {
+      console.error('Error fetching queue data:', error);
+      setQueueInfo(null);
+    } finally {
+      setQueueLoading(false);
+    }
+  };
+
   // Auto-refresh patient data when component mounts or location changes
   useEffect(() => {
     console.log('Location or patient data changed, refreshing...');
     refreshPatientData();
-  }, [location.state]);
+    
+    // ดึงข้อมูลคิวถ้ามี token
+    if (patientToken) {
+      fetchQueueData();
+    }
+  }, [location.state, patientToken]);
 
   // Save token to localStorage if received from state
   useEffect(() => {
@@ -510,6 +640,7 @@ const stopSpeechRecognition = () => {
     localStorage.removeItem('authenticatedPatient');
     localStorage.removeItem('patient_token');
     localStorage.removeItem('queueInfo');
+    localStorage.removeItem('cached_queueInfo');
     
     // Reset all states
     setCurrentStep('weight');
@@ -540,6 +671,23 @@ const stopSpeechRecognition = () => {
     setTimeout(() => {
       navigate('/Screening/AuthenPatient', { replace: true });
     }, 2000);
+  };
+
+  // ฟังก์ชันรีเซ็ตสถานะเมื่อกลับไปแก้ไข
+  const resetStepState = () => {
+    console.log('Resetting step state...');
+    setErrorMessage('');
+    setScanCount(0);
+    setManualInputMode(false);
+    
+    // หยุด interval scanning ถ้ามี
+    if (scanIntervalId.current) {
+      clearInterval(scanIntervalId.current as any);
+      scanIntervalId.current = null;
+    }
+    
+    // ไม่ต้องปิดกล้อง เพราะ useEffect จะจัดการให้
+    // closeCamera();
   };
 
   // Function to clear only patient cache and refresh
@@ -697,10 +845,10 @@ const scanBloodPressureViaAPI = async (blob: Blob) => {
           scanIntervalId.current = null;
         }
         
-        speak(`วัดความดันและชีพจรเสร็จสิ้น ความดัน ${updated.systolic}/${updated.diastolic} ชีพจร ${updated.pulse} ไปขั้นตอนถัดไป`);
+        speak(`วัดความดันและชีพจรเสร็จสิ้น ความดัน ${updated.systolic}/${updated.diastolic} ชีพจร ${updated.pulse} ไปขั้นตอนยืนยันข้อมูล`);
         setTimeout(() => {
-          console.log('Changing to symptoms step');
-          setCurrentStep('symptoms');
+          console.log('Changing to summary step for BMI confirmation');
+          setCurrentStep('summary');
         }, 2000);
       } else {
         console.log('BP values incomplete, continuing scan');
@@ -838,12 +986,17 @@ useEffect(() => {
     }
     setAutoSubmitCountdown(null);
     
+    // หยุด Speech Recognition ถ้ากำลังทำงานอยู่
+    if (recognition && isListening) {
+      recognition.stop();
+      setIsListening(false);
+    }
+    
     // หยุดการพูดและรีเซ็ตข้อมูล
     stopSpeaking();
     setSymptomsText('');
     symptomsTextRef.current = ''; // รีเซ็ต ref ด้วย
     setErrorMessage('');
-    setIsListening(false);
     setIsTranscribing(false);
     
     // แจ้งผู้ใช้
@@ -857,19 +1010,56 @@ useEffect(() => {
         return;
       }
       
-      // ตรวจสอบว่ามีอาการหรือไม่
-      if (!symptomsText || symptomsText.trim() === '') {
-        setErrorMessage('กรุณาบันทึกอาการก่อน หรือพิมพ์อาการในช่องข้อความ');
-        speak('กรุณาบันทึกอาการก่อน หรือพิมพ์อาการในช่องข้อความ');
+      // ตรวจสอบว่ามีอาการหรือไม่ (ต้องมีอย่างน้อย 3 ตัวอักษร)
+      if (!symptomsText || symptomsText.trim() === '' || symptomsText.trim().length < 3) {
+        setErrorMessage('กรุณาบันทึกอาการก่อน (อย่างน้อย 3 ตัวอักษร) หรือพิมพ์อาการในช่องข้อความ');
+        speak('กรุณาบันทึกอาการก่อน อย่างน้อย 3 ตัวอักษร หรือพิมพ์อาการในช่องข้อความ');
+        
+        // ยกเลิก auto-submit countdown ถ้ามี
+        if (submitTimeoutRef.current) {
+          clearTimeout(submitTimeoutRef.current as any);
+          submitTimeoutRef.current = null;
+        }
+        if (countdownIntervalRef.current) {
+          clearInterval(countdownIntervalRef.current as any);
+          countdownIntervalRef.current = null;
+        }
+        setAutoSubmitCountdown(null);
         return;
       }
       
-      console.log('Submitting symptoms:', symptomsText);
+      // ตรวจสอบว่าไม่ได้อยู่ในกระบวนการส่งข้อมูลแล้ว
+      if (submitTimeoutRef.current) {
+        console.log('[SUBMIT_SYMPTOMS] Already in submission process, ignoring duplicate call');
+        return;
+      }
+      
+      console.log('[SUBMIT_SYMPTOMS] Submitting symptoms:', symptomsText);
+      
+      // ยกเลิก timeout และ countdown ทั้งหมด
+      if (submitTimeoutRef.current) {
+        clearTimeout(submitTimeoutRef.current as any);
+        submitTimeoutRef.current = null;
+      }
+      
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current as any);
+        countdownIntervalRef.current = null;
+      }
+      setAutoSubmitCountdown(null);
+      
+      // หยุด Speech Recognition
+      if (recognition && isListening) {
+        recognition.stop();
+        setIsListening(false);
+      }
+      
+      console.log('[SUBMIT_SYMPTOMS] Proceeding with submission...');
       await saveAndSendVitalSigns(); // บันทึกอาการและ vital_signs ไป backend
       setCurrentStep('qr-code');
     } catch (error) {
       setErrorMessage('ไม่สามารถบันทึกข้อมูลอาการได้');
-      console.error('Error submitting symptoms:', error);
+      console.error('[SUBMIT_SYMPTOMS] Error submitting symptoms:', error);
     }
   };
 
@@ -1236,8 +1426,14 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
   }
   
   const videoRef = (field === 'height') ? mainVideoRef : bpVideoRef;
-    if (!videoRef.current) return;
-    if (videoRef.current.videoWidth === 0 || videoRef.current.videoHeight === 0) return;
+    if (!videoRef.current) {
+      console.log(`Video ref not available for ${field}`);
+      return;
+    }
+    if (videoRef.current.videoWidth === 0 || videoRef.current.videoHeight === 0) {
+      console.log(`Video not ready for ${field} - width: ${videoRef.current.videoWidth}, height: ${videoRef.current.videoHeight}`);
+      return;
+    }
   
     const canvas = document.createElement('canvas');
     canvas.width = videoRef.current.videoWidth;
@@ -1372,10 +1568,10 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
                 scanIntervalId.current = null;
               }
               
-              speak(`วัดความดันและชีพจรเสร็จสิ้น ความดัน ${updatedVitalSigns.systolic}/${updatedVitalSigns.diastolic} ชีพจร ${updatedVitalSigns.pulse} ไปขั้นตอนถัดไป`);
+              speak(`วัดความดันและชีพจรเสร็จสิ้น ความดัน ${updatedVitalSigns.systolic}/${updatedVitalSigns.diastolic} ชีพจร ${updatedVitalSigns.pulse} ไปขั้นตอนยืนยันข้อมูล`);
               setTimeout(() => {
-                console.log('OCR - Changing to symptoms step');
-                setCurrentStep('symptoms');
+                console.log('OCR - Changing to summary step for BMI confirmation');
+                setCurrentStep('summary');
               }, 2000);
             } else {
               console.log('OCR - BP values incomplete, continuing scan');
@@ -1399,6 +1595,7 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
     }, 'image/jpeg', 0.8);
   };
   useEffect(() => {
+    console.log('Camera state changed:', { isCameraOpen, currentStep });
     if (isCameraOpen) {
     let field: 'weight' | 'height' | 'blood-pressure';
     
@@ -1409,11 +1606,17 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
     } else if (['blood-pressure', 'systolic', 'diastolic', 'pulse'].includes(currentStep)) {
       field = 'blood-pressure';
     } else {
+      console.log('Not a scanning step, returning');
       return; // ไม่ใช่ขั้นตอนที่ต้องสแกน
     }
     
-    // ทำ scan ทันทีครั้งแรก
-    scan(field);
+    console.log(`Starting auto scan for ${field}`);
+    
+    // ทำ scan ทันทีครั้งแรก หลังจากกล้องเปิดแล้ว 2 วินาที
+    setTimeout(() => {
+      console.log(`Initial scan for ${field}`);
+      scan(field);
+    }, 2000);
     
     // ตั้ง interval scan ทุก 8 วินาที
     scanIntervalId.current = setInterval(() => {
@@ -1434,9 +1637,17 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
   }, [scanCount]);
 
   useEffect(() => {
+    console.log('Step changed to:', currentStep, '- Resetting states');
     setScanCount(0);
     setManualInputMode(false);
-  }, [currentStep]);
+    setErrorMessage(''); // เคลียร์ข้อความผิดพลาดเมื่อเปลี่ยน step
+    
+    // เมื่อเข้าสู่ step qr-code ให้ fetch ข้อมูลคิวทันที
+    if (currentStep === 'qr-code' && patientToken) {
+      console.log('Entering QR code step, fetching queue data...');
+      fetchQueueData();
+    }
+  }, [currentStep, patientToken]);
 
   const DebugPanel = () => (
     <div className="fixed top-4 right-4 bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-lg z-50 w-80">
@@ -1937,7 +2148,7 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
             </div>
 
             {/* ปุ่มยืนยัน */}
-            {symptomsText.trim() && !isListening && (
+            {symptomsText.trim() && symptomsText.trim().length >= 3 && !isListening && (
             <div className="text-center">
               <p className="text-sm text-gray-600 mb-2">
                 อาการที่บันทึก: "{symptomsText}" (ความยาว: {symptomsText.length} ตัวอักษร)
@@ -2070,9 +2281,28 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
                     }
                   }}>ยืนยันน้ำหนัก</button>
                   <button className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600" onClick={() => {
-                    setManualInputMode(false);
+                    resetStepState(); // รีเซ็ตสถานะ error
                     setManualWeight('');
-                  }}>ยกเลิก</button>
+                    
+                    // Force restart camera for weight step
+                    if (mainCameraIdWeight) {
+                      navigator.mediaDevices.getUserMedia({
+                        video: { deviceId: mainCameraIdWeight ? { exact: mainCameraIdWeight } : undefined }
+                      })
+                      .then(s => {
+                        setMainStream(s);
+                        if (mainVideoRef.current) mainVideoRef.current.srcObject = s;
+                        setIsCameraOpen(true);
+                        console.log('Weight camera restarted successfully');
+                      })
+                      .catch(err => {
+                        setErrorMessage('ไม่สามารถเปิดกล้องได้: ' + err.name);
+                        console.error('[Camera] Weight camera restart error:', err);
+                      });
+                    }
+                    
+                    speak('ยกเลิกการกรอกตัวเลข กลับไปสแกนอัตโนมัติ');
+                  }}>กลับไปสแกนอัตโนมัติ</button>
                 </div>
               </div>
             )}
@@ -2162,9 +2392,28 @@ const scan = async (field: 'weight' | 'height' | 'blood-pressure') => {
                     }
                   }}>ยืนยันส่วนสูง</button>
                   <button className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600" onClick={() => {
-                    setManualInputMode(false);
+                    resetStepState(); // รีเซ็ตสถานะ error
                     setManualHeight('');
-                  }}>ยกเลิก</button>
+                    
+                    // Force restart camera for height step
+                    if (mainCameraIdHeight) {
+                      navigator.mediaDevices.getUserMedia({
+                        video: { deviceId: mainCameraIdHeight ? { exact: mainCameraIdHeight } : undefined }
+                      })
+                      .then(s => {
+                        setMainStream(s);
+                        if (mainVideoRef.current) mainVideoRef.current.srcObject = s;
+                        setIsCameraOpen(true);
+                        console.log('Height camera restarted successfully');
+                      })
+                      .catch(err => {
+                        setErrorMessage('ไม่สามารถเปิดกล้องได้: ' + err.name);
+                        console.error('[Camera] Height camera restart error:', err);
+                      });
+                    }
+                    
+                    speak('ยกเลิกการกรอกตัวเลข กลับไปสแกนอัตโนมัติ');
+                  }}>กลับไปสแกนอัตโนมัติ</button>
                 </div>
               </div>
             )}
@@ -2356,13 +2605,32 @@ if (currentStep === 'blood-pressure') {
               <button
                 className="bg-gray-500 text-white px-6 py-2 rounded hover:bg-gray-600"
                 onClick={() => {
-                  setManualInputMode(false);
+                  resetStepState(); // รีเซ็ตสถานะ error
                   setManualSystolic('');
                   setManualDiastolic('');
                   setManualPulse('');
+                  
+                  // Force restart camera for blood pressure step
+                  if (bpCameraId) {
+                    navigator.mediaDevices.getUserMedia({
+                      video: { deviceId: bpCameraId ? { exact: bpCameraId } : undefined }
+                    })
+                    .then(s => {
+                      setBpStream(s);
+                      if (bpVideoRef.current) bpVideoRef.current.srcObject = s;
+                      setIsCameraOpen(true);
+                      console.log('BP camera restarted successfully');
+                    })
+                    .catch(err => {
+                      setErrorMessage('ไม่สามารถเปิดกล้องได้: ' + err.name);
+                      console.error('[Camera] BP camera restart error:', err);
+                    });
+                  }
+                  
+                  speak('ยกเลิกการกรอกตัวเลข กลับไปสแกนอัตโนมัติ');
                 }}
               >
-                ยกเลิก
+                กลับไปสแกนอัตโนมัติ
               </button>
             </div>
             </div>
@@ -2443,7 +2711,28 @@ if (currentStep === 'blood-pressure') {
             {/* ปุ่มแก้ไขและยืนยัน */}
             <div className="flex justify-center space-x-4">
               <button
-                onClick={() => setCurrentStep('blood-pressure')}
+                onClick={() => {
+                  // รีเซ็ตสถานะเมื่อกลับไปแก้ไข - กลับไปเริ่มต้นที่น้ำหนัก
+                  resetStepState();
+                  // รีเซ็ต vital signs ทั้งหมด
+                  setVitalSigns(prev => ({
+                    ...prev,
+                    weight: null,
+                    height: null,
+                    bmi: null,
+                    systolic: null,
+                    diastolic: null,
+                    pulse: null
+                  }));
+                  // เคลียร์ manual inputs
+                  setManualWeight('');
+                  setManualHeight('');
+                  setManualSystolic('');
+                  setManualDiastolic('');
+                  setManualPulse('');
+                  setCurrentStep('weight');
+                  speak('กลับไปเริ่มต้นใหม่ที่การชั่งน้ำหนัก');
+                }}
                 className="bg-yellow-500 hover:bg-yellow-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
               >
                 แก้ไขข้อมูล
@@ -2487,19 +2776,110 @@ if (currentStep === 'blood-pressure') {
             <h3 className="text-white font-semibold mb-4">คำแนะนำ</h3>
             <ul className="space-y-2 text-white/80 list-disc list-inside">
               <li>สแกน QR Code เพื่อดูผล</li>
-              <li>นำ QR Code ไปแสดงที่เคาน์เตอร์</li>
+              <li>เจ้าหนาที่จะดำเนินการเรียกคิว</li>
               <li>กดเสร็จสิ้นเพื่อกลับสู่หน้าหลัก</li>
             </ul>
           </div>
         </div>
         <div className="w-2/3 p-8 flex flex-col items-center justify-center">
           <div className="bg-white rounded-xl shadow-xl p-8 w-full max-w-2xl">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">สแกน QR Code</h2>
+            {/* แสดงข้อมูลคิวก่อน QR Code */}
+            {queueLoading ? (
+              <div className="bg-blue-50 rounded-xl p-6 mb-6">
+                <h3 className="text-blue-800 font-semibold mb-4">ข้อมูลคิว</h3>
+                <div className="flex items-center justify-center py-4">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <span className="ml-2 text-blue-600">กำลังโหลดข้อมูลคิว...</span>
+                </div>
+              </div>
+            ) : queueInfo ? (
+              <div className="bg-blue-50 rounded-xl p-6 mb-6">
+                <h3 className="text-blue-800 font-semibold mb-4">ข้อมูลคิว</h3>
+                <div className="space-y-3 text-gray-700">
+                  <div className="flex justify-between">
+                    <span className="font-medium">หมายเลขคิว:</span>
+                    <span className="text-blue-600 font-bold">{queueInfo.queue_no || 'ไม่ระบุ'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium">ชื่อผู้ป่วย:</span>
+                    <span className="text-blue-600 font-bold">{
+                      queueInfo.patient_info ? 
+                        `${queueInfo.patient_info.first_name_th || queueInfo.patient_info.first_name || ''} ${queueInfo.patient_info.last_name_th || queueInfo.patient_info.last_name || ''}`.trim() ||
+                        queueInfo.patient_info.name ||
+                        patientData.name
+                      : patientData.name
+                    }</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium">ห้องตรวจ:</span>
+                    <span className="text-blue-600 font-bold">{
+                      queueInfo.room_info?.name || 
+                      queueInfo.room_name ||
+                      queueInfo.department_name ||
+                      'ไม่ระบุ'
+                    }</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium">เวลาเข้ารับคิว:</span>
+                    <span className="text-blue-600 font-bold">{
+                      queueInfo.queue_time 
+                        ? new Date(queueInfo.queue_time).toLocaleString('th-TH', {
+                            year: 'numeric',
+                            month: '2-digit', 
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })
+                        : queueInfo.created_at 
+                          ? new Date(queueInfo.created_at).toLocaleString('th-TH', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit', 
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })
+                          : 'ไม่ระบุ'
+                    }</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium">สถานะ:</span>
+                    <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+                      queueInfo.status === 'waiting' ? 'bg-yellow-100 text-yellow-800' :
+                      queueInfo.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
+                      queueInfo.status === 'completed' ? 'bg-green-100 text-green-800' :
+                      queueInfo.status === 'skipped' ? 'bg-red-100 text-red-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {queueInfo.status === 'waiting' ? 'รอเรียกคิว' :
+                       queueInfo.status === 'in_progress' ? 'กำลังตรวจ' :
+                       queueInfo.status === 'completed' ? 'ตรวจเสร็จ' :
+                       queueInfo.status === 'skipped' ? 'ข้ามคิว' :
+                       queueInfo.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-gray-50 rounded-xl p-6 mb-6">
+                <h3 className="text-gray-800 font-semibold mb-4">ข้อมูลคิว</h3>
+                <div className="text-center py-4">
+                  <p className="text-gray-600">ไม่พบคิวที่ต่ออยู่</p>
+                  <button
+                    onClick={fetchQueueData}
+                    className="mt-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm transition-colors"
+                  >
+                    โหลดข้อมูลใหม่
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">สถานะรายละเอียดคิวของคุณ</h2>
             <div className="flex justify-center mb-8">
               <QRCodeSVG value={generateQRData()} size={256} />
             </div>
             <div className="text-center">
-              <p className="text-gray-600 mb-4">กรุณาสแกน QR Code นี้เพื่อดูผลการตรวจและคิวของคุณ</p>
+              <p className="text-gray-600 mb-4">กรุณาสแกน QR Code นี้เพื่อดูรายละเอียดคิวของคุณ</p>
               <button
                 onClick={() => navigate('/Screening/AuthenPatient2')}
                 className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700"

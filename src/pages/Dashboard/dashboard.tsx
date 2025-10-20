@@ -85,8 +85,33 @@ const Dashboard: React.FC = () => {
   const [systemInfo, setSystemInfo] = useState<any>({});
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [userRole, setUserRole] = useState<string>('staff'); // default role
 
   const API_BASE_URL = import.meta.env.VITE_API_URL;
+
+  // ฟังก์ชันดึง role จาก token
+  const getUserRoleFromToken = () => {
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+      if (!token) {
+        console.log('No token found, using default role: staff');
+        return 'staff';
+      }
+
+      // Decode JWT token (แค่ payload ส่วน base64)
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      console.log('Token payload:', payload);
+      
+      // ดึง role จาก token payload
+      const role = payload.role || payload.userType || payload.employee_type || 'staff';
+      console.log('User role from token:', role);
+      
+      return role.toLowerCase();
+    } catch (error) {
+      console.error('Error decoding token:', error);
+      return 'staff';
+    }
+  };
 
   // ฟังก์ชันดึงข้อมูล dashboard จาก API
   const fetchDashboardData = async () => {
@@ -173,6 +198,10 @@ const Dashboard: React.FC = () => {
   };
 
   useEffect(() => {
+    // ดึง role จาก token
+    const role = getUserRoleFromToken();
+    setUserRole(role);
+    
     const loadData = async () => {
       setLoading(true);
       try {
@@ -209,6 +238,90 @@ const Dashboard: React.FC = () => {
     navigate(path);
   };
 
+  // ฟังก์ชันกำหนดเมนูตาม role
+  const getMenuItemsByRole = () => {
+    const allMenuItems = [
+      {
+        id: 'addpatient',
+        title: 'เพิ่มผู้ป่วยใหม่',
+        description: 'ลงทะเบียนผู้ป่วยใหม่เข้าสู่ระบบ',
+        path: '/member/patient/addpatient',
+        icon: AddPatientIcon,
+        color: 'primary.main',
+        roles: ['admin', 'staff', 'nurse']
+      },
+      {
+        id: 'authen',
+        title: 'ยืนยันตัวตนผู้ป่วย',
+        description: 'ยืนยันตัวตนผู้ป่วยเพื่อเข้าสู่กระบวนการคัดกรอง',
+        path: '/Screening/AuthenPatient',
+        icon: AuthenIcon,
+        color: 'secondary.main',
+        roles: ['admin', 'staff', 'nurse']
+      },
+      {
+        id: 'screening',
+        title: 'คัดกรองผู้ป่วย',
+        description: 'บันทึกข้อมูลสัญญาณชีพและอาการเบื้องต้น',
+        path: '/Screening/Patient',
+        icon: ScreeningFormIcon,
+        color: 'success.main',
+        roles: ['admin', 'nurse']
+      },
+      {
+        id: 'queue',
+        title: 'จัดการคิว',
+        description: 'จัดการคิวผู้ป่วยตามห้องตรวจและแผนก',
+        path: '/queue/manage',
+        icon: QueueManageIcon,
+        color: 'warning.main',
+        roles: ['admin', 'doctor', 'nurse']
+      }
+    ];
+
+    return allMenuItems.filter(item => item.roles.includes(userRole));
+  };
+
+  // ฟังก์ชันกำหนด Quick Links ตาม role
+  const getQuickLinksByRole = () => {
+    const allQuickLinks = [
+      {
+        id: 'search',
+        title: 'ค้นหาผู้ป่วย',
+        path: '/member/patient/searchpatient',
+        icon: ScreeningIcon,
+        color: 'primary' as const,
+        roles: ['admin', 'doctor', 'nurse', 'staff']
+      },
+      {
+        id: 'triage',
+        title: 'คัดแยกประเภท',
+        path: '/Screening/Patient2',
+        icon: TriageIcon,
+        color: 'error' as const,
+        roles: ['admin', 'nurse']
+      },
+      {
+        id: 'patient-system',
+        title: 'ระบบผู้ป่วย',
+        path: '/welcome',
+        icon: VitalIcon,
+        color: 'success' as const,
+        roles: ['admin', 'staff', 'nurse']
+      },
+      {
+        id: 'room-manage',
+        title: 'จัดการห้อง',
+        path: '/queue/manage/room',
+        icon: RoomIcon,
+        color: 'warning' as const,
+        roles: ['admin']
+      }
+    ];
+
+    return allQuickLinks.filter(link => link.roles.includes(userRole));
+  };
+
 
 
   return (
@@ -235,6 +348,33 @@ const Dashboard: React.FC = () => {
           <Typography variant="h6" color="text.secondary">
             ระบบคัดกรองผู้ป่วยเพื่อจัดลำดับความสำคัญและจัดคิวการรักษา
           </Typography>
+          
+          {/* แสดง role ปัจจุบัน */}
+          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              สถานะ:
+            </Typography>
+            <Chip 
+              label={
+                userRole === 'admin' ? 'ผู้ดูแลระบบ' :
+                userRole === 'doctor' ? 'แพทย์' :
+                userRole === 'nurse' ? 'พยาบาล' :
+                userRole === 'staff' ? 'เจ้าหน้าที่' :
+                'ผู้ใช้งาน'
+              }
+              color={
+                userRole === 'admin' ? 'primary' :
+                userRole === 'doctor' ? 'error' :
+                userRole === 'nurse' ? 'success' :
+                'default'
+              }
+              size="small"
+            />
+            {/* Debug: แสดง role value */}
+            <Typography variant="caption" color="text.disabled" sx={{ ml: 1 }}>
+              ({userRole})
+            </Typography>
+          </Box>
         </Box>
 
         {/* Last updated and refresh button */}
@@ -326,86 +466,28 @@ const Dashboard: React.FC = () => {
               การดำเนินการ
             </Typography>
             <Grid container spacing={3} sx={{ mb: 4 }}>
-              <Grid item xs={12} sm={6}>
-                <StyledCard>
-                  <CardActionArea 
-                    onClick={() => navigateTo('/member/patient/addpatient')}
-                    sx={{ height: '100%', p: 2 }}
-                  >
-                    <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                      <Avatar sx={{ bgcolor: 'primary.main', width: 60, height: 60, mb: 2 }}>
-                        <AddPatientIcon sx={{ fontSize: 30 }} />
-                      </Avatar>
-                      <Typography variant="h6" component="div" gutterBottom>
-                        เพิ่มผู้ป่วยใหม่
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        ลงทะเบียนผู้ป่วยใหม่เข้าสู่ระบบ
-                      </Typography>
-                    </CardContent>
-                  </CardActionArea>
-                </StyledCard>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <StyledCard>
-                  <CardActionArea 
-                    onClick={() => navigateTo('/Screening/AuthenPatient')}
-                    sx={{ height: '100%', p: 2 }}
-                  >
-                    <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                      <Avatar sx={{ bgcolor: 'secondary.main', width: 60, height: 60, mb: 2 }}>
-                        <AuthenIcon sx={{ fontSize: 30 }} />
-                      </Avatar>
-                      <Typography variant="h6" component="div" gutterBottom>
-                        ยืนยันตัวตนผู้ป่วย
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        ยืนยันตัวตนผู้ป่วยเพื่อเข้าสู่กระบวนการคัดกรอง
-                      </Typography>
-                    </CardContent>
-                  </CardActionArea>
-                </StyledCard>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <StyledCard>
-                  <CardActionArea 
-                    onClick={() => navigateTo('/Screening/Patient')}
-                    sx={{ height: '100%', p: 2 }}
-                  >
-                    <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                      <Avatar sx={{ bgcolor: 'success.main', width: 60, height: 60, mb: 2 }}>
-                        <ScreeningFormIcon sx={{ fontSize: 30 }} />
-                      </Avatar>
-                      <Typography variant="h6" component="div" gutterBottom>
-                        คัดกรองผู้ป่วย
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        บันทึกข้อมูลสัญญาณชีพและอาการเบื้องต้น
-                      </Typography>
-                    </CardContent>
-                  </CardActionArea>
-                </StyledCard>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <StyledCard>
-                  <CardActionArea 
-                    onClick={() => navigateTo('/queue/manage')}
-                    sx={{ height: '100%', p: 2 }}
-                  >
-                    <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                      <Avatar sx={{ bgcolor: 'warning.main', width: 60, height: 60, mb: 2 }}>
-                        <QueueManageIcon sx={{ fontSize: 30 }} />
-                      </Avatar>
-                      <Typography variant="h6" component="div" gutterBottom>
-                        จัดการคิว
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        จัดการคิวผู้ป่วยตามห้องตรวจและแผนก
-                      </Typography>
-                    </CardContent>
-                  </CardActionArea>
-                </StyledCard>
-              </Grid>
+              {getMenuItemsByRole().map((item) => (
+                <Grid item xs={12} sm={6} key={item.id}>
+                  <StyledCard>
+                    <CardActionArea 
+                      onClick={() => navigateTo(item.path)}
+                      sx={{ height: '100%', p: 2 }}
+                    >
+                      <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <Avatar sx={{ bgcolor: item.color, width: 60, height: 60, mb: 2 }}>
+                          <item.icon sx={{ fontSize: 30 }} />
+                        </Avatar>
+                        <Typography variant="h6" component="div" gutterBottom>
+                          {item.title}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {item.description}
+                        </Typography>
+                      </CardContent>
+                    </CardActionArea>
+                  </StyledCard>
+                </Grid>
+              ))}
             </Grid>
 
             {/* Recent Patients */}
@@ -590,42 +672,17 @@ const Dashboard: React.FC = () => {
               ลิงก์ด่วน
             </Typography>
             <Grid container spacing={2} sx={{ mb: 4 }}>
-              <Grid item xs={6}>
-                <StyledPaper 
-                  elevation={2}
-                  onClick={() => navigateTo('/member/patient/searchpatient')}
-                >
-                  <ScreeningIcon color="primary" sx={{ fontSize: 40, mb: 1 }} />
-                  <Typography variant="body1" fontWeight="medium">ค้นหาผู้ป่วย</Typography>
-                </StyledPaper>
-              </Grid>
-              <Grid item xs={6}>
-                <StyledPaper 
-                  elevation={2}
-                  onClick={() => navigateTo('/Screening/Patient2')}
-                >
-                  <TriageIcon color="error" sx={{ fontSize: 40, mb: 1 }} />
-                  <Typography variant="body1" fontWeight="medium">คัดแยกประเภท</Typography>
-                </StyledPaper>
-              </Grid>
-              <Grid item xs={6}>
-                <StyledPaper 
-                  elevation={2}
-                  onClick={() => navigateTo('/welcome')}
-                >
-                  <VitalIcon color="success" sx={{ fontSize: 40, mb: 1 }} />
-                  <Typography variant="body1" fontWeight="medium">ระบบผู้ป่วย</Typography>
-                </StyledPaper>
-              </Grid>
-              <Grid item xs={6}>
-                <StyledPaper 
-                  elevation={2}
-                  onClick={() => navigateTo('/queue/manage/room')}
-                >
-                  <RoomIcon color="warning" sx={{ fontSize: 40, mb: 1 }} />
-                  <Typography variant="body1" fontWeight="medium">จัดการห้อง</Typography>
-                </StyledPaper>
-              </Grid>
+              {getQuickLinksByRole().map((link) => (
+                <Grid item xs={6} key={link.id}>
+                  <StyledPaper 
+                    elevation={2}
+                    onClick={() => navigateTo(link.path)}
+                  >
+                    <link.icon color={link.color} sx={{ fontSize: 40, mb: 1 }} />
+                    <Typography variant="body1" fontWeight="medium">{link.title}</Typography>
+                  </StyledPaper>
+                </Grid>
+              ))}
             </Grid>
 
             {/* System Info */}

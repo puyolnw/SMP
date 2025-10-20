@@ -14,7 +14,6 @@ import {
   MenuItem,
   Button,
   Chip,
-  Divider,
   IconButton,
   Switch,
   FormControlLabel,
@@ -25,7 +24,6 @@ import {
   DialogActions,
   Alert,
   Snackbar,
-  Avatar,
   Skeleton,
   CircularProgress
 } from '@mui/material';
@@ -643,205 +641,200 @@ const ManageRoom: React.FC = () => {
                         variant="outlined" 
                         sx={{ 
                           height: '100%',
-                          bgcolor: isOpen ? '#f9f9f9' : '#f0f0f0',
-                          opacity: isOpen ? 1 : 0.7,
-                          transition: 'all 0.3s ease'
+                          border: isOpen ? '2px solid #4caf50' : '2px solid #ccc',
+                          borderRadius: 3,
+                          boxShadow: isOpen ? '0 4px 20px rgba(76, 175, 80, 0.2)' : '0 2px 8px rgba(0,0,0,0.1)',
+                          transition: 'all 0.3s ease',
+                          '&:hover': {
+                            transform: 'translateY(-2px)',
+                            boxShadow: isOpen ? '0 8px 30px rgba(76, 175, 80, 0.3)' : '0 4px 15px rgba(0,0,0,0.15)'
+                          }
                         }}
                       >
-                       <CardHeader
-      title={room.name || `ห้องตรวจ ${room.roomNumber || '1'}`}
-      subheader={`ห้อง ${room.roomNumber || '1'} (${room.building || 'อาคารผู้ป่วยนอก'} ชั้น ${room.floor || '1'})`}
-      action={
-        <IconButton onClick={() => handleEditRoom(room, schedule || null)}>
-          <EditIcon />
-        </IconButton>
-      }
-      sx={{
-        bgcolor: isOpen 
-          ? getDepartmentById(selectedDepartment)?.bgColor || '#e3f2fd'
-          : '#e0e0e0',
-        '& .MuiCardHeader-title': { fontWeight: 'bold' }
-      }}
-    />
-
-                        <CardContent>
-                          <Box sx={{ mb: 2 }}>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  checked={isOpen}
-                                  onChange={async (e) => {
-                                    const newIsOpen = e.target.checked;
-                                    // อัปเดต state ทันที (optional)
-                                    if (schedule) {
-                                      const updatedSchedule = { 
-                                        ...schedule, 
-                                        isOpen: newIsOpen,
-                                        room_type: room.room_type || 'general' // เพิ่ม room_type จากห้อง
-                                      };
-                                      setDailySchedules(dailySchedules.map(s =>
-                                        s.id === updatedSchedule.id ? updatedSchedule : s
-                                      ));
-                                      // ส่ง PUT ไป backend
-                                      try {
-                                        await axios.put(
-                                          `${API_BASE_URL}/api/workplace/room_schedule/${schedule.id}`,
-                                          {
-                                            ...updatedSchedule,
-                                            type: "room_schedule" // สำคัญ! ต้องมี type ด้วย
-                                          }
-                                        );
-                                        showSnackbar('อัปเดตสถานะห้องตรวจเรียบร้อย', 'success');
-                                      } catch (error) {
-                                        showSnackbar('เกิดข้อผิดพลาดในการอัปเดตสถานะ', 'error');
-                                      }
-                                    }
-                                  }}
-                                  color="primary"
-                                />
-                              }
-                                                        label={isOpen ? "เปิดให้บริการ" : "ปิดให้บริการ"}
-                            />
+                        {/* Header ของ Card */}
+                        <Box sx={{ 
+                          p: 2, 
+                          bgcolor: isOpen ? '#e8f5e8' : '#f5f5f5',
+                          borderBottom: '1px solid #e0e0e0'
+                        }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                            <Box sx={{ flex: 1 }}>
+                              <Typography variant="h6" sx={{ fontWeight: 'bold', color: isOpen ? '#2e7d32' : '#666' }}>
+                                {room.name || `ห้องตรวจ ${room.roomNumber || '1'}`}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary">
+                                ห้อง {room.roomNumber || '1'} • {room.building || 'อาคารผู้ป่วยนอก'} ชั้น {room.floor || '1'}
+                              </Typography>
+                            </Box>
+                            <IconButton 
+                              onClick={() => handleEditRoom(room, schedule || null)}
+                              sx={{ 
+                                bgcolor: 'white',
+                                '&:hover': { bgcolor: '#f5f5f5' },
+                                boxShadow: 1
+                              }}
+                            >
+                              <EditIcon />
+                            </IconButton>
                           </Box>
                           
-                          <Divider sx={{ mb: 2 }} />
-                          
+                          {/* Switch สถานะห้อง */}
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <Chip 
+                              label={isOpen ? "เปิดให้บริการ" : "ปิดให้บริการ"}
+                              color={isOpen ? "success" : "default"}
+                              variant={isOpen ? "filled" : "outlined"}
+                              size="small"
+                              sx={{ fontWeight: 'bold' }}
+                            />
+                            <Switch
+                              checked={isOpen}
+                              onChange={async (e) => {
+                                const newIsOpen = e.target.checked;
+                                if (schedule) {
+                                  const updatedSchedule = { 
+                                    ...schedule, 
+                                    isOpen: newIsOpen,
+                                    room_type: room.room_type || 'general'
+                                  };
+                                  setDailySchedules(dailySchedules.map(s =>
+                                    s.id === updatedSchedule.id ? updatedSchedule : s
+                                  ));
+                                  try {
+                                    await axios.put(
+                                      `${API_BASE_URL}/api/workplace/room_schedule/${schedule.id}`,
+                                      {
+                                        ...updatedSchedule,
+                                        type: "room_schedule"
+                                      }
+                                    );
+                                    showSnackbar('อัปเดตสถานะห้องตรวจเรียบร้อย', 'success');
+                                  } catch (error) {
+                                    showSnackbar('เกิดข้อผิดพลาดในการอัปเดตสถานะ', 'error');
+                                  }
+                                }
+                              }}
+                              color="success"
+                              size="small"
+                            />
+                          </Box>
+                        </Box>
+
+                        <CardContent sx={{ p: 2 }}>
                           {isOpen ? (
-                            <>
-                              {/* แสดงข้อมูลแพทย์ */}
-                              <Typography variant="subtitle1" gutterBottom>
-                                แพทย์ประจำห้องตรวจ
-                              </Typography>
-                              {dataLoading.employees ? (
-                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                  <Skeleton variant="circular" width={40} height={40} sx={{ mr: 1 }} />
-                                  <Box sx={{ flex: 1 }}>
-                                    <Skeleton variant="text" width="80%" />
-                                    <Skeleton variant="text" width="60%" />
-                                  </Box>
-                                </Box>
-                              ) : doctor ? (
-                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                  <Avatar 
-                                    src={doctor.profileImage} 
-                                    sx={{ width: 40, height: 40, mr: 1 }}
-                                  >
-                                    {doctor.firstNameTh.charAt(0)}
-                                  </Avatar>
-                                  <Box>
-                                    <Typography variant="body1">
-                                      {doctor.prefix} {doctor.firstNameTh} {doctor.lastNameTh}
-                                    </Typography>
-                                    <Typography variant="body2" color="text.secondary">
-                                      {doctor.position}
-                                    </Typography>
-                                  </Box>
-                                </Box>
-                              ) : (
-                                <Typography variant="body2" color="error" sx={{ mb: 2 }}>
-                                  ยังไม่ได้กำหนดแพทย์ประจำห้องตรวจ
-                                </Typography>
-                              )}
-                              
-                              {/* รายชื่อแพทย์ที่มีสิทธิ์ประจำห้องวันนี้ */}
-                              <Typography variant="subtitle2" sx={{ mb: 1 }}>รายชื่อแพทย์ที่มีสิทธิ์ประจำห้องวันนี้</Typography>
+                            <Box sx={{ space: 2 }}>
+                              {/* ข้อมูลพนักงาน - แบบกะทัดรัด */}
                               <Box sx={{ mb: 2 }}>
-                                {dataLoading.employees ? (
-                                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                    {[1, 2, 3].map(i => (
-                                      <Skeleton key={i} variant="rectangular" width={120} height={32} sx={{ borderRadius: 2 }} />
-                                    ))}
-                                  </Box>
-                                ) : getAvailableEmployeesForRoom('doctor', room.departmentId, selectedDate).length > 0 ? (
-                                  getAvailableEmployeesForRoom('doctor', room.departmentId, selectedDate).map(doc => (
-                                    <Chip key={doc.id} label={`${doc.prefix} ${doc.firstNameTh} ${doc.lastNameTh}`} sx={{ mr: 1, mb: 1 }} />
-                                  ))
-                                ) : (
-                                  <Typography variant="body2" color="text.secondary">ไม่มีแพทย์ที่มีสิทธิ์ประจำห้องวันนี้</Typography>
-                                )}
-                              </Box>
-                              
-                              {/* แสดงข้อมูลพยาบาล */}
-                              <Typography variant="subtitle1" gutterBottom>
-                                พยาบาลประจำห้องตรวจ
-                              </Typography>
-                              {dataLoading.employees ? (
-                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                  <Skeleton variant="circular" width={40} height={40} sx={{ mr: 1 }} />
+                                {/* แพทย์ */}
+                                <Box sx={{ 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  mb: 1.5,
+                                  p: 1.5,
+                                  bgcolor: '#f8f9ff',
+                                  borderRadius: 2,
+                                  border: '1px solid #e3f2fd'
+                                }}>
+                                  <LocalHospitalIcon sx={{ color: '#1976d2', mr: 1, fontSize: 20 }} />
                                   <Box sx={{ flex: 1 }}>
-                                    <Skeleton variant="text" width="80%" />
-                                    <Skeleton variant="text" width="60%" />
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#1976d2' }}>
+                                      แพทย์ประจำ
+                                    </Typography>
+                                    {dataLoading.employees ? (
+                                      <Skeleton variant="text" width="70%" height={20} />
+                                    ) : doctor ? (
+                                      <Typography variant="body2" sx={{ color: '#333' }}>
+                                        {doctor.prefix} {doctor.firstNameTh} {doctor.lastNameTh}
+                                      </Typography>
+                                    ) : (
+                                      <Typography variant="body2" color="error">
+                                        ยังไม่ได้กำหนด
+                                      </Typography>
+                                    )}
                                   </Box>
                                 </Box>
-                              ) : nurse ? (
-                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                  <Avatar 
-                                    src={nurse.profileImage} 
-                                    sx={{ width: 40, height: 40, mr: 1 }}
-                                  >
-                                    {nurse.firstNameTh.charAt(0)}
-                                  </Avatar>
-                                  <Box>
-                                    <Typography variant="body1">
-                                      {nurse.prefix} {nurse.firstNameTh} {nurse.lastNameTh}
+
+                                {/* พยาบาล */}
+                                <Box sx={{ 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  mb: 1.5,
+                                  p: 1.5,
+                                  bgcolor: '#f1f8e9',
+                                  borderRadius: 2,
+                                  border: '1px solid #c8e6c9'
+                                }}>
+                                  <PersonIcon sx={{ color: '#388e3c', mr: 1, fontSize: 20 }} />
+                                  <Box sx={{ flex: 1 }}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#388e3c' }}>
+                                      พยาบาลประจำ
                                     </Typography>
-                                    <Typography variant="body2" color="text.secondary">
-                                      {nurse.position}
-                                    </Typography>
+                                    {dataLoading.employees ? (
+                                      <Skeleton variant="text" width="70%" height={20} />
+                                    ) : nurse ? (
+                                      <Typography variant="body2" sx={{ color: '#333' }}>
+                                        {nurse.prefix} {nurse.firstNameTh} {nurse.lastNameTh}
+                                      </Typography>
+                                    ) : (
+                                      <Typography variant="body2" color="error">
+                                        ยังไม่ได้กำหนด
+                                      </Typography>
+                                    )}
                                   </Box>
                                 </Box>
-                              ) : (
-                                <Typography variant="body2" color="error" sx={{ mb: 2 }}>
-                                  ยังไม่ได้กำหนดพยาบาลประจำห้องตรวจ
-                                </Typography>
-                              )}
-                              
-                              {/* รายชื่อพยาบาลที่มีสิทธิ์ประจำห้องวันนี้ */}
-                              <Typography variant="subtitle2" sx={{ mb: 1 }}>รายชื่อพยาบาลที่มีสิทธิ์ประจำห้องวันนี้</Typography>
-                              <Box sx={{ mb: 2 }}>
-                                {dataLoading.employees ? (
-                                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                    {[1, 2].map(i => (
-                                      <Skeleton key={i} variant="rectangular" width={120} height={32} sx={{ borderRadius: 2 }} />
-                                    ))}
-                                  </Box>
-                                ) : getAvailableEmployeesForRoom('nurse', room.departmentId, selectedDate).length > 0 ? (
-                                  getAvailableEmployeesForRoom('nurse', room.departmentId, selectedDate).map(nurse => (
-                                    <Chip key={nurse.id} label={`${nurse.prefix} ${nurse.firstNameTh} ${nurse.lastNameTh}`} sx={{ mr: 1, mb: 1 }} />
-                                  ))
-                                ) : (
-                                  <Typography variant="body2" color="text.secondary">ไม่มีพยาบาลที่มีสิทธิ์ประจำห้องวันนี้</Typography>
-                                )}
                               </Box>
                               
-                              {/* แสดงเวลาทำการ */}
-                              <Divider sx={{ my: 2 }} />
-                              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                <AccessTimeIcon sx={{ mr: 1, color: 'primary.main' }} />
-                                <Typography>
-                                  {schedule?.openTime || '08:00'} - {schedule?.closeTime || '16:00'} น.
-                                </Typography>
+                              {/* ข้อมูลเวลาและจำนวนผู้ป่วย */}
+                              <Box sx={{ 
+                                display: 'flex', 
+                                justifyContent: 'space-between', 
+                                alignItems: 'center',
+                                p: 1.5,
+                                bgcolor: '#fff3e0',
+                                borderRadius: 2,
+                                border: '1px solid #ffcc02',
+                                mb: 1
+                              }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                  <AccessTimeIcon sx={{ color: '#f57c00', mr: 1, fontSize: 18 }} />
+                                  <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                                    {schedule?.openTime || '08:00'} - {schedule?.closeTime || '16:00'} น.
+                                  </Typography>
+                                </Box>
+                                <Chip 
+                                  label={`รับได้ ${schedule?.maxPatients || 30} คน`}
+                                  size="small"
+                                  color="warning"
+                                  variant="outlined"
+                                />
                               </Box>
                               
-                              {/* แสดงจำนวนผู้ป่วยสูงสุด */}
-                              <Typography variant="body2" color="text.secondary">
-                                รับผู้ป่วยสูงสุด: {schedule?.maxPatients || 30} คน
-                              </Typography>
-                              
-                              {/* แสดงหมายเหตุ */}
+                              {/* หมายเหตุ */}
                               {schedule?.notes && (
-                                <Box sx={{ mt: 2, p: 1, bgcolor: '#fff9c4', borderRadius: 1 }}>
-                                  <Typography variant="body2">
-                                    หมายเหตุ: {schedule.notes}
+                                <Box sx={{ 
+                                  p: 1.5, 
+                                  bgcolor: '#fff9c4', 
+                                  borderRadius: 2,
+                                  border: '1px solid #ffeb3b'
+                                }}>
+                                  <Typography variant="body2" sx={{ fontStyle: 'italic' }}>
+                                    💡 {schedule.notes}
                                   </Typography>
                                 </Box>
                               )}
-                            </>
+                            </Box>
                           ) : (
-                            <Box sx={{ textAlign: 'center', py: 3 }}>
-                              <MeetingRoomIcon sx={{ fontSize: 40, color: 'text.disabled', mb: 1 }} />
-                              <Typography color="text.secondary">
-                                ห้องตรวจนี้ปิดให้บริการในวันนี้
+                            <Box sx={{ 
+                              textAlign: 'center', 
+                              py: 4,
+                              color: 'text.secondary'
+                            }}>
+                              <MeetingRoomIcon sx={{ fontSize: 48, mb: 1, opacity: 0.5 }} />
+                              <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
+                                ห้องตรวจปิดให้บริการ
+                              </Typography>
+                              <Typography variant="body2">
+                                ในวันนี้
                               </Typography>
                             </Box>
                           )}

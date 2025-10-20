@@ -304,16 +304,30 @@ const ManageQueue: React.FC = () => {
       
       // สร้าง room statuses จากข้อมูลจริง
       const rooms = departmentRooms.map((roomSchedule: any) => {
-        // หาคิวที่กำลังตรวจในห้องนี้ โดยเปรียบเทียบกับ room_id ที่เป็น ObjectId ของ room_schedule
+        // หาคิวที่กำลังตรวจในห้องนี้ โดยเปรียบเทียบกับ room_id ที่อาจเป็น Object หรือ string
         const roomQueue = inProgressQueues.find((q: QueueItem) => {
-          // ถ้า queue.room_id ตรงกับ id ของ room_schedule (จาก API ส่งคืนเป็น id ไม่ใช่ _id)
-          const queueRoomId = String(q.room_id);
-          const scheduleId = String(roomSchedule.id);
-          return queueRoomId === scheduleId;
+          // ตรวจสอบว่า queue.room_id เป็น object หรือ string
+          let queueRoomId = '';
+          
+          if (typeof q.room_id === 'object' && q.room_id !== null) {
+            // ถ้าเป็น object ให้ดู _id หรือ id แบบปลอดภัย
+            const roomObj = q.room_id as any;
+            queueRoomId = String(roomObj._id || roomObj.id || roomObj.roomId || '');
+          } else {
+            // ถ้าเป็น string ให้ใช้ตรง ๆ
+            queueRoomId = String(q.room_id || '');
+          }
+          
+          const scheduleId = String(roomSchedule._id || roomSchedule.id || '');
+          
+          // เปรียบเทียบทั้ง _id และ id เพื่อให้แน่ใจ
+          return queueRoomId === scheduleId || queueRoomId === String(roomSchedule.id);
         });
         
-        console.log(`[DEBUG] Room Schedule ${roomSchedule.id} (roomId: ${roomSchedule.roomId}) - Found queue:`, roomQueue ? roomQueue.queue_no : 'None');
-        console.log(`[DEBUG] Comparing queue.room_id "${roomQueue?.room_id}" with roomSchedule.id "${roomSchedule.id}"`);
+        console.log(`[DEBUG] Room Schedule ${roomSchedule._id || roomSchedule.id} (name: ${roomSchedule.name}) - Found queue:`, roomQueue ? roomQueue.queue_no : 'None');
+        if (roomQueue) {
+          console.log(`[DEBUG] Queue ${roomQueue.queue_no} room_id:`, roomQueue.room_id);
+        }
         
         // ใช้ชื่อห้องจาก name หรือ roomId
         const roomName = roomSchedule.name || `ห้อง ${roomSchedule.roomId}` || `ห้อง ${roomSchedule.id}`;
